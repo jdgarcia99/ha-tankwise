@@ -188,9 +188,7 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankReadings]):
             return None
         state = self.hass.states.get(entity_id)
         if state is None or state.state not in (STATE_ON, STATE_OFF):
-            self._mark_unusable(
-                entity_id, state.state if state else "entity not found"
-            )
+            self._mark_unusable(entity_id, state.state if state else "entity not found")
             return None
         self._mark_usable(entity_id)
         return state.state == STATE_ON

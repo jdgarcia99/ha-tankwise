@@ -5,8 +5,6 @@ from __future__ import annotations
 from collections.abc import Collection
 from typing import Any
 
-import voluptuous as vol
-
 from homeassistant.components.binary_sensor import DOMAIN as BINARY_SENSOR_DOMAIN
 from homeassistant.components.input_boolean import DOMAIN as INPUT_BOOLEAN_DOMAIN
 from homeassistant.components.sensor import (
@@ -46,6 +44,7 @@ from homeassistant.util.unit_conversion import (
     PowerConverter,
     TemperatureConverter,
 )
+import voluptuous as vol
 
 from .const import (
     COMFORT_LEVELS,
@@ -195,9 +194,7 @@ def _validate_required_sensors(
     }
     errors: dict[str, str] = {}
     for key, (units, state_classes) in checks.items():
-        if error := _validate_measurement(
-            hass, user_input[key], units, state_classes
-        ):
+        if error := _validate_measurement(hass, user_input[key], units, state_classes):
             errors[key] = error
     return errors
 
