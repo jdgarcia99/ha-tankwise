@@ -20,7 +20,7 @@ integration or your own automations decide how to fulfil it.
 
 ## Project status
 
-> **Early development (0.1.0, phase 2).** TankWise models the tank and
+> **Early development (0.2.0, phase 2).** TankWise models the tank and
 > publishes its state of charge. Usage learning and the heating plan (the
 > output for other integrations) are not available yet.
 
