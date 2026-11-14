@@ -15,16 +15,16 @@
   <rect x="8" y="8" width="496" height="496" rx="112" fill="url(#bg)"/>
   <rect x="8.5" y="8.5" width="495" height="495" rx="111.5" fill="none" stroke="#DCE2EA" stroke-width="1"/>
   <g transform="translate(-18 0)">
-  <!-- agua dentro del depósito -->
+  <!-- water inside the tank -->
   <g clip-path="url(#tankClip)">
     <path d="M150 262 C 190 242, 226 242, 256 262 S 322 282, 362 262 L 362 430 L 150 430 Z" fill="url(#water)"/>
     <path d="M150 292 C 190 272, 226 272, 256 292 S 322 312, 362 292" fill="none" stroke="#FFFFFF" stroke-opacity="0.35" stroke-width="8" stroke-linecap="round"/>
   </g>
-  <!-- contorno del depósito -->
+  <!-- tank outline -->
   <rect x="170" y="112" width="172" height="300" rx="64" fill="none" stroke="#006FFF" stroke-width="20"/>
-  <!-- tomas de agua -->
+  <!-- water connections -->
   <path d="M220 412 v34 M292 412 v34" stroke="#006FFF" stroke-width="20" stroke-linecap="round"/>
-  <!-- sol -->
+  <!-- sun -->
   <g transform="translate(362 150)">
     <circle r="62" fill="#F3F6FA"/>
     <circle r="26" fill="#006FFF"/>
