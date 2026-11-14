@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Config flow to select the tank temperature, heating element power and
   heating element energy sensors, with unit and state class validation.
+- Reconfigure step to change the required sensors without removing the
+  integration.
 - Optional inputs: solar forecast, solar surplus, electricity price, presence
   switch and bottom temperature probe.
 - Options flow with the tank parameters (volume, rated power, mains water

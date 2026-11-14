@@ -16,6 +16,20 @@
           "energy_sensor": "Cumulative energy of the heating element (total or total increasing)."
         }
       },
+      "reconfigure": {
+        "title": "Change tank sensors",
+        "description": "Select the required sensors of the water heater. The learned data is kept.",
+        "data": {
+          "temperature_sensor": "Tank temperature",
+          "power_sensor": "Heating element power",
+          "energy_sensor": "Heating element energy"
+        },
+        "data_description": {
+          "temperature_sensor": "Temperature probe of the tank (upper part).",
+          "power_sensor": "Power currently drawn by the heating element.",
+          "energy_sensor": "Cumulative energy of the heating element (total or total increasing)."
+        }
+      },
       "optional": {
         "title": "Optional inputs",
         "description": "These inputs improve the plan. All of them can be changed later in the options.",
@@ -41,7 +55,8 @@
       "invalid_state_class": "The energy sensor must have state class 'total' or 'total_increasing'."
     },
     "abort": {
-      "already_configured": "This tank is already configured."
+      "already_configured": "This tank is already configured.",
+      "reconfigure_successful": "The tank sensors have been updated."
     }
   },
   "options": {

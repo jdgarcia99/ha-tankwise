@@ -16,6 +16,20 @@
           "energy_sensor": "Energía acumulada de la resistencia (total o total creciente)."
         }
       },
+      "reconfigure": {
+        "title": "Cambiar los sensores del termo",
+        "description": "Selecciona los sensores obligatorios del termo. Los datos aprendidos se conservan.",
+        "data": {
+          "temperature_sensor": "Temperatura del termo",
+          "power_sensor": "Potencia de la resistencia",
+          "energy_sensor": "Energía de la resistencia"
+        },
+        "data_description": {
+          "temperature_sensor": "Sonda de temperatura del depósito (parte alta).",
+          "power_sensor": "Potencia que consume la resistencia en este momento.",
+          "energy_sensor": "Energía acumulada de la resistencia (total o total creciente)."
+        }
+      },
       "optional": {
         "title": "Entradas opcionales",
         "description": "Estas entradas mejoran el plan. Todas se pueden cambiar después en las opciones.",
@@ -41,7 +55,8 @@
       "invalid_state_class": "El sensor de energía debe tener la clase de estado 'total' o 'total_increasing'."
     },
     "abort": {
-      "already_configured": "Este termo ya está configurado."
+      "already_configured": "Este termo ya está configurado.",
+      "reconfigure_successful": "Se han actualizado los sensores del termo."
     }
   },
   "options": {

@@ -97,9 +97,8 @@ def _number_selector(
     )
 
 
-REQUIRED_SENSORS_SCHEMA = vol.Schema(
+RECONFIGURE_SCHEMA = vol.Schema(
     {
-        vol.Required(CONF_NAME, default=DEFAULT_NAME): TextSelector(),
         vol.Required(CONF_TEMPERATURE_SENSOR): _sensor_selector(
             SensorDeviceClass.TEMPERATURE
         ),
@@ -107,6 +106,10 @@ REQUIRED_SENSORS_SCHEMA = vol.Schema(
         vol.Required(CONF_ENERGY_SENSOR): _sensor_selector(SensorDeviceClass.ENERGY),
     }
 )
+
+REQUIRED_SENSORS_SCHEMA = vol.Schema(
+    {vol.Required(CONF_NAME, default=DEFAULT_NAME): TextSelector()}
+).extend(RECONFIGURE_SCHEMA.schema)
 
 OPTIONAL_SENSORS_SCHEMA = vol.Schema(
     {
@@ -261,6 +264,32 @@ class TankWiseConfigFlow(ConfigFlow, domain=DOMAIN):
             step_id="user",
             data_schema=self.add_suggested_values_to_schema(
                 REQUIRED_SENSORS_SCHEMA, user_input
+            ),
+            errors=errors,
+        )
+
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Change the required sensors of an existing entry."""
+        entry = self._get_reconfigure_entry()
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            new_unique_id = user_input[CONF_TEMPERATURE_SENSOR]
+            if new_unique_id != entry.unique_id:
+                await self.async_set_unique_id(new_unique_id)
+                self._abort_if_unique_id_configured()
+            errors = _validate_required_sensors(self.hass, user_input)
+            if not errors:
+                return self.async_update_reload_and_abort(
+                    entry, unique_id=new_unique_id, data_updates=user_input
+                )
+
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=self.add_suggested_values_to_schema(
+                RECONFIGURE_SCHEMA,
+                user_input if user_input is not None else entry.data,
             ),
             errors=errors,
         )
