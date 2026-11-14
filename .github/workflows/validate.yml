@@ -26,5 +26,5 @@ jobs:
       - uses: hacs/action@main
         with:
           category: integration
-          # Topics, description and brands are set once the public repository exists.
-          ignore: brands topics description
+          # Topics and description are set once the public repository exists.
+          ignore: topics description
