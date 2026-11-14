@@ -77,6 +77,23 @@ Las tablas de temperatura del agua de red (Islas Baleares, Península genérica
 e Islas Canarias) son medias mensuales aproximadas a partir de las tablas de
 referencia españolas para el dimensionado de agua caliente sanitaria.
 
+## Desarrollo
+
+```bash
+pip install -r requirements_test.txt
+pytest
+```
+
+Los modelos de `custom_components/tankwise/model/` son Python puro y no
+importan Home Assistant. El entorno de pruebas de Home Assistant no funciona en
+Windows, así que en Windows ejecuta solo los tests del modelo:
+
+```bash
+pytest tests/model -p no:homeassistant
+```
+
+La batería completa se ejecuta en GitHub Actions.
+
 ## Licencia
 
 [MIT](LICENSE)

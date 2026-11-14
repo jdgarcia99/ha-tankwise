@@ -76,6 +76,23 @@ The mains water temperature tables (Balearic Islands, generic mainland Spain,
 Canary Islands) are monthly averages approximated from the Spanish reference
 tables for domestic hot water sizing.
 
+## Development
+
+```bash
+pip install -r requirements_test.txt
+pytest
+```
+
+The models in `custom_components/tankwise/model/` are pure Python and do not
+import Home Assistant. Home Assistant's test harness does not run on Windows,
+so on Windows run only the model tests:
+
+```bash
+pytest tests/model -p no:homeassistant
+```
+
+The full suite runs in GitHub Actions.
+
 ## License
 
 [MIT](LICENSE)
