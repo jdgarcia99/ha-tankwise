@@ -1,0 +1,12 @@
+{
+  "domain": "tankwise",
+  "name": "TankWise",
+  "codeowners": ["@jdgarcia99"],
+  "config_flow": true,
+  "documentation": "https://github.com/jdgarcia99/ha-tankwise",
+  "integration_type": "service",
+  "iot_class": "calculated",
+  "issue_tracker": "https://github.com/jdgarcia99/ha-tankwise/issues",
+  "requirements": [],
+  "version": "0.1.0"
+}
