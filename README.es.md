@@ -100,6 +100,30 @@ Si un sensor obligatorio deja de estar disponible, el modelo se congela y las
 entidades pasan a no disponibles hasta que se recupere; no se inventan
 consumos.
 
+## Contrato de salida
+
+Estas son las entidades que deben usar otras integraciones (por ejemplo,
+SolarSplit) y las automatizaciones para cubrir la demanda del termo. Se crean
+en la fase 4 y forman un contrato estable y documentado: su significado y sus
+unidades no cambiarán sin una versión mayor.
+
+| Entidad | Tipo | Significado |
+|---------|------|-------------|
+| Energía necesaria | `sensor`, kWh | Energía que debe entrar en el termo antes del plazo |
+| Plazo | `sensor`, marca de tiempo | Plazo del siguiente objetivo |
+| Red permitida | `binary_sensor` | Si en este momento se permite calentar con red según el plan |
+| Potencia pedida | `sensor`, W | Potencia pedida ahora (`0` = solo excedente) |
+| Urgencia | `sensor`, enum | `none`, `planned` o `urgent` |
+
+TankWise dispara además un evento `tankwise_plan_updated` con el plan completo
+cada vez que cambia.
+
+Los `entity_id` **no** son fijos: salen del nombre que le des a la instancia
+de TankWise (por ejemplo, `sensor.<nombre>_energy_needed`) y se pueden
+renombrar en Home Assistant. Quien los use debe dejar que el usuario elija
+estas entidades (como hace SolarSplit en su config flow) en lugar de escribir
+los `entity_id` a mano.
+
 ## Cómo funciona el modelo del depósito
 
 - La sonda se filtra (mediana + media móvil) para que su oscilación de ±1 °C

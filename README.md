@@ -97,6 +97,29 @@ recent hot water draws are available in the integration diagnostics.
 If a required sensor becomes unavailable, the model freezes and the entities
 become unavailable until it recovers; no draws are invented.
 
+## Output contract
+
+These are the entities other integrations (for example SolarSplit) and
+automations should use to fulfil the tank's demand. They are created in
+phase 4 and form a stable, documented contract: their meaning and units will
+not change without a major version.
+
+| Entity | Type | Meaning |
+|--------|------|---------|
+| Energy needed | `sensor`, kWh | Energy that must enter the tank before the deadline |
+| Deadline | `sensor`, timestamp | Deadline of the next target |
+| Grid allowed | `binary_sensor` | Whether heating from the grid is allowed right now according to the plan |
+| Requested power | `sensor`, W | Power requested now (`0` = surplus only) |
+| Urgency | `sensor`, enum | `none`, `planned` or `urgent` |
+
+TankWise also fires a `tankwise_plan_updated` event with the full plan every
+time it changes.
+
+Entity IDs are **not** fixed: they derive from the name you give the
+TankWise instance (for example `sensor.<name>_energy_needed`) and can be
+renamed in Home Assistant. Consumers must let the user pick these entities
+(as SolarSplit does in its config flow) instead of hard-coding entity IDs.
+
 ## How the tank model works
 
 - The probe is filtered (median + moving average) so its ±1 °C jitter looks
