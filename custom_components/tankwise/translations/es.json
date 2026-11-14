@@ -38,14 +38,16 @@
           "surplus_sensor": "Excedente solar actual",
           "price_sensor": "Precio de la electricidad",
           "presence_entity": "Casa activada / presencia",
-          "bottom_temperature_sensor": "Temperatura de la parte baja del termo"
+          "bottom_temperature_sensor": "Temperatura de la parte baja del termo",
+          "regulator_sensor": "Salida del regulador (%)"
         },
         "data_description": {
           "solar_forecast_sensor": "Sensor de previsión de energía de Forecast.Solar o Solcast. El planificador usará la curva horaria en una versión posterior.",
           "surplus_sensor": "Potencia disponible como excedente en este momento.",
           "price_sensor": "Sensor de precio de la electricidad (por ejemplo, PVPC).",
           "presence_entity": "Si está apagado, TankWise pasa a modo vacaciones (sin calentar con red).",
-          "bottom_temperature_sensor": "Segunda sonda en la parte baja del depósito, si existe."
+          "bottom_temperature_sensor": "Segunda sonda en la parte baja del depósito, si existe.",
+          "regulator_sensor": "Salida del regulador de potencia que gobierna la resistencia (por ejemplo, la salida PWM de un derivador de excedentes). Es el criterio principal para detectar el depósito lleno."
         }
       }
     },
@@ -68,16 +70,20 @@
           "rated_power": "Potencia nominal de la resistencia",
           "water_region": "Zona del agua de red",
           "mains_water_temperature": "Temperatura del agua de red (manual)",
-          "min_useful_temperature": "Temperatura útil mínima",
+          "min_useful_temperature": "Temperatura mínima útil (medida en la sonda)",
           "cutoff_power_threshold": "Umbral de potencia de corte del termostato",
+          "cutoff_temperature": "Temperatura de corte del termostato (valor inicial)",
+          "shower_energy": "Energía por ducha",
           "comfort_level": "Nivel de confort"
         },
         "data_description": {
           "water_region": "Se usa para estimar la temperatura del agua de red de cada mes.",
           "mains_water_temperature": "Déjalo vacío para usar el valor mensual de la zona seleccionada.",
-          "min_useful_temperature": "El agua por debajo de esta temperatura no se considera agua caliente útil.",
+          "min_useful_temperature": "Por debajo de esta temperatura en la sonda no hay agua caliente aprovechable (por ejemplo, no hay agua para ducharse). La sonda suele marcar menos que la salida.",
           "cutoff_power_threshold": "Si tras calentar la potencia baja de este valor, se considera que el termostato ha cortado (depósito lleno).",
-          "comfort_level": "Percentil de la demanda aprendida que debe cubrir el plan."
+          "comfort_level": "Percentil de la demanda aprendida que debe cubrir el plan.",
+          "cutoff_temperature": "Temperatura de la sonda cuando corta el termostato (depósito lleno). Después se aprende de los cortes confirmados.",
+          "shower_energy": "Se usa para las «duchas disponibles» hasta que el modelo de uso la aprenda."
         }
       },
       "sensors": {
@@ -87,11 +93,13 @@
           "surplus_sensor": "Excedente solar actual",
           "price_sensor": "Precio de la electricidad",
           "presence_entity": "Casa activada / presencia",
-          "bottom_temperature_sensor": "Temperatura de la parte baja del termo"
+          "bottom_temperature_sensor": "Temperatura de la parte baja del termo",
+          "regulator_sensor": "Salida del regulador (%)"
         },
         "data_description": {
           "solar_forecast_sensor": "Sensor de previsión de energía de Forecast.Solar o Solcast. El planificador usará la curva horaria en una versión posterior.",
-          "presence_entity": "Si está apagado, TankWise pasa a modo vacaciones (sin calentar con red)."
+          "presence_entity": "Si está apagado, TankWise pasa a modo vacaciones (sin calentar con red).",
+          "regulator_sensor": "Salida del regulador de potencia que gobierna la resistencia (por ejemplo, la salida PWM de un derivador de excedentes). Es el criterio principal para detectar el depósito lleno."
         }
       }
     },
@@ -113,6 +121,27 @@
         "p80": "P80 (económico)",
         "p90": "P90 (equilibrado)",
         "p95": "P95 (máximo confort)"
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "useful_energy": {
+        "name": "Energía útil"
+      },
+      "charge": {
+        "name": "Carga"
+      },
+      "showers_available": {
+        "name": "Duchas disponibles"
+      },
+      "model_status": {
+        "name": "Estado del modelo",
+        "state": {
+          "calibrated": "Calibrado",
+          "uncertain": "Incierto",
+          "learning": "Aprendiendo"
+        }
       }
     }
   }

@@ -38,14 +38,16 @@
           "surplus_sensor": "Current solar surplus",
           "price_sensor": "Electricity price",
           "presence_entity": "Home active / presence",
-          "bottom_temperature_sensor": "Tank bottom temperature"
+          "bottom_temperature_sensor": "Tank bottom temperature",
+          "regulator_sensor": "Regulator output (%)"
         },
         "data_description": {
           "solar_forecast_sensor": "Forecast.Solar or Solcast energy forecast sensor. The hourly curve will be used by the planner in a later version.",
           "surplus_sensor": "Power available as surplus right now.",
           "price_sensor": "Electricity price sensor (e.g. PVPC).",
           "presence_entity": "When off, TankWise switches to holiday mode (no grid heating).",
-          "bottom_temperature_sensor": "Second probe in the lower part of the tank, if available."
+          "bottom_temperature_sensor": "Second probe in the lower part of the tank, if available.",
+          "regulator_sensor": "Output of the power regulator that drives the heating element (e.g. the PWM output of a solar diverter). It is the main criterion to detect a full tank."
         }
       }
     },
@@ -68,16 +70,20 @@
           "rated_power": "Rated heating power",
           "water_region": "Mains water region",
           "mains_water_temperature": "Mains water temperature (override)",
-          "min_useful_temperature": "Minimum useful temperature",
+          "min_useful_temperature": "Minimum useful temperature (measured at the probe)",
           "cutoff_power_threshold": "Thermostat cut-off power threshold",
+          "cutoff_temperature": "Thermostat cut-off temperature (initial value)",
+          "shower_energy": "Energy per shower",
           "comfort_level": "Comfort level"
         },
         "data_description": {
           "water_region": "Used to estimate the mains water temperature for each month.",
           "mains_water_temperature": "Leave empty to use the monthly value for the selected region.",
-          "min_useful_temperature": "Water below this temperature is not considered useful hot water.",
+          "min_useful_temperature": "Below this probe temperature there is no usable hot water (e.g. no water for a shower). The probe usually reads lower than the outlet.",
           "cutoff_power_threshold": "Below this power after heating, the thermostat is considered to have cut off (tank full).",
-          "comfort_level": "Percentile of the learned demand the plan must cover."
+          "comfort_level": "Percentile of the learned demand the plan must cover.",
+          "cutoff_temperature": "Probe temperature when the thermostat cuts off (tank full). It is then learned from the confirmed cut-offs.",
+          "shower_energy": "Used for 'showers available' until the usage model learns it."
         }
       },
       "sensors": {
@@ -87,11 +93,13 @@
           "surplus_sensor": "Current solar surplus",
           "price_sensor": "Electricity price",
           "presence_entity": "Home active / presence",
-          "bottom_temperature_sensor": "Tank bottom temperature"
+          "bottom_temperature_sensor": "Tank bottom temperature",
+          "regulator_sensor": "Regulator output (%)"
         },
         "data_description": {
           "solar_forecast_sensor": "Forecast.Solar or Solcast energy forecast sensor. The hourly curve will be used by the planner in a later version.",
-          "presence_entity": "When off, TankWise switches to holiday mode (no grid heating)."
+          "presence_entity": "When off, TankWise switches to holiday mode (no grid heating).",
+          "regulator_sensor": "Output of the power regulator that drives the heating element (e.g. the PWM output of a solar diverter). It is the main criterion to detect a full tank."
         }
       }
     },
@@ -113,6 +121,27 @@
         "p80": "P80 (economical)",
         "p90": "P90 (balanced)",
         "p95": "P95 (maximum comfort)"
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "useful_energy": {
+        "name": "Useful energy"
+      },
+      "charge": {
+        "name": "Charge"
+      },
+      "showers_available": {
+        "name": "Showers available"
+      },
+      "model_status": {
+        "name": "Model status",
+        "state": {
+          "calibrated": "Calibrated",
+          "uncertain": "Uncertain",
+          "learning": "Learning"
+        }
       }
     }
   }

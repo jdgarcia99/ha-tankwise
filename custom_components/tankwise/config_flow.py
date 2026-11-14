@@ -7,6 +7,8 @@ from typing import Any
 
 from homeassistant.components.binary_sensor import DOMAIN as BINARY_SENSOR_DOMAIN
 from homeassistant.components.input_boolean import DOMAIN as INPUT_BOOLEAN_DOMAIN
+from homeassistant.components.input_number import DOMAIN as INPUT_NUMBER_DOMAIN
+from homeassistant.components.number import DOMAIN as NUMBER_DOMAIN
 from homeassistant.components.sensor import (
     ATTR_STATE_CLASS,
     DOMAIN as SENSOR_DOMAIN,
@@ -23,6 +25,8 @@ from homeassistant.config_entries import (
 from homeassistant.const import (
     ATTR_UNIT_OF_MEASUREMENT,
     CONF_NAME,
+    PERCENTAGE,
+    UnitOfEnergy,
     UnitOfPower,
     UnitOfTemperature,
     UnitOfVolume,
@@ -51,6 +55,7 @@ from .const import (
     CONF_BOTTOM_TEMPERATURE_SENSOR,
     CONF_COMFORT_LEVEL,
     CONF_CUTOFF_POWER_THRESHOLD,
+    CONF_CUTOFF_TEMPERATURE,
     CONF_ENERGY_SENSOR,
     CONF_MAINS_WATER_TEMPERATURE,
     CONF_MIN_USEFUL_TEMPERATURE,
@@ -58,6 +63,8 @@ from .const import (
     CONF_PRESENCE_ENTITY,
     CONF_PRICE_SENSOR,
     CONF_RATED_POWER,
+    CONF_REGULATOR_SENSOR,
+    CONF_SHOWER_ENERGY,
     CONF_SOLAR_FORECAST_SENSOR,
     CONF_SURPLUS_SENSOR,
     CONF_TEMPERATURE_SENSOR,
@@ -71,6 +78,9 @@ from .const import (
 from .model.water import REGIONS
 
 ENERGY_STATE_CLASSES = (SensorStateClass.TOTAL_INCREASING, SensorStateClass.TOTAL)
+
+# A regulator output is a percentage; some integrations publish it unitless.
+REGULATOR_UNITS: tuple[str | None, ...] = (PERCENTAGE, None)
 
 ERROR_ENTITY_NOT_FOUND = "entity_not_found"
 ERROR_INVALID_UNIT = "invalid_unit"
@@ -128,6 +138,11 @@ OPTIONAL_SENSORS_SCHEMA = vol.Schema(
         vol.Optional(CONF_BOTTOM_TEMPERATURE_SENSOR): _sensor_selector(
             SensorDeviceClass.TEMPERATURE
         ),
+        vol.Optional(CONF_REGULATOR_SENSOR): EntitySelector(
+            EntitySelectorConfig(
+                domain=[SENSOR_DOMAIN, NUMBER_DOMAIN, INPUT_NUMBER_DOMAIN]
+            )
+        ),
     }
 )
 
@@ -152,6 +167,12 @@ PARAMETERS_SCHEMA = vol.Schema(
         ),
         vol.Required(CONF_CUTOFF_POWER_THRESHOLD): _number_selector(
             0, 500, 1, UnitOfPower.WATT
+        ),
+        vol.Required(CONF_CUTOFF_TEMPERATURE): _number_selector(
+            35, 85, 0.5, UnitOfTemperature.CELSIUS
+        ),
+        vol.Required(CONF_SHOWER_ENERGY): _number_selector(
+            0.2, 10, 0.1, UnitOfEnergy.KILO_WATT_HOUR
         ),
         vol.Required(CONF_COMFORT_LEVEL): SelectSelector(
             SelectSelectorConfig(
@@ -206,9 +227,10 @@ def _validate_optional_sensors(
     hass: HomeAssistant, user_input: dict[str, Any]
 ) -> dict[str, str]:
     """Validate units of the optional sensors that are converted."""
-    checks = {
+    checks: dict[str, Collection[str | None]] = {
         CONF_SURPLUS_SENSOR: PowerConverter.VALID_UNITS,
         CONF_BOTTOM_TEMPERATURE_SENSOR: TemperatureConverter.VALID_UNITS,
+        CONF_REGULATOR_SENSOR: REGULATOR_UNITS,
     }
     errors: dict[str, str] = {}
     for key, units in checks.items():
