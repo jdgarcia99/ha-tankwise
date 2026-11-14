@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#EDF1F6"/>
+    </linearGradient>
+    <linearGradient id="water" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3D8BFF"/>
+      <stop offset="1" stop-color="#006FFF"/>
+    </linearGradient>
+    <clipPath id="tankClip">
+      <rect x="170" y="112" width="172" height="300" rx="64"/>
+    </clipPath>
+  </defs>
+  <rect x="8" y="8" width="496" height="496" rx="112" fill="url(#bg)"/>
+  <rect x="8.5" y="8.5" width="495" height="495" rx="111.5" fill="none" stroke="#DCE2EA" stroke-width="1"/>
+  <g transform="translate(-18 0)">
+  <!-- agua dentro del depósito -->
+  <g clip-path="url(#tankClip)">
+    <path d="M150 262 C 190 242, 226 242, 256 262 S 322 282, 362 262 L 362 430 L 150 430 Z" fill="url(#water)"/>
+    <path d="M150 292 C 190 272, 226 272, 256 292 S 322 312, 362 292" fill="none" stroke="#FFFFFF" stroke-opacity="0.35" stroke-width="8" stroke-linecap="round"/>
+  </g>
+  <!-- contorno del depósito -->
+  <rect x="170" y="112" width="172" height="300" rx="64" fill="none" stroke="#006FFF" stroke-width="20"/>
+  <!-- tomas de agua -->
+  <path d="M220 412 v34 M292 412 v34" stroke="#006FFF" stroke-width="20" stroke-linecap="round"/>
+  <!-- sol -->
+  <g transform="translate(362 150)">
+    <circle r="62" fill="#F3F6FA"/>
+    <circle r="26" fill="#006FFF"/>
+    <g stroke="#006FFF" stroke-width="12" stroke-linecap="round">
+      <path d="M0 -42 v-10"/><path d="M0 42 v10"/><path d="M-42 0 h-10"/><path d="M42 0 h10"/>
+      <path d="M-30 -30 l-7 -7"/><path d="M30 -30 l7 -7"/><path d="M-30 30 l-7 7"/><path d="M30 30 l7 7"/>
+    </g>
+  </g>
+</g>
+</svg>

@@ -1,0 +1,92 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640" width="1280" height="640">
+<defs>
+ <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+  <stop offset="0" stop-color="#070D1A"/><stop offset="1" stop-color="#0B2547"/>
+ </linearGradient>
+ <radialGradient id="glow" cx="0.78" cy="0.35" r="0.5">
+  <stop offset="0" stop-color="#006FFF" stop-opacity="0.35"/><stop offset="1" stop-color="#006FFF" stop-opacity="0"/>
+ </radialGradient>
+ <linearGradient id="sunfill" x1="0" y1="0" x2="0" y2="1">
+  <stop offset="0" stop-color="#FFB547" stop-opacity="0.55"/><stop offset="1" stop-color="#FFB547" stop-opacity="0.02"/>
+ </linearGradient>
+ <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+  <path d="M40 0 H0 V40" fill="none" stroke="#FFFFFF" stroke-opacity="0.04" stroke-width="1"/>
+ </pattern>
+</defs>
+<rect width="1280" height="640" fill="url(#bg)"/>
+<rect width="1280" height="640" fill="url(#grid)"/>
+<rect width="1280" height="640" fill="url(#glow)"/>
+
+<g transform="translate(72 78) scale(0.22)">
+  <defs>
+    <linearGradient id="ibg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#EDF1F6"/>
+    </linearGradient>
+    <linearGradient id="iwater" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3D8BFF"/>
+      <stop offset="1" stop-color="#006FFF"/>
+    </linearGradient>
+    <clipPath id="itankClip">
+      <rect x="170" y="112" width="172" height="300" rx="64"/>
+    </clipPath>
+  </defs>
+  <rect x="8" y="8" width="496" height="496" rx="112" fill="url(#ibg)"/>
+  <rect x="8.5" y="8.5" width="495" height="495" rx="111.5" fill="none" stroke="#DCE2EA" stroke-width="1"/>
+  <g transform="translate(-18 0)">
+  <!-- agua dentro del depósito -->
+  <g clip-path="url(#itankClip)">
+    <path d="M150 262 C 190 242, 226 242, 256 262 S 322 282, 362 262 L 362 430 L 150 430 Z" fill="url(#iwater)"/>
+    <path d="M150 292 C 190 272, 226 272, 256 292 S 322 312, 362 292" fill="none" stroke="#FFFFFF" stroke-opacity="0.35" stroke-width="8" stroke-linecap="round"/>
+  </g>
+  <!-- contorno del depósito -->
+  <rect x="170" y="112" width="172" height="300" rx="64" fill="none" stroke="#006FFF" stroke-width="20"/>
+  <!-- tomas de agua -->
+  <path d="M220 412 v34 M292 412 v34" stroke="#006FFF" stroke-width="20" stroke-linecap="round"/>
+  <!-- sol -->
+  <g transform="translate(362 150)">
+    <circle r="62" fill="#F3F6FA"/>
+    <circle r="26" fill="#006FFF"/>
+    <g stroke="#006FFF" stroke-width="12" stroke-linecap="round">
+      <path d="M0 -42 v-10"/><path d="M0 42 v10"/><path d="M-42 0 h-10"/><path d="M42 0 h10"/>
+      <path d="M-30 -30 l-7 -7"/><path d="M30 -30 l7 -7"/><path d="M-30 30 l-7 7"/><path d="M30 30 l7 7"/>
+    </g>
+  </g>
+</g>
+</g>
+<text x="80" y="300" font-family="Inter Display, Inter" font-weight="700" font-size="92" fill="#FFFFFF" letter-spacing="-2">TankWise</text>
+<text x="82" y="352" font-family="Inter" font-size="28" fill="#C9D6EA">Hot water whenever you need it.</text>
+<text x="82" y="390" font-family="Inter" font-size="28" fill="#C9D6EA">Solar first, grid only when it’s cheapest.</text>
+
+<g font-family="Inter" font-size="18" font-weight="600" fill="#DCE8FF">
+ <rect x="80" y="430" width="196" height="44" rx="22" fill="#006FFF" fill-opacity="0.18" stroke="#3D8BFF" stroke-opacity="0.6"/>
+ <text x="178" y="458" text-anchor="middle">Learns your routine</text>
+ <rect x="290" y="430" width="196" height="44" rx="22" fill="#006FFF" fill-opacity="0.18" stroke="#3D8BFF" stroke-opacity="0.6"/>
+ <text x="388" y="458" text-anchor="middle">Plans 36 h ahead</text>
+ <rect x="80" y="486" width="196" height="44" rx="22" fill="#006FFF" fill-opacity="0.18" stroke="#3D8BFF" stroke-opacity="0.6"/>
+ <text x="178" y="514" text-anchor="middle">Solar-first heating</text>
+ <rect x="290" y="486" width="196" height="44" rx="22" fill="#006FFF" fill-opacity="0.18" stroke="#3D8BFF" stroke-opacity="0.6"/>
+ <text x="388" y="514" text-anchor="middle">Home Assistant</text>
+</g>
+
+<!-- panel de plan diario -->
+<rect x="660" y="110" width="580" height="470" rx="28" fill="#FFFFFF" fill-opacity="0.04" stroke="#FFFFFF" stroke-opacity="0.10"/>
+<text x="700" y="160" font-family="Inter" font-size="20" font-weight="600" fill="#FFFFFF">Today’s plan</text>
+<text x="700" y="188" font-family="Inter" font-size="16" fill="#8FA3BF">Hot-water demand vs. solar surplus</text>
+<g transform="translate(1110 128)">
+ <rect x="0" y="0" width="98" height="64" rx="16" fill="#006FFF" fill-opacity="0.22"/>
+ <text x="49" y="30" text-anchor="middle" font-family="Inter Display, Inter" font-weight="700" font-size="24" fill="#FFFFFF">2</text>
+ <text x="49" y="52" text-anchor="middle" font-family="Inter" font-size="13" fill="#C9D6EA">showers ready</text>
+</g>
+<line x1="700" y1="520" x2="1200" y2="520" stroke="#FFFFFF" stroke-opacity="0.15"/>
+<path d="M700.0 520.0 L705.2 520.0 L710.4 520.0 L715.6 520.0 L720.8 520.0 L726.0 520.0 L731.2 520.0 L736.5 520.0 L741.7 520.0 L746.9 520.0 L752.1 520.0 L757.3 520.0 L762.5 520.0 L767.7 520.0 L772.9 520.0 L778.1 520.0 L783.3 520.0 L788.5 520.0 L793.8 520.0 L799.0 520.0 L804.2 520.0 L809.4 520.0 L814.6 520.0 L819.8 520.0 L825.0 520.0 L830.2 520.0 L835.4 520.0 L840.6 520.0 L845.8 520.0 L851.0 520.0 L856.2 520.0 L861.5 520.0 L866.7 520.0 L871.9 501.0 L877.1 482.1 L882.3 463.5 L887.5 445.3 L892.7 427.6 L897.9 410.5 L903.1 394.2 L908.3 378.7 L913.5 364.2 L918.8 350.8 L924.0 338.5 L929.2 327.5 L934.4 317.7 L939.6 309.4 L944.8 302.5 L950.0 297.0 L955.2 293.1 L960.4 290.8 L965.6 290.0 L970.8 290.8 L976.0 293.1 L981.2 297.0 L986.5 302.5 L991.7 309.4 L996.9 317.7 L1002.1 327.5 L1007.3 338.5 L1012.5 350.8 L1017.7 364.2 L1022.9 378.7 L1028.1 394.2 L1033.3 410.5 L1038.5 427.6 L1043.8 445.3 L1049.0 463.5 L1054.2 482.1 L1059.4 501.0 L1064.6 520.0 L1069.8 520.0 L1075.0 520.0 L1080.2 520.0 L1085.4 520.0 L1090.6 520.0 L1095.8 520.0 L1101.0 520.0 L1106.2 520.0 L1111.5 520.0 L1116.7 520.0 L1121.9 520.0 L1127.1 520.0 L1132.3 520.0 L1137.5 520.0 L1142.7 520.0 L1147.9 520.0 L1153.1 520.0 L1158.3 520.0 L1163.5 520.0 L1168.8 520.0 L1174.0 520.0 L1179.2 520.0 L1184.4 520.0 L1189.6 520.0 L1194.8 520.0 L1200.0 520.0 L1200.0 520.0 L700.0 520.0 Z" fill="url(#sunfill)"/>
+<path d="M700.0 520.0 L705.2 520.0 L710.4 520.0 L715.6 520.0 L720.8 520.0 L726.0 520.0 L731.2 520.0 L736.5 520.0 L741.7 520.0 L746.9 520.0 L752.1 520.0 L757.3 520.0 L762.5 520.0 L767.7 520.0 L772.9 520.0 L778.1 520.0 L783.3 520.0 L788.5 520.0 L793.8 520.0 L799.0 520.0 L804.2 520.0 L809.4 520.0 L814.6 520.0 L819.8 520.0 L825.0 520.0 L830.2 520.0 L835.4 520.0 L840.6 520.0 L845.8 520.0 L851.0 520.0 L856.2 520.0 L861.5 520.0 L866.7 520.0 L871.9 501.0 L877.1 482.1 L882.3 463.5 L887.5 445.3 L892.7 427.6 L897.9 410.5 L903.1 394.2 L908.3 378.7 L913.5 364.2 L918.8 350.8 L924.0 338.5 L929.2 327.5 L934.4 317.7 L939.6 309.4 L944.8 302.5 L950.0 297.0 L955.2 293.1 L960.4 290.8 L965.6 290.0 L970.8 290.8 L976.0 293.1 L981.2 297.0 L986.5 302.5 L991.7 309.4 L996.9 317.7 L1002.1 327.5 L1007.3 338.5 L1012.5 350.8 L1017.7 364.2 L1022.9 378.7 L1028.1 394.2 L1033.3 410.5 L1038.5 427.6 L1043.8 445.3 L1049.0 463.5 L1054.2 482.1 L1059.4 501.0 L1064.6 520.0 L1069.8 520.0 L1075.0 520.0 L1080.2 520.0 L1085.4 520.0 L1090.6 520.0 L1095.8 520.0 L1101.0 520.0 L1106.2 520.0 L1111.5 520.0 L1116.7 520.0 L1121.9 520.0 L1127.1 520.0 L1132.3 520.0 L1137.5 520.0 L1142.7 520.0 L1147.9 520.0 L1153.1 520.0 L1158.3 520.0 L1163.5 520.0 L1168.8 520.0 L1174.0 520.0 L1179.2 520.0 L1184.4 520.0 L1189.6 520.0 L1194.8 520.0 L1200.0 520.0" fill="none" stroke="#FFB547" stroke-width="3" stroke-linejoin="round"/>
+<rect x="818.0" y="456.0" width="14" height="64.0" rx="7" fill="#3D8BFF"/><rect x="870.1" y="408.0" width="14" height="112.0" rx="7" fill="#3D8BFF"/><rect x="1052.4" y="368.0" width="14" height="152.0" rx="7" fill="#3D8BFF"/><rect x="1088.8" y="384.0" width="14" height="136.0" rx="7" fill="#3D8BFF"/><rect x="1140.9" y="432.0" width="14" height="88.0" rx="7" fill="#3D8BFF"/>
+<rect x="793.8" y="534" width="20.8" height="8" rx="4" fill="#7FB2FF" fill-opacity="0.55"/><rect x="814.6" y="534" width="20.8" height="8" rx="4" fill="#7FB2FF" fill-opacity="0.55"/>
+<text x="700.0" y="568" text-anchor="middle" font-family="Inter" font-size="16" fill="#8FA3BF">00:00</text><text x="825.0" y="568" text-anchor="middle" font-family="Inter" font-size="16" fill="#8FA3BF">06:00</text><text x="950.0" y="568" text-anchor="middle" font-family="Inter" font-size="16" fill="#8FA3BF">12:00</text><text x="1075.0" y="568" text-anchor="middle" font-family="Inter" font-size="16" fill="#8FA3BF">18:00</text><text x="1200.0" y="568" text-anchor="middle" font-family="Inter" font-size="16" fill="#8FA3BF">24:00</text>
+<g font-family="Inter" font-size="15" fill="#C9D6EA">
+ <circle cx="712" cy="240" r="6" fill="#FFB547"/><text x="726" y="245">Solar surplus</text>
+ <rect x="846" y="234" width="12" height="12" rx="6" fill="#3D8BFF"/><text x="866" y="245">Expected showers</text>
+ <rect x="1010" y="236" width="22" height="8" rx="4" fill="#7FB2FF" fill-opacity="0.8"/><text x="1040" y="245">Off-peak top-up</text>
+</g>
+</svg>

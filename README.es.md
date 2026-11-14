@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="images/banner.png" alt="TankWise" width="100%">
+</p>
+
 # TankWise
 
 [![Validate](https://github.com/jdgarcia99/ha-tankwise/actions/workflows/validate.yml/badge.svg)](https://github.com/jdgarcia99/ha-tankwise/actions/workflows/validate.yml)
