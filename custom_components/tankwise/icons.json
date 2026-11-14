@@ -1,0 +1,22 @@
+{
+  "entity": {
+    "sensor": {
+      "useful_energy": {
+        "default": "mdi:water-boiler"
+      },
+      "charge": {
+        "default": "mdi:water-percent"
+      },
+      "showers_available": {
+        "default": "mdi:shower-head"
+      },
+      "model_status": {
+        "default": "mdi:check-circle-outline",
+        "state": {
+          "uncertain": "mdi:help-circle-outline",
+          "learning": "mdi:school-outline"
+        }
+      }
+    }
+  }
+}

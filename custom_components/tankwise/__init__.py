@@ -6,8 +6,9 @@ from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 
 from .coordinator import TankWiseConfigEntry, TankWiseCoordinator
+from .storage import TankWiseStore
 
-PLATFORMS: list[Platform] = []
+PLATFORMS: list[Platform] = [Platform.SENSOR]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: TankWiseConfigEntry) -> bool:
@@ -25,5 +26,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: TankWiseConfigEntry) -> 
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: TankWiseConfigEntry) -> bool:
-    """Unload a config entry."""
-    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    """Unload a config entry, saving the model state."""
+    unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    if unloaded:
+        await entry.runtime_data.async_save_now()
+    return unloaded
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: TankWiseConfigEntry) -> None:
+    """Delete the persisted state when the integration is removed."""
+    await TankWiseStore(hass, entry.entry_id).async_remove()
