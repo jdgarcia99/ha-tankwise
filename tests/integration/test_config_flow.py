@@ -33,6 +33,7 @@ from custom_components.tankwise.const import (
 from .conftest import (
     BOTTOM,
     ENERGY,
+    POWER,
     PRESENCE,
     PRICE,
     REQUIRED_INPUT,
@@ -263,3 +264,114 @@ async def test_options_flow_invalid_optional_sensor(
     )
     assert result["type"] is FlowResultType.FORM
     assert result["errors"] == {CONF_BOTTOM_TEMPERATURE_SENSOR: "invalid_unit"}
+
+
+NEW_TEMPERATURE = "sensor.new_tank_temperature"
+NEW_ENERGY = "sensor.new_heater_energy"
+RECONFIGURE_INPUT = {
+    CONF_TEMPERATURE_SENSOR: NEW_TEMPERATURE,
+    CONF_POWER_SENSOR: POWER,
+    CONF_ENERGY_SENSOR: NEW_ENERGY,
+}
+
+
+def _set_new_sensor_states(
+    hass: HomeAssistant, energy_state_class: str = "total_increasing"
+) -> None:
+    hass.states.async_set(NEW_TEMPERATURE, "44", {"unit_of_measurement": "°C"})
+    hass.states.async_set(
+        NEW_ENERGY,
+        "10",
+        {"unit_of_measurement": "kWh", "state_class": energy_state_class},
+    )
+
+
+async def test_reconfigure(
+    hass: HomeAssistant, mock_entry: MockConfigEntry, mock_setup_entry: AsyncMock
+) -> None:
+    """The required sensors can be changed; name and options are kept."""
+    mock_entry.add_to_hass(hass)
+    options_before = dict(mock_entry.options)
+    set_input_states(hass)
+    _set_new_sensor_states(hass)
+
+    result = await mock_entry.start_reconfigure_flow(hass)
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "reconfigure"
+
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], RECONFIGURE_INPUT
+    )
+    await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "reconfigure_successful"
+    assert mock_entry.data == {**REQUIRED_INPUT, **RECONFIGURE_INPUT}
+    assert mock_entry.unique_id == NEW_TEMPERATURE
+    assert mock_entry.options == options_before
+
+
+async def test_reconfigure_same_temperature_sensor(
+    hass: HomeAssistant, mock_entry: MockConfigEntry, mock_setup_entry: AsyncMock
+) -> None:
+    """Keeping the temperature sensor does not abort as already configured."""
+    mock_entry.add_to_hass(hass)
+    set_input_states(hass)
+    _set_new_sensor_states(hass)
+
+    result = await mock_entry.start_reconfigure_flow(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {**RECONFIGURE_INPUT, CONF_TEMPERATURE_SENSOR: TEMPERATURE},
+    )
+    await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "reconfigure_successful"
+    assert mock_entry.unique_id == TEMPERATURE
+    assert mock_entry.data[CONF_ENERGY_SENSOR] == NEW_ENERGY
+
+
+async def test_reconfigure_invalid_sensor(
+    hass: HomeAssistant, mock_entry: MockConfigEntry, mock_setup_entry: AsyncMock
+) -> None:
+    """Reconfigure applies the same validation as the user step."""
+    mock_entry.add_to_hass(hass)
+    set_input_states(hass)
+    _set_new_sensor_states(hass, energy_state_class="measurement")
+
+    result = await mock_entry.start_reconfigure_flow(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], RECONFIGURE_INPUT
+    )
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {CONF_ENERGY_SENSOR: "invalid_state_class"}
+
+    _set_new_sensor_states(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], RECONFIGURE_INPUT
+    )
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "reconfigure_successful"
+
+
+async def test_reconfigure_to_sensor_of_other_entry(
+    hass: HomeAssistant, mock_entry: MockConfigEntry, mock_setup_entry: AsyncMock
+) -> None:
+    """A temperature sensor used by another tank is rejected."""
+    mock_entry.add_to_hass(hass)
+    MockConfigEntry(
+        domain=DOMAIN,
+        unique_id=NEW_TEMPERATURE,
+        data={**REQUIRED_INPUT, CONF_TEMPERATURE_SENSOR: NEW_TEMPERATURE},
+    ).add_to_hass(hass)
+    set_input_states(hass)
+    _set_new_sensor_states(hass)
+
+    result = await mock_entry.start_reconfigure_flow(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], RECONFIGURE_INPUT
+    )
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "already_configured"
+    assert mock_entry.data == REQUIRED_INPUT
