@@ -20,14 +20,14 @@ integration or your own automations decide how to fulfil it.
 
 ## Project status
 
-> **Early development (0.1.0, phase 1).** The integration can be installed and
-> configured, and it reads the tank sensors every 60 seconds. It does **not**
-> create any entities yet.
+> **Early development (0.1.0, phase 2).** TankWise models the tank and
+> publishes its state of charge. Usage learning and the heating plan (the
+> output for other integrations) are not available yet.
 
 | Phase | Content | Status |
 |-------|---------|--------|
 | 1 | Skeleton, config flow, sensor reading | ✅ Done |
-| 2 | Tank model (state of charge, recalibration, loss learning) | Planned |
+| 2 | Tank model (state of charge, recalibration, loss learning) | ✅ Done |
 | 3 | Usage detection and learned profile | Planned |
 | 4 | Planner and output contract | Planned |
 | 5 | Boost button, comfort selector, holiday mode, diagnostics | Planned |
@@ -59,6 +59,10 @@ Everything is configured from the UI; nothing goes into `configuration.yaml`.
 - Electricity price (e.g. PVPC).
 - Presence / "home active" switch: when off, TankWise enters holiday mode.
 - Bottom tank temperature probe.
+- Regulator output (%): output of the regulator that drives the heating
+  element, e.g. the PWM output of a solar diverter. When available, it is the
+  main criterion to detect a full tank (the regulator asks for power, the
+  element draws none: the thermostat is open).
 
 **Options (tank parameters)**
 
@@ -68,13 +72,47 @@ Everything is configured from the UI; nothing goes into `configuration.yaml`.
 | Rated heating power | 1450 W |
 | Mains water region | Balearic Islands |
 | Mains water temperature | Monthly value of the region (optional override) |
-| Minimum useful temperature | 38 °C |
+| Minimum useful temperature (measured at the probe) | 32 °C |
 | Thermostat cut-off power threshold | 50 W |
+| Thermostat cut-off temperature (initial value, then learned) | 47 °C |
+| Energy per shower | 1.8 kWh |
 | Comfort level | P90 |
 
 The mains water temperature tables (Balearic Islands, generic mainland Spain,
 Canary Islands) are monthly averages approximated from the Spanish reference
 tables for domestic hot water sizing.
+
+## Entities
+
+| Entity | Description |
+|--------|-------------|
+| Useful energy | kWh stored above the minimum useful temperature |
+| Charge | Useful energy as a percentage of a full tank |
+| Showers available | Useful energy divided by the energy per shower |
+| Model status | `calibrated`, `learning` (heat losses still being learned) or `uncertain` (not recalibrated since start-up or since a long outage) |
+
+The learned heat loss coefficient, the learned cut-off temperature and the
+recent hot water draws are available in the integration diagnostics.
+
+If a required sensor becomes unavailable, the model freezes and the entities
+become unavailable until it recovers; no draws are invented.
+
+## How the tank model works
+
+- The probe is filtered (median + moving average) so its ±1 °C jitter looks
+  neither like a draw nor like heating. Heating is only taken from the heating
+  element energy meter, never from the probe.
+- The state of charge follows an energy balance: heater energy in, standing
+  losses (learned slowly during quiet periods, starting at 0.25 °C/h) and
+  detected draws out.
+- A draw is a sustained drop of the filtered probe, also while heating.
+- The tank is recalibrated to "full" when the thermostat cuts off: with a
+  regulator sensor, when the regulator asks for power for 3 minutes after
+  heating and the element draws none; without it, when heating stops close to
+  the cut-off temperature.
+- The state is saved and restored across restarts. Heat added while Home
+  Assistant was down is taken from the energy meter; after an outage longer
+  than 30 minutes the state is marked uncertain until the next full tank.
 
 ## Development
 

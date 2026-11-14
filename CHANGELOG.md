@@ -25,6 +25,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Coordinator that reads and normalises the input sensors every 60 seconds and
   tolerates `unavailable`/`unknown` states.
 - English and Spanish translations.
+- Tank thermal model (pure Python): filtered probe, energy balance with the
+  heating element energy meter, draw detection (also while heating),
+  recalibration to full on thermostat cut-off (regulator output as main
+  criterion, cut-off temperature as backup), learned cut-off temperature and
+  slowly learned standing losses.
+- Optional regulator output (%) sensor, thermostat cut-off temperature and
+  energy per shower options. The minimum useful temperature is now measured
+  at the probe and defaults to 32 °C.
+- Sensors: useful energy, charge, showers available and model status.
+- Model state persisted across restarts; long outages mark it as uncertain.
+- Safe mode: if a required sensor is missing the model freezes and the
+  sensors become unavailable.
+- Diagnostics with the loss coefficient, the learned cut-off temperature and
+  the recent draws.
 
 ### Notes
 

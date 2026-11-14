@@ -20,14 +20,15 @@ o tus propias automatizaciones deciden cómo cubrirla.
 
 ## Estado del proyecto
 
-> **Desarrollo inicial (0.1.0, fase 1).** La integración se puede instalar y
-> configurar, y lee los sensores del termo cada 60 segundos. **Todavía no**
-> crea ninguna entidad.
+> **Desarrollo inicial (0.1.0, fase 2).** TankWise modela el depósito y
+> publica su estado de carga. El aprendizaje del uso y el plan de
+> calentamiento (la salida para otras integraciones) todavía no están
+> disponibles.
 
 | Fase | Contenido | Estado |
 |------|-----------|--------|
 | 1 | Esqueleto, config flow, lectura de sensores | ✅ Hecha |
-| 2 | Modelo del depósito (estado de carga, recalibración, aprendizaje de pérdidas) | Pendiente |
+| 2 | Modelo del depósito (estado de carga, recalibración, aprendizaje de pérdidas) | ✅ Hecha |
 | 3 | Detección de consumos y perfil aprendido | Pendiente |
 | 4 | Planificador y contrato de salida | Pendiente |
 | 5 | Botón de refuerzo, selector de confort, modo vacaciones, diagnósticos | Pendiente |
@@ -60,6 +61,10 @@ Todo se configura desde la interfaz; no hay nada en `configuration.yaml`.
 - Interruptor de presencia o «casa activada»: si está apagado, TankWise pasa a
   modo vacaciones.
 - Sonda de temperatura de la parte baja del termo.
+- Salida del regulador (%): salida del regulador que gobierna la resistencia,
+  por ejemplo la salida PWM de un derivador de excedentes. Si existe, es el
+  criterio principal para detectar el depósito lleno (el regulador pide
+  potencia y la resistencia no consume: el termostato está abierto).
 
 **Opciones (parámetros del termo)**
 
@@ -69,13 +74,50 @@ Todo se configura desde la interfaz; no hay nada en `configuration.yaml`.
 | Potencia nominal | 1450 W |
 | Zona del agua de red | Islas Baleares |
 | Temperatura del agua de red | Valor mensual de la zona (se puede fijar a mano) |
-| Temperatura útil mínima | 38 °C |
+| Temperatura mínima útil (medida en la sonda) | 32 °C |
 | Umbral de potencia de corte del termostato | 50 W |
+| Temperatura de corte del termostato (valor inicial, después se aprende) | 47 °C |
+| Energía por ducha | 1,8 kWh |
 | Nivel de confort | P90 |
 
 Las tablas de temperatura del agua de red (Islas Baleares, Península genérica
 e Islas Canarias) son medias mensuales aproximadas a partir de las tablas de
 referencia españolas para el dimensionado de agua caliente sanitaria.
+
+## Entidades
+
+| Entidad | Descripción |
+|---------|-------------|
+| Energía útil | kWh almacenados por encima de la temperatura mínima útil |
+| Carga | Energía útil en porcentaje del depósito lleno |
+| Duchas disponibles | Energía útil dividida entre la energía por ducha |
+| Estado del modelo | `calibrated` (calibrado), `learning` (aún aprendiendo las pérdidas) o `uncertain` (incierto: sin recalibrar desde el arranque o tras una interrupción larga) |
+
+El coeficiente de pérdidas aprendido, la temperatura de corte aprendida y los
+últimos consumos detectados están en los diagnósticos de la integración.
+
+Si un sensor obligatorio deja de estar disponible, el modelo se congela y las
+entidades pasan a no disponibles hasta que se recupere; no se inventan
+consumos.
+
+## Cómo funciona el modelo del depósito
+
+- La sonda se filtra (mediana + media móvil) para que su oscilación de ±1 °C
+  no parezca ni un consumo ni un calentamiento. El calentamiento solo se toma
+  del contador de energía de la resistencia, nunca de la sonda.
+- El estado de carga sigue un balance de energía: entra la energía de la
+  resistencia y salen las pérdidas en reposo (que se aprenden despacio en los
+  periodos tranquilos, empezando en 0,25 °C/h) y los consumos detectados.
+- Un consumo es una caída sostenida de la sonda filtrada, también mientras
+  calienta.
+- El depósito se recalibra a «lleno» cuando corta el termostato: con sensor de
+  regulador, cuando tras calentar el regulador pide potencia durante 3 minutos
+  y la resistencia no consume; sin él, cuando el calentamiento se para cerca
+  de la temperatura de corte.
+- El estado se guarda y se restaura tras los reinicios. El calor que entró con
+  Home Assistant parado se toma del contador de energía; tras una interrupción
+  de más de 30 minutos el estado se marca como incierto hasta el siguiente
+  llenado.
 
 ## Desarrollo
 
