@@ -1,9 +1,10 @@
 """Data update coordinator for TankWise.
 
-Phase 1: read and normalise the configured input sensors every 60 s. A sensor
-that is ``unavailable``/``unknown`` (or not numeric) is reported as ``None``;
-the coordinator never fails because of it, so the model can freeze and the
-integration can publish a conservative demand instead of going unavailable.
+Every 60 s the coordinator reads and normalises the input sensors and feeds
+them to the tank model. A sensor that is ``unavailable``/``unknown`` (or not
+numeric) is reported as ``None``; the coordinator never fails because of it.
+If a required sensor is missing, the model freezes (safe mode) and the tank
+entities become unavailable.
 """
 
 from __future__ import annotations
@@ -36,19 +37,28 @@ from homeassistant.util.unit_conversion import (
 
 from .const import (
     CONF_BOTTOM_TEMPERATURE_SENSOR,
+    CONF_CUTOFF_POWER_THRESHOLD,
+    CONF_CUTOFF_TEMPERATURE,
     CONF_ENERGY_SENSOR,
     CONF_MAINS_WATER_TEMPERATURE,
+    CONF_MIN_USEFUL_TEMPERATURE,
     CONF_POWER_SENSOR,
     CONF_PRESENCE_ENTITY,
     CONF_PRICE_SENSOR,
+    CONF_RATED_POWER,
+    CONF_REGULATOR_SENSOR,
+    CONF_SHOWER_ENERGY,
     CONF_SURPLUS_SENSOR,
     CONF_TEMPERATURE_SENSOR,
+    CONF_VOLUME,
     CONF_WATER_REGION,
     DEFAULT_PARAMETERS,
     DOMAIN,
     UPDATE_INTERVAL,
 )
+from .model.tank import TankModel, TankParams, TankSample, TankState
 from .model.water import mains_water_temperature
+from .storage import TankWiseStore
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -71,6 +81,7 @@ class TankReadings:
     surplus_power: float | None = None
     price: float | None = None
     presence: bool | None = None
+    regulator: float | None = None
 
     @property
     def required_available(self) -> bool:
@@ -82,8 +93,16 @@ class TankReadings:
         )
 
 
-class TankWiseCoordinator(DataUpdateCoordinator[TankReadings]):
-    """Read the TankWise input sensors periodically."""
+@dataclass(frozen=True, slots=True)
+class TankWiseData:
+    """Data published by the coordinator."""
+
+    readings: TankReadings
+    tank: TankState
+
+
+class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
+    """Read the TankWise input sensors and run the tank model."""
 
     config_entry: TankWiseConfigEntry
 
@@ -97,6 +116,29 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankReadings]):
             update_interval=UPDATE_INTERVAL,
         )
         self._unusable: set[str] = set()
+        self._store = TankWiseStore(hass, entry.entry_id)
+        self.model = TankModel()
+
+    async def _async_setup(self) -> None:
+        """Restore the model state saved before the last shutdown."""
+        stored = await self._store.async_load()
+        if not stored or "tank" not in stored:
+            return
+        try:
+            self.model = TankModel.from_dict(stored["tank"])
+        except ValueError as err:
+            _LOGGER.warning("Discarding stored tank state: %s", err)
+
+    def _stored_data(self) -> dict[str, Any]:
+        return {"tank": self.model.as_dict()}
+
+    async def async_save_now(self) -> None:
+        """Persist the model state immediately (e.g. on unload)."""
+        await self._store.async_save(self._stored_data())
+
+    async def async_remove_storage(self) -> None:
+        """Delete the persisted state."""
+        await self._store.async_remove()
 
     @property
     def parameters(self) -> dict[str, Any]:
@@ -113,7 +155,37 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankReadings]):
             self.parameters[CONF_WATER_REGION], dt_util.now().month
         )
 
-    async def _async_update_data(self) -> TankReadings:
+    @property
+    def tank_params(self) -> TankParams:
+        """Return the tank model parameters from the options."""
+        parameters = self.parameters
+        return TankParams(
+            volume_l=float(parameters[CONF_VOLUME]),
+            rated_power_w=float(parameters[CONF_RATED_POWER]),
+            mains_temperature=self.mains_water_temperature,
+            min_useful_temperature=float(parameters[CONF_MIN_USEFUL_TEMPERATURE]),
+            cutoff_temperature=float(parameters[CONF_CUTOFF_TEMPERATURE]),
+            power_threshold_w=float(parameters[CONF_CUTOFF_POWER_THRESHOLD]),
+            shower_energy_kwh=float(parameters[CONF_SHOWER_ENERGY]),
+        )
+
+    async def _async_update_data(self) -> TankWiseData:
+        """Read the sensors and advance the tank model."""
+        readings = self._read_inputs()
+        tank = self.model.update(
+            TankSample(
+                timestamp=readings.timestamp,
+                temperature=readings.temperature,
+                power=readings.power,
+                energy=readings.energy,
+                regulator=readings.regulator,
+            ),
+            self.tank_params,
+        )
+        self._store.async_schedule_save(self._stored_data)
+        return TankWiseData(readings=readings, tank=tank)
+
+    def _read_inputs(self) -> TankReadings:
         """Read all configured sensors."""
         data = self.config_entry.data
         options = self.config_entry.options
@@ -142,6 +214,7 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankReadings]):
             ),
             price=self._read_float(options.get(CONF_PRICE_SENSOR)),
             presence=self._read_bool(options.get(CONF_PRESENCE_ENTITY)),
+            regulator=self._read_float(options.get(CONF_REGULATOR_SENSOR)),
         )
 
     def _read_measurement(
