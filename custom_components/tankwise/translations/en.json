@@ -1,0 +1,104 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Hot water tank sensors",
+        "description": "Select the sensors of your electric water heater. TankWise only reads them; it never controls any device.",
+        "data": {
+          "name": "Name",
+          "temperature_sensor": "Tank temperature",
+          "power_sensor": "Heating element power",
+          "energy_sensor": "Heating element energy"
+        },
+        "data_description": {
+          "temperature_sensor": "Temperature probe of the tank (upper part).",
+          "power_sensor": "Power currently drawn by the heating element.",
+          "energy_sensor": "Cumulative energy of the heating element (total or total increasing)."
+        }
+      },
+      "optional": {
+        "title": "Optional inputs",
+        "description": "These inputs improve the plan. All of them can be changed later in the options.",
+        "data": {
+          "solar_forecast_sensor": "Solar forecast",
+          "surplus_sensor": "Current solar surplus",
+          "price_sensor": "Electricity price",
+          "presence_entity": "Home active / presence",
+          "bottom_temperature_sensor": "Tank bottom temperature"
+        },
+        "data_description": {
+          "solar_forecast_sensor": "Forecast.Solar or Solcast energy forecast sensor. The hourly curve will be used by the planner in a later version.",
+          "surplus_sensor": "Power available as surplus right now.",
+          "price_sensor": "Electricity price sensor (e.g. PVPC).",
+          "presence_entity": "When off, TankWise switches to holiday mode (no grid heating).",
+          "bottom_temperature_sensor": "Second probe in the lower part of the tank, if available."
+        }
+      }
+    },
+    "error": {
+      "entity_not_found": "Entity not found.",
+      "invalid_unit": "The entity has an unsupported unit of measurement.",
+      "invalid_state_class": "The energy sensor must have state class 'total' or 'total_increasing'."
+    },
+    "abort": {
+      "already_configured": "This tank is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Tank parameters",
+        "data": {
+          "volume": "Tank volume",
+          "rated_power": "Rated heating power",
+          "water_region": "Mains water region",
+          "mains_water_temperature": "Mains water temperature (override)",
+          "min_useful_temperature": "Minimum useful temperature",
+          "cutoff_power_threshold": "Thermostat cut-off power threshold",
+          "comfort_level": "Comfort level"
+        },
+        "data_description": {
+          "water_region": "Used to estimate the mains water temperature for each month.",
+          "mains_water_temperature": "Leave empty to use the monthly value for the selected region.",
+          "min_useful_temperature": "Water below this temperature is not considered useful hot water.",
+          "cutoff_power_threshold": "Below this power after heating, the thermostat is considered to have cut off (tank full).",
+          "comfort_level": "Percentile of the learned demand the plan must cover."
+        }
+      },
+      "sensors": {
+        "title": "Optional inputs",
+        "data": {
+          "solar_forecast_sensor": "Solar forecast",
+          "surplus_sensor": "Current solar surplus",
+          "price_sensor": "Electricity price",
+          "presence_entity": "Home active / presence",
+          "bottom_temperature_sensor": "Tank bottom temperature"
+        },
+        "data_description": {
+          "solar_forecast_sensor": "Forecast.Solar or Solcast energy forecast sensor. The hourly curve will be used by the planner in a later version.",
+          "presence_entity": "When off, TankWise switches to holiday mode (no grid heating)."
+        }
+      }
+    },
+    "error": {
+      "entity_not_found": "Entity not found.",
+      "invalid_unit": "The entity has an unsupported unit of measurement."
+    }
+  },
+  "selector": {
+    "water_region": {
+      "options": {
+        "balearic_islands": "Balearic Islands",
+        "mainland": "Mainland Spain (generic)",
+        "canary_islands": "Canary Islands"
+      }
+    },
+    "comfort_level": {
+      "options": {
+        "p80": "P80 (economical)",
+        "p90": "P90 (balanced)",
+        "p95": "P95 (maximum comfort)"
+      }
+    }
+  }
+}

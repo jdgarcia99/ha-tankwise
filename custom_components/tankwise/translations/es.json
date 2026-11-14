@@ -1,0 +1,104 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Sensores del termo",
+        "description": "Selecciona los sensores de tu termo eléctrico. TankWise solo los lee; nunca controla ningún dispositivo.",
+        "data": {
+          "name": "Nombre",
+          "temperature_sensor": "Temperatura del termo",
+          "power_sensor": "Potencia de la resistencia",
+          "energy_sensor": "Energía de la resistencia"
+        },
+        "data_description": {
+          "temperature_sensor": "Sonda de temperatura del depósito (parte alta).",
+          "power_sensor": "Potencia que consume la resistencia en este momento.",
+          "energy_sensor": "Energía acumulada de la resistencia (total o total creciente)."
+        }
+      },
+      "optional": {
+        "title": "Entradas opcionales",
+        "description": "Estas entradas mejoran el plan. Todas se pueden cambiar después en las opciones.",
+        "data": {
+          "solar_forecast_sensor": "Previsión solar",
+          "surplus_sensor": "Excedente solar actual",
+          "price_sensor": "Precio de la electricidad",
+          "presence_entity": "Casa activada / presencia",
+          "bottom_temperature_sensor": "Temperatura de la parte baja del termo"
+        },
+        "data_description": {
+          "solar_forecast_sensor": "Sensor de previsión de energía de Forecast.Solar o Solcast. El planificador usará la curva horaria en una versión posterior.",
+          "surplus_sensor": "Potencia disponible como excedente en este momento.",
+          "price_sensor": "Sensor de precio de la electricidad (por ejemplo, PVPC).",
+          "presence_entity": "Si está apagado, TankWise pasa a modo vacaciones (sin calentar con red).",
+          "bottom_temperature_sensor": "Segunda sonda en la parte baja del depósito, si existe."
+        }
+      }
+    },
+    "error": {
+      "entity_not_found": "No se encuentra la entidad.",
+      "invalid_unit": "La entidad tiene una unidad de medida no admitida.",
+      "invalid_state_class": "El sensor de energía debe tener la clase de estado 'total' o 'total_increasing'."
+    },
+    "abort": {
+      "already_configured": "Este termo ya está configurado."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Parámetros del termo",
+        "data": {
+          "volume": "Volumen del depósito",
+          "rated_power": "Potencia nominal de la resistencia",
+          "water_region": "Zona del agua de red",
+          "mains_water_temperature": "Temperatura del agua de red (manual)",
+          "min_useful_temperature": "Temperatura útil mínima",
+          "cutoff_power_threshold": "Umbral de potencia de corte del termostato",
+          "comfort_level": "Nivel de confort"
+        },
+        "data_description": {
+          "water_region": "Se usa para estimar la temperatura del agua de red de cada mes.",
+          "mains_water_temperature": "Déjalo vacío para usar el valor mensual de la zona seleccionada.",
+          "min_useful_temperature": "El agua por debajo de esta temperatura no se considera agua caliente útil.",
+          "cutoff_power_threshold": "Si tras calentar la potencia baja de este valor, se considera que el termostato ha cortado (depósito lleno).",
+          "comfort_level": "Percentil de la demanda aprendida que debe cubrir el plan."
+        }
+      },
+      "sensors": {
+        "title": "Entradas opcionales",
+        "data": {
+          "solar_forecast_sensor": "Previsión solar",
+          "surplus_sensor": "Excedente solar actual",
+          "price_sensor": "Precio de la electricidad",
+          "presence_entity": "Casa activada / presencia",
+          "bottom_temperature_sensor": "Temperatura de la parte baja del termo"
+        },
+        "data_description": {
+          "solar_forecast_sensor": "Sensor de previsión de energía de Forecast.Solar o Solcast. El planificador usará la curva horaria en una versión posterior.",
+          "presence_entity": "Si está apagado, TankWise pasa a modo vacaciones (sin calentar con red)."
+        }
+      }
+    },
+    "error": {
+      "entity_not_found": "No se encuentra la entidad.",
+      "invalid_unit": "La entidad tiene una unidad de medida no admitida."
+    }
+  },
+  "selector": {
+    "water_region": {
+      "options": {
+        "balearic_islands": "Islas Baleares",
+        "mainland": "Península (genérico)",
+        "canary_islands": "Islas Canarias"
+      }
+    },
+    "comfort_level": {
+      "options": {
+        "p80": "P80 (económico)",
+        "p90": "P90 (equilibrado)",
+        "p95": "P95 (máximo confort)"
+      }
+    }
+  }
+}
