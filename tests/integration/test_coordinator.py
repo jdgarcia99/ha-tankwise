@@ -52,7 +52,7 @@ async def test_reads_required_sensors(
     set_input_states(hass)
     coordinator = await _setup(hass, mock_entry)
 
-    readings = coordinator.data
+    readings = coordinator.data.readings
     assert readings.temperature == 45.5
     assert readings.power == 1450.0
     assert readings.energy == 123.4
@@ -76,7 +76,7 @@ async def test_units_are_normalised(
     )
     coordinator = await _setup(hass, mock_entry)
 
-    readings = coordinator.data
+    readings = coordinator.data.readings
     assert readings.temperature == pytest.approx(45.0)
     assert readings.power == pytest.approx(1450.0)
     assert readings.energy == pytest.approx(123.4)
@@ -102,7 +102,7 @@ async def test_reads_optional_sensors(
     set_optional_states(hass)
     coordinator = await _setup(hass, mock_entry)
 
-    readings = coordinator.data
+    readings = coordinator.data.readings
     assert readings.surplus_power == pytest.approx(800.0)
     assert readings.bottom_temperature == 30.0
     assert readings.price == 0.12
@@ -120,15 +120,15 @@ async def test_tolerates_unavailable_sensors(
     coordinator = await _setup(hass, mock_entry)
 
     assert coordinator.last_update_success
-    assert coordinator.data.temperature is None
-    assert not coordinator.data.required_available
+    assert coordinator.data.readings.temperature is None
+    assert not coordinator.data.readings.required_available
     assert caplog.text.count(f"Input {TEMPERATURE} is not usable") == 1
 
     # A second unusable reading does not log again.
     hass.states.async_set(POWER, "unknown", {"unit_of_measurement": "W"})
     await coordinator.async_refresh()
     assert coordinator.last_update_success
-    assert coordinator.data.power is None
+    assert coordinator.data.readings.power is None
     assert caplog.text.count(f"Input {TEMPERATURE} is not usable") == 1
 
     # Recovery is picked up by the periodic update.
@@ -136,8 +136,8 @@ async def test_tolerates_unavailable_sensors(
     freezer.tick(UPDATE_INTERVAL)
     async_fire_time_changed(hass)
     await hass.async_block_till_done()
-    assert coordinator.data.temperature == 45.5
-    assert coordinator.data.required_available
+    assert coordinator.data.readings.temperature == 45.5
+    assert coordinator.data.readings.required_available
     assert f"Input {TEMPERATURE} is usable again" in caplog.text
 
 
@@ -147,7 +147,7 @@ async def test_non_numeric_state(
     """A non-numeric state is treated as unusable."""
     set_input_states(hass, power="heating")
     coordinator = await _setup(hass, mock_entry)
-    assert coordinator.data.power is None
+    assert coordinator.data.readings.power is None
 
 
 @pytest.mark.parametrize(

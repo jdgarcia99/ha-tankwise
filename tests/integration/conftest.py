@@ -23,6 +23,7 @@ SURPLUS = "sensor.solar_surplus"
 BOTTOM = "sensor.tank_bottom_temperature"
 PRICE = "sensor.pvpc"
 PRESENCE = "input_boolean.home_active"
+REGULATOR = "sensor.diverter_pwm"
 
 REQUIRED_INPUT = {
     "name": "Water heater",
@@ -72,6 +73,7 @@ def set_optional_states(hass: HomeAssistant) -> None:
     hass.states.async_set(BOTTOM, "30.0", {"unit_of_measurement": "°C"})
     hass.states.async_set(PRICE, "0.12", {"unit_of_measurement": "€/kWh"})
     hass.states.async_set(PRESENCE, "on")
+    hass.states.async_set(REGULATOR, "0", {"unit_of_measurement": "%"})
 
 
 @pytest.fixture

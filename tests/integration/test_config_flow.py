@@ -15,6 +15,7 @@ from custom_components.tankwise.const import (
     CONF_BOTTOM_TEMPERATURE_SENSOR,
     CONF_COMFORT_LEVEL,
     CONF_CUTOFF_POWER_THRESHOLD,
+    CONF_CUTOFF_TEMPERATURE,
     CONF_ENERGY_SENSOR,
     CONF_MAINS_WATER_TEMPERATURE,
     CONF_MIN_USEFUL_TEMPERATURE,
@@ -22,6 +23,8 @@ from custom_components.tankwise.const import (
     CONF_PRESENCE_ENTITY,
     CONF_PRICE_SENSOR,
     CONF_RATED_POWER,
+    CONF_REGULATOR_SENSOR,
+    CONF_SHOWER_ENERGY,
     CONF_SURPLUS_SENSOR,
     CONF_TEMPERATURE_SENSOR,
     CONF_VOLUME,
@@ -36,6 +39,7 @@ from .conftest import (
     POWER,
     PRESENCE,
     PRICE,
+    REGULATOR,
     REQUIRED_INPUT,
     SURPLUS,
     TEMPERATURE,
@@ -222,15 +226,18 @@ async def test_options_flow(hass: HomeAssistant, mock_entry: MockConfigEntry) ->
             CONF_MAINS_WATER_TEMPERATURE: 14.5,
             CONF_MIN_USEFUL_TEMPERATURE: 40.0,
             CONF_CUTOFF_POWER_THRESHOLD: 30.0,
+            CONF_CUTOFF_TEMPERATURE: 48.5,
+            CONF_SHOWER_ENERGY: 1.5,
             CONF_COMFORT_LEVEL: "p95",
         },
     )
     assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == "sensors"
 
-    # Price sensor is removed, presence sensor is added.
+    # Price sensor is removed, presence and regulator sensors are added.
     result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {CONF_PRESENCE_ENTITY: PRESENCE}
+        result["flow_id"],
+        {CONF_PRESENCE_ENTITY: PRESENCE, CONF_REGULATOR_SENSOR: REGULATOR},
     )
     await hass.async_block_till_done()
 
@@ -242,8 +249,11 @@ async def test_options_flow(hass: HomeAssistant, mock_entry: MockConfigEntry) ->
         CONF_MAINS_WATER_TEMPERATURE: 14.5,
         CONF_MIN_USEFUL_TEMPERATURE: 40.0,
         CONF_CUTOFF_POWER_THRESHOLD: 30,
+        CONF_CUTOFF_TEMPERATURE: 48.5,
+        CONF_SHOWER_ENERGY: 1.5,
         CONF_COMFORT_LEVEL: "p95",
         CONF_PRESENCE_ENTITY: PRESENCE,
+        CONF_REGULATOR_SENSOR: REGULATOR,
     }
     assert isinstance(mock_entry.options[CONF_VOLUME], int)
 
@@ -375,3 +385,31 @@ async def test_reconfigure_to_sensor_of_other_entry(
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "already_configured"
     assert mock_entry.data == REQUIRED_INPUT
+
+
+@pytest.mark.parametrize(
+    ("unit", "error"),
+    [("%", None), (None, None), ("W", "invalid_unit")],
+)
+async def test_regulator_sensor_unit(
+    hass: HomeAssistant,
+    mock_setup_entry: AsyncMock,
+    unit: str | None,
+    error: str | None,
+) -> None:
+    """The regulator output must be a percentage (or unitless)."""
+    set_input_states(hass)
+    attributes = {"unit_of_measurement": unit} if unit else {}
+    hass.states.async_set(REGULATOR, "40", attributes)
+    flow_id = await _start_flow(hass)
+    await hass.config_entries.flow.async_configure(flow_id, REQUIRED_INPUT)
+
+    result = await hass.config_entries.flow.async_configure(
+        flow_id, {CONF_REGULATOR_SENSOR: REGULATOR}
+    )
+    if error is None:
+        assert result["type"] is FlowResultType.CREATE_ENTRY
+        assert result["options"][CONF_REGULATOR_SENSOR] == REGULATOR
+    else:
+        assert result["type"] is FlowResultType.FORM
+        assert result["errors"] == {CONF_REGULATOR_SENSOR: error}
