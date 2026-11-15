@@ -16,6 +16,10 @@ time) like a draw.
 The state is recalibrated to "full" when the thermostat cuts off: either the
 regulator (e.g. a PWM diverter) asks for power and the element draws none, or,
 without a regulator sensor, heating stops close to the cut-off temperature.
+Because the regulator may be switched off a few seconds after the cut-off
+(e.g. by an automation), the regulator value is captured at the very instant
+the power falls (:class:`PowerDropDetector`, fed with state change events),
+not only at the 60-second samples.
 
 This module is pure Python and must not import Home Assistant.
 """
@@ -52,6 +56,9 @@ HEATER_ENERGY_MARGIN = 1.2
 FULL_CONFIRM = timedelta(minutes=3)
 FULL_CHECK_WINDOW = timedelta(minutes=30)
 REGULATOR_DEMAND_PERCENT = 10.0
+# A regulator decrease this shortly before the power fell means the regulator
+# stopped the heating, not the thermostat.
+REGULATOR_FALLING_WINDOW = timedelta(seconds=10)
 MIN_EPISODE_ENERGY_KWH = 0.02
 BACKUP_FULL_MARGIN = 2.5  # °C below the cut-off temperature
 CUTOFF_LEARN_MARGIN = 1.0  # °C, backup cut-offs closer than this are learned
@@ -127,6 +134,69 @@ class TankParams:
 
 
 @dataclass(frozen=True, slots=True)
+class PowerDrop:
+    """The heating element power fell below the threshold (event time)."""
+
+    timestamp: datetime
+    # The regulator asked for power (> 10 %) at that instant and had not just
+    # been lowered: the thermostat, not the regulator, stopped the heating.
+    regulator_demand: bool
+
+
+class PowerDropDetector:
+    """Capture the regulator value at the instant the power falls.
+
+    Fed with every state change of the power and regulator sensors, in the
+    order they happen. The last drop is kept until the power rises again.
+    """
+
+    def __init__(self, threshold_w: float) -> None:
+        """Initialise the detector."""
+        self._threshold_w = threshold_w
+        self._regulator: float | None = None
+        self._regulator_falls: list[datetime] = []
+        self._heating: bool | None = None
+        self.drop: PowerDrop | None = None
+
+    def update_regulator(self, timestamp: datetime, value: float | None) -> None:
+        """Record a regulator output change (%)."""
+        if (
+            value is not None
+            and self._regulator is not None
+            and value < self._regulator
+        ):
+            self._regulator_falls.append(timestamp)
+            self._regulator_falls = [
+                moment
+                for moment in self._regulator_falls
+                if timestamp - moment <= REGULATOR_FALLING_WINDOW
+            ]
+        self._regulator = value
+
+    def update_power(self, timestamp: datetime, value: float | None) -> None:
+        """Record a heating element power change (W)."""
+        if value is None:
+            return
+        heating = value > self._threshold_w
+        if heating:
+            self.drop = None
+        elif self._heating:
+            falling = any(
+                timedelta(0) <= timestamp - moment <= REGULATOR_FALLING_WINDOW
+                for moment in self._regulator_falls
+            )
+            self.drop = PowerDrop(
+                timestamp=timestamp,
+                regulator_demand=(
+                    self._regulator is not None
+                    and self._regulator > REGULATOR_DEMAND_PERCENT
+                    and not falling
+                ),
+            )
+        self._heating = heating
+
+
+@dataclass(frozen=True, slots=True)
 class TankSample:
     """One reading of the inputs (°C, W, kWh, %)."""
 
@@ -135,6 +205,8 @@ class TankSample:
     power: float | None
     energy: float | None
     regulator: float | None = None
+    # Last power drop seen by a PowerDropDetector, if any.
+    power_drop: PowerDrop | None = None
 
     @property
     def valid(self) -> bool:
@@ -233,6 +305,9 @@ class _HeaterTracker:
     below_since: datetime | None = None
     demand_since: datetime | None = None
     last_heating_end: datetime | None = None
+    last_heating_sample: datetime | None = None
+    # Regulator demand captured when the power fell (None: not known).
+    drop_demand: bool | None = None
 
 
 @dataclass(slots=True)
@@ -506,6 +581,8 @@ class TankModel:
             tracker.episode_energy += heat
             tracker.below_since = None
             tracker.demand_since = None
+            tracker.drop_demand = None
+            tracker.last_heating_sample = now
             return None
 
         if tracker.state is HeaterState.HEATING:
@@ -513,6 +590,23 @@ class TankModel:
             tracker.state = HeaterState.CHECKING
             tracker.below_since = now
             tracker.last_heating_end = now
+            tracker.drop_demand = None
+
+        drop = sample.power_drop
+        if (
+            tracker.state is HeaterState.CHECKING
+            and drop is not None
+            and drop.timestamp <= now
+            and (
+                tracker.last_heating_sample is None
+                or drop.timestamp >= tracker.last_heating_sample
+            )
+            and (tracker.drop_demand is None or drop.timestamp > tracker.below_since)
+        ):
+            # Exact instant of the cut-off and the regulator value then.
+            tracker.below_since = drop.timestamp
+            tracker.last_heating_end = drop.timestamp
+            tracker.drop_demand = drop.regulator_demand
 
         if tracker.state is not HeaterState.CHECKING:
             return None
@@ -521,6 +615,15 @@ class TankModel:
         if tracker.episode_energy < MIN_EPISODE_ENERGY_KWH:
             # A short spike, not a heating episode.
             tracker.state = HeaterState.IDLE
+            return None
+
+        if tracker.drop_demand:
+            # The regulator was asking for power when the element stopped
+            # drawing it: the thermostat is open, even if the regulator is
+            # switched off afterwards.
+            if now - tracker.below_since >= FULL_CONFIRM:
+                tracker.state = HeaterState.IDLE
+                return True
             return None
 
         if sample.regulator is not None:
