@@ -189,3 +189,17 @@ async def test_unload_saves_and_remove_deletes_storage(
     assert await hass.config_entries.async_remove(mock_entry.entry_id)
     await hass.async_block_till_done()
     assert key not in hass_storage
+
+
+async def test_entity_ids_are_english_in_any_language(
+    hass: HomeAssistant, mock_entry: MockConfigEntry
+) -> None:
+    """Entity IDs use English object IDs; visible names stay translated."""
+    hass.config.language = "es"
+    set_input_states(hass)
+    await _setup(hass, mock_entry)
+
+    for entity_id in ALL_SENSORS:
+        assert hass.states.get(entity_id) is not None, entity_id
+    assert hass.states.get(USEFUL_ENERGY).name == "Water heater Energía útil"
+    assert hass.states.get(STATUS).name == "Water heater Estado del modelo"
