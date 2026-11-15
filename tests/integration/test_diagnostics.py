@@ -32,3 +32,6 @@ async def test_diagnostics(
     assert result["readings"]["temperature"] == 45.5
     assert result["model"]["format"] == 1
     assert result["parameters"]["min_useful_temperature"] == 32.0
+    assert result["demand"]["snapshot"]["status"] == "learning"
+    assert len(result["demand"]["profile"]["workday"]["probability"]) == 96
+    assert result["demand"]["recent_draws"] == []
