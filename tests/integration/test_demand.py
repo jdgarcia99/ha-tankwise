@@ -158,6 +158,9 @@ async def test_detected_draw_feeds_the_demand_model(
     assert draws[0].day_type is DayType.WORKDAY
 
 
+@pytest.mark.parametrize(
+    "entry_options", [{**DEFAULT_PARAMETERS, CONF_WORKDAY_SENSOR: WORKDAY}]
+)
 async def test_workday_sensor_marks_holidays(
     hass: HomeAssistant,
     mock_entry: MockConfigEntry,
@@ -175,9 +178,6 @@ async def test_workday_sensor_marks_holidays(
         "workday", "check_date", check_date, supports_response=SupportsResponse.ONLY
     )
     hass.states.async_set(WORKDAY, "off")
-    hass.config_entries.async_update_entry(
-        mock_entry, options={**mock_entry.options, CONF_WORKDAY_SENSOR: WORKDAY}
-    )
     set_input_states(hass)
     await _setup(hass, mock_entry)
 
