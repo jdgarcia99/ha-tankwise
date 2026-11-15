@@ -353,6 +353,11 @@ class TankModel:
         return list(self._consumptions)
 
     @property
+    def last_consumption(self) -> ConsumptionEvent | None:
+        """Return the most recent detected draw, if any."""
+        return self._consumptions[-1] if self._consumptions else None
+
+    @property
     def loss_coefficient(self) -> float:
         """Return the learned loss coefficient (1/h)."""
         return self._loss_coefficient
