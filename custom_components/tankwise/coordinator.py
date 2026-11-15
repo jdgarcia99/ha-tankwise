@@ -25,7 +25,14 @@ from homeassistant.const import (
     UnitOfPower,
     UnitOfTemperature,
 )
-from homeassistant.core import HomeAssistant
+from homeassistant.core import (
+    Event,
+    EventStateChangedData,
+    HomeAssistant,
+    State,
+    callback,
+)
+from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 from homeassistant.util.unit_conversion import (
@@ -56,7 +63,13 @@ from .const import (
     DOMAIN,
     UPDATE_INTERVAL,
 )
-from .model.tank import TankModel, TankParams, TankSample, TankState
+from .model.tank import (
+    PowerDropDetector,
+    TankModel,
+    TankParams,
+    TankSample,
+    TankState,
+)
 from .model.water import mains_water_temperature
 from .storage import TankWiseStore
 
@@ -116,6 +129,14 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
             update_interval=UPDATE_INTERVAL,
         )
         self._unusable: set[str] = set()
+        # The regulator may be switched off seconds after a thermostat
+        # cut-off, so its value is captured at the instant the power falls
+        # from state change events, not only every 60 s.
+        self._drop_detector: PowerDropDetector | None = (
+            PowerDropDetector(float(self.parameters[CONF_CUTOFF_POWER_THRESHOLD]))
+            if entry.options.get(CONF_REGULATOR_SENSOR)
+            else None
+        )
         self._store = TankWiseStore(hass, entry.entry_id)
         self.model = TankModel()
 
@@ -131,6 +152,34 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
 
     def _stored_data(self) -> dict[str, Any]:
         return {"tank": self.model.as_dict()}
+
+    @callback
+    def async_start_listeners(self) -> None:
+        """Follow power and regulator changes between samples."""
+        detector = self._drop_detector
+        if detector is None:
+            return
+        power = self.config_entry.data[CONF_POWER_SENSOR]
+        regulator = self.config_entry.options[CONF_REGULATOR_SENSOR]
+        now = dt_util.utcnow()
+        detector.update_regulator(now, _numeric(self.hass.states.get(regulator)))
+        detector.update_power(now, _power_watts(self.hass.states.get(power)))
+
+        @callback
+        def _async_changed(event: Event[EventStateChangedData]) -> None:
+            new_state = event.data["new_state"]
+            if new_state is None:
+                return
+            if event.data["entity_id"] == regulator:
+                detector.update_regulator(new_state.last_changed, _numeric(new_state))
+            else:
+                detector.update_power(new_state.last_changed, _power_watts(new_state))
+
+        self.config_entry.async_on_unload(
+            async_track_state_change_event(
+                self.hass, [power, regulator], _async_changed
+            )
+        )
 
     async def async_save_now(self) -> None:
         """Persist the model state immediately (e.g. on unload)."""
@@ -179,6 +228,7 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
                 power=readings.power,
                 energy=readings.energy,
                 regulator=readings.regulator,
+                power_drop=(self._drop_detector.drop if self._drop_detector else None),
             ),
             self.tank_params,
         )
@@ -277,3 +327,24 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
         if entity_id in self._unusable:
             self._unusable.discard(entity_id)
             _LOGGER.info("Input %s is usable again", entity_id)
+
+
+def _numeric(state: State | None) -> float | None:
+    """Return the numeric value of a state, or None."""
+    if state is None or state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+        return None
+    try:
+        return float(state.state)
+    except ValueError:
+        return None
+
+
+def _power_watts(state: State | None) -> float | None:
+    """Return a power state in W, or None."""
+    value = _numeric(state)
+    if value is None or state is None:
+        return None
+    unit = state.attributes.get(ATTR_UNIT_OF_MEASUREMENT)
+    if unit not in PowerConverter.VALID_UNITS:
+        return None
+    return PowerConverter.convert(value, unit, UnitOfPower.WATT)

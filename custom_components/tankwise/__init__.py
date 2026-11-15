@@ -16,6 +16,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: TankWiseConfigEntry) -> 
     coordinator = TankWiseCoordinator(hass, entry)
     await coordinator.async_config_entry_first_refresh()
     entry.runtime_data = coordinator
+    coordinator.async_start_listeners()
 
     # The tank model must keep running even when no entity is listening
     # (e.g. all entities disabled), so keep the coordinator polling.
