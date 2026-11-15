@@ -10,6 +10,7 @@ from tankwise_model.demand import DemandModel, day_type_for
 from tankwise_model.history import (
     HistoryFormatError,
     apply_to_demand,
+    is_person_source,
     parse_history_csv,
     replay_history,
 )
@@ -152,7 +153,10 @@ def test_import_into_demand_model_once() -> None:
     result = replay_history(parsed.rows, _params_for, TZ)
     demand = DemandModel()
 
-    summary = apply_to_demand(result, demand, day_type_for, 1.8, TZ)
+    # The file has no manual_source column: count every activation.
+    summary = apply_to_demand(
+        result, demand, day_type_for, 1.8, TZ, manual_mode_is_failure=True
+    )
     assert summary.days == 3
     assert summary.draws == 4
     # The manually anticipated shower and the shower with an empty tank.
@@ -160,7 +164,9 @@ def test_import_into_demand_model_once() -> None:
     assert [draw.failure for draw in demand.draws] == [False, True, False, True]
     assert all(draw.imported for draw in demand.draws)
 
-    again = apply_to_demand(result, demand, day_type_for, 1.8, TZ)
+    again = apply_to_demand(
+        result, demand, day_type_for, 1.8, TZ, manual_mode_is_failure=True
+    )
     assert again.days == 0
     assert again.draws == 0
     assert again.skipped_days == 3
@@ -171,9 +177,7 @@ def test_import_ignoring_manual_mode() -> None:
     parsed = parse_history_csv(_history_csv(), TZ)
     result = replay_history(parsed.rows, _params_for, TZ)
     demand = DemandModel()
-    summary = apply_to_demand(
-        result, demand, day_type_for, 1.8, TZ, manual_mode_is_failure=False
-    )
+    summary = apply_to_demand(result, demand, day_type_for, 1.8, TZ)  # default
     assert summary.failures == 1
 
 
@@ -204,3 +208,56 @@ def test_imported_days_skip_cold_start() -> None:
     last = max(result.observed_days) + timedelta(days=1)
     assert demand.days_with_data(last) >= 14
     assert demand.status(last).value == "ready"
+
+
+BUTTON = "automation.zigbee_maneja_termo_desde_pulsador"
+
+
+def test_is_person_source() -> None:
+    assert is_person_source("user", [])
+    assert is_person_source(f"automation:{BUTTON}", [BUTTON])
+    assert not is_person_source("automation:automation.solar", [BUTTON])
+    assert not is_person_source("", [BUTTON])
+    assert not is_person_source("script:script.x", [BUTTON])
+
+
+def test_manual_source_column_comes_before_manual_mode() -> None:
+    text = (
+        "manual_source,timestamp,temperature,power,energy,manual_mode\n"
+        "user,2026-11-02 07:00,45,0,1,on\n"
+    )
+    row = parse_history_csv(text, TZ).rows[0]
+    assert row.manual_mode is True
+    assert row.manual_source == "user"
+
+
+def test_manual_source_decides_failures() -> None:
+    """With manual_source, only people (and listed automations) count."""
+    sources = {6 * 60: "user", 9 * 60: f"automation:{BUTTON}"}
+    sources[12 * 60] = "automation:automation.solar_surplus"
+    sources[15 * 60] = ""
+    lines = ["timestamp,temperature,power,energy,manual_mode,manual_source"]
+    start = datetime(2026, 11, 2, 0, 0)
+    for minute in range(24 * 60 + 30):
+        moment = start + timedelta(minutes=minute)
+        on = any(0 <= minute - at < 30 for at in sources)
+        source = sources.get(minute, "")
+        lines.append(
+            f"{moment:%Y-%m-%d %H:%M},46.0,0,10.0,{'on' if on else 'off'},{source}"
+        )
+    parsed = parse_history_csv("\n".join(lines), TZ)
+    result = replay_history(parsed.rows, _params_for, TZ)
+    assert len(result.manual_activations) == 4
+
+    demand = DemandModel()
+    # manual_mode_is_failure is ignored when the file has manual_source.
+    apply_to_demand(
+        result,
+        demand,
+        day_type_for,
+        1.8,
+        TZ,
+        manual_mode_is_failure=True,
+        person_automations=[BUTTON],
+    )
+    assert [mark.timestamp.hour for mark in demand.failures] == [6, 9]

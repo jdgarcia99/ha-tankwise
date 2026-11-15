@@ -324,3 +324,29 @@ def test_round_trip() -> None:
 def test_invalid_data(data: dict) -> None:
     with pytest.raises(ValueError):
         DemandModel.from_dict(data)
+
+
+def test_failure_energy_uplift_applies_only_to_the_failed_draw() -> None:
+    """+25 % for the failed draw only; the whole day weighs x2."""
+    model = DemandModel()
+    day = START
+    model.observe(at(day, 12), DayType.WORKDAY)
+    add_shower(model, at(day, 7), 1.0)  # normal
+    add_shower(model, at(day, 20), 1.0, useful_at_start=0.1)  # failure
+    other = day + timedelta(days=7)
+    model.observe(at(other, 12), DayType.WORKDAY)
+    add_shower(model, at(other, 7), 1.0)
+
+    vectors = dict(
+        zip(
+            (day, other),
+            model._day_vectors(DayType.WORKDAY, other + timedelta(days=1)),
+            strict=True,
+        )
+    )
+    weight, vector = vectors[day]
+    assert vector[slot_of(at(day, 7))] == pytest.approx(1.0)
+    assert vector[slot_of(at(day, 20))] == pytest.approx(1.25)
+    other_weight, _ = vectors[other]
+    age_ratio = 0.5 ** (-7 / 21)  # the failing day is a week older
+    assert weight == pytest.approx(2.0 * other_weight / age_ratio)
