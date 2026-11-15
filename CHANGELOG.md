@@ -20,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Learned energy per shower.
 - `tankwise.import_history` action: raw minute readings from a CSV are
   replayed through the tank model to learn the profile from real history.
+  An optional `manual_source` column attributes manual mode activations with
+  the same rule as live.
+- `tools/export_history.py`: exports the last N days from the Home Assistant
+  REST API (history and logbook) as a CSV ready to import.
 - Sensors: next expected draw and demand profile status.
 - Demand profile, recent draws and failures in the diagnostics.
 

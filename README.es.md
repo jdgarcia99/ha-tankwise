@@ -157,8 +157,9 @@ detecta:
 Para saltarse el periodo de aprendizaje, importa lecturas en bruto minuto a
 minuto con la acción `tankwise.import_history` (solo administradores). El CSV
 necesita marca de tiempo, temperatura del termo, potencia y energía de la
-resistencia y, opcionalmente, la salida del regulador (%) y el estado del modo
-manual (`on`/`off`). Admite separador coma, punto y coma o tabulador, y coma
+resistencia y, opcionalmente, la salida del regulador (%), el estado del modo
+manual (`on`/`off`) y `manual_source` (quién encendió el modo manual: `user`,
+`automation:<entity_id>` o vacío). Admite separador coma, punto y coma o tabulador, y coma
 decimal. Las lecturas se pasan por el modelo del depósito, así que los
 consumos y los fallos se detectan igual que en vivo; se toleran huecos y
 valores `unavailable`. Los días que ya están en el histórico se omiten. El
@@ -171,6 +172,41 @@ data:
   config_entry_id: <tu instancia de TankWise>
   file_path: /config/tankwise_history.csv
 ```
+
+Una activación del modo manual cuenta como fallo de previsión con el mismo
+criterio que en vivo: si `manual_source` es `user` o una de las
+*automatizaciones que actúan por una persona*. En los archivos sin columna
+`manual_source` las activaciones no cuentan, salvo que se indique
+`manual_mode_is_failure: true`.
+
+### Exportar el histórico desde Home Assistant
+
+`tools/export_history.py` descarga los últimos N días de la API REST de Home
+Assistant (historial y registro) y escribe el CSV en el formato que espera
+`tankwise.import_history`, una fila por minuto e incluida `manual_source`. Solo
+necesita Python 3.12 o posterior (únicamente la biblioteca estándar).
+
+Crea un token de acceso de larga duración en tu perfil de Home Assistant y
+pásalo en la variable de entorno `HA_TOKEN`. El token solo se envía a Home
+Assistant; nunca se escribe en disco ni se muestra.
+
+```bash
+export HA_TOKEN="<token de larga duración>"   # PowerShell: $env:HA_TOKEN = "..."
+python tools/export_history.py \
+  --url http://homeassistant.local:8123 \
+  --temperature sensor.termo_temperatura \
+  --power sensor.termo_potencia \
+  --energy sensor.termo_energia \
+  --regulator sensor.derivador_pwm \
+  --manual-mode switch.derivador_modo_manual \
+  --days 10 \
+  --output tankwise_history.csv
+```
+
+Copia el archivo a la carpeta de configuración (por ejemplo,
+`/config/tankwise_history.csv`) y ejecuta la acción. Las unidades se convierten
+a °C, W y kWh. El historial solo guarda los cambios, así que cada minuto lleva
+el último valor conocido.
 
 ## Cómo funciona el modelo del depósito
 

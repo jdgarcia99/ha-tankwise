@@ -150,7 +150,9 @@ TankWise learns when hot water is used from the draws it detects:
 To skip the learning period, import raw minute readings with the
 `tankwise.import_history` action (administrators only). The CSV needs a
 timestamp, the tank temperature, the heating element power and energy, and
-optionally the regulator output (%) and the manual mode state (`on`/`off`).
+optionally the regulator output (%), the manual mode state (`on`/`off`) and
+`manual_source` (who switched the manual mode on: `user`,
+`automation:<entity_id>` or empty).
 Comma, semicolon or tab separators and decimal commas are accepted. The
 readings are replayed through the tank model, so draws and failures are
 detected exactly as they are live; gaps and `unavailable` values are
@@ -163,6 +165,40 @@ data:
   config_entry_id: <your TankWise entry>
   file_path: /config/tankwise_history.csv
 ```
+
+A manual mode activation counts as a forecast failure with the same rule as
+live: when `manual_source` is `user` or one of the *automations acting for a
+person*. Files without a `manual_source` column ignore manual mode
+activations unless `manual_mode_is_failure: true` is set.
+
+### Exporting history from Home Assistant
+
+`tools/export_history.py` downloads the last N days from the Home Assistant
+REST API (history and logbook) and writes the CSV in the format expected by
+`tankwise.import_history`, one row per minute, including `manual_source`. It
+only needs Python 3.12 or later (standard library only).
+
+Create a long-lived access token in your Home Assistant profile and pass it
+in the `HA_TOKEN` environment variable. The token is only sent to Home
+Assistant; it is never written to disk or printed.
+
+```bash
+export HA_TOKEN="<long-lived access token>"   # PowerShell: $env:HA_TOKEN = "..."
+python tools/export_history.py \
+  --url http://homeassistant.local:8123 \
+  --temperature sensor.water_heater_temperature \
+  --power sensor.water_heater_power \
+  --energy sensor.water_heater_energy \
+  --regulator sensor.diverter_pwm \
+  --manual-mode switch.diverter_manual_mode \
+  --days 10 \
+  --output tankwise_history.csv
+```
+
+Copy the file to the configuration folder (for example
+`/config/tankwise_history.csv`) and run the action. Units are converted to
+°C, W and kWh. The history only stores changes, so each minute holds the
+last known value.
 
 ## How the tank model works
 
