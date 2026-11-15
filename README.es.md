@@ -20,7 +20,7 @@ o tus propias automatizaciones deciden cómo cubrirla.
 
 ## Estado del proyecto
 
-> **Desarrollo inicial (0.2.1, fase 2).** TankWise modela el depósito y
+> **Desarrollo inicial (0.2.2, fase 2).** TankWise modela el depósito y
 > publica su estado de carga. El aprendizaje del uso y el plan de
 > calentamiento (la salida para otras integraciones) todavía no están
 > disponibles.
@@ -135,9 +135,13 @@ los `entity_id` a mano.
 - Un consumo es una caída sostenida de la sonda filtrada, también mientras
   calienta.
 - El depósito se recalibra a «lleno» cuando corta el termostato: con sensor de
-  regulador, cuando tras calentar el regulador pide potencia durante 3 minutos
-  y la resistencia no consume; sin él, cuando el calentamiento se para cerca
-  de la temperatura de corte.
+  regulador, cuando el regulador pedía potencia (más del 10 %) en el instante
+  en que la resistencia dejó de consumir tras calentar de verdad, y la potencia
+  sigue baja 3 minutos, aunque el regulador se apague después. Ese instante se
+  toma de los cambios de estado, no solo de las lecturas cada 60 segundos; si
+  el regulador bajó justo antes de que cayera la potencia, no es un lleno. Sin
+  sensor de regulador, el calentamiento debe pararse cerca de la temperatura
+  de corte.
 - El estado se guarda y se restaura tras los reinicios. El calor que entró con
   Home Assistant parado se toma del contador de energía; tras una interrupción
   de más de 30 minutos el estado se marca como incierto hasta el siguiente

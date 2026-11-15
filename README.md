@@ -20,7 +20,7 @@ integration or your own automations decide how to fulfil it.
 
 ## Project status
 
-> **Early development (0.2.1, phase 2).** TankWise models the tank and
+> **Early development (0.2.2, phase 2).** TankWise models the tank and
 > publishes its state of charge. Usage learning and the heating plan (the
 > output for other integrations) are not available yet.
 
@@ -130,9 +130,13 @@ renamed in Home Assistant. Consumers must let the user pick these entities
   detected draws out.
 - A draw is a sustained drop of the filtered probe, also while heating.
 - The tank is recalibrated to "full" when the thermostat cuts off: with a
-  regulator sensor, when the regulator asks for power for 3 minutes after
-  heating and the element draws none; without it, when heating stops close to
-  the cut-off temperature.
+  regulator sensor, when the regulator was asking for power (> 10 %) at the
+  instant the element stopped drawing it after real heating, and the power
+  stays low for 3 minutes, even if the regulator is switched off afterwards.
+  That instant is taken from state changes, not only from the 60-second
+  samples; if the regulator was lowered just before the power fell, it is not
+  a full tank. Without a regulator sensor, heating must stop close to the
+  cut-off temperature.
 - The state is saved and restored across restarts. Heat added while Home
   Assistant was down is taken from the energy meter; after an outage longer
   than 30 minutes the state is marked uncertain until the next full tank.

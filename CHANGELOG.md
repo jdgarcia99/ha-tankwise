@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-11-16
+
+### Fixed
+
+- A thermostat cut-off was missed when the regulator was switched off shortly
+  afterwards (e.g. an automation turning off the diverter manual mode three
+  minutes after the power drops): with 60-second samples only about two
+  minutes of regulator demand were seen. The regulator value is now captured
+  at the instant the power falls, from the state changes of the power and
+  regulator sensors, and a full tank is confirmed if the power stays below
+  the threshold for 3 minutes, even if the regulator goes to 0 afterwards.
+  A power drop caused by the regulator being lowered first is still not a
+  full tank.
+
 ## [0.2.1] - 2026-11-15
 
 ### Fixed
@@ -63,6 +77,7 @@ and the heating plan will follow.
 - The output contract entities (energy needed, deadline, grid allowed,
   requested power and urgency) arrive in a later release.
 
-[Unreleased]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/jdgarcia99/ha-tankwise/releases/tag/v0.2.0
