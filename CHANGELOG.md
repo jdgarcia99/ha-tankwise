@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-11-15
+
+### Fixed
+
+- Entity IDs are now generated from fixed English object IDs
+  (`useful_energy`, `charge`, `showers_available`, `model_status`) whatever
+  the Home Assistant language, so they no longer depend on the language
+  (e.g. `sensor.<name>_useful_energy` instead of a Spanish entity ID).
+  Visible names stay translated. Existing entities keep their current entity
+  IDs.
+
 ## [0.2.0] - 2026-11-15
 
 First public release (0.1.0 was an internal milestone and was not published).
@@ -52,5 +63,6 @@ and the heating plan will follow.
 - The output contract entities (energy needed, deadline, grid allowed,
   requested power and urgency) arrive in a later release.
 
-[Unreleased]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/jdgarcia99/ha-tankwise/releases/tag/v0.2.0

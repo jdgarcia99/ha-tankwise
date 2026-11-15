@@ -20,7 +20,7 @@ o tus propias automatizaciones deciden cómo cubrirla.
 
 ## Estado del proyecto
 
-> **Desarrollo inicial (0.2.0, fase 2).** TankWise modela el depósito y
+> **Desarrollo inicial (0.2.1, fase 2).** TankWise modela el depósito y
 > publica su estado de carga. El aprendizaje del uso y el plan de
 > calentamiento (la salida para otras integraciones) todavía no están
 > disponibles.
