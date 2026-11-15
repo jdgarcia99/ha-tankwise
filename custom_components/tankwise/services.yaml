@@ -1,0 +1,17 @@
+import_history:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: tankwise
+    file_path:
+      required: true
+      example: "/config/tankwise_history.csv"
+      selector:
+        text:
+    manual_mode_is_failure:
+      required: false
+      default: true
+      selector:
+        boolean:

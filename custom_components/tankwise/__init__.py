@@ -4,11 +4,23 @@ from __future__ import annotations
 
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.typing import ConfigType
 
+from .const import DOMAIN
 from .coordinator import TankWiseConfigEntry, TankWiseCoordinator
+from .services import async_setup_services
 from .storage import TankWiseStore
 
 PLATFORMS: list[Platform] = [Platform.SENSOR]
+
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+
+
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Register the TankWise actions."""
+    async_setup_services(hass)
+    return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: TankWiseConfigEntry) -> bool:
@@ -18,7 +30,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: TankWiseConfigEntry) -> 
     entry.runtime_data = coordinator
     coordinator.async_start_listeners()
 
-    # The tank model must keep running even when no entity is listening
+    # The models must keep running even when no entity is listening
     # (e.g. all entities disabled), so keep the coordinator polling.
     entry.async_on_unload(coordinator.async_add_listener(lambda: None))
 
