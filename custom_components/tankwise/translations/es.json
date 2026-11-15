@@ -39,7 +39,10 @@
           "price_sensor": "Precio de la electricidad",
           "presence_entity": "Casa activada / presencia",
           "bottom_temperature_sensor": "Temperatura de la parte baja del termo",
-          "regulator_sensor": "Salida del regulador (%)"
+          "regulator_sensor": "Salida del regulador (%)",
+          "manual_mode_entity": "Modo manual del regulador",
+          "person_automations": "Automatizaciones que actúan por una persona",
+          "workday_sensor": "Sensor de día laborable"
         },
         "data_description": {
           "solar_forecast_sensor": "Sensor de previsión de energía de Forecast.Solar o Solcast. El planificador usará la curva horaria en una versión posterior.",
@@ -47,7 +50,10 @@
           "price_sensor": "Sensor de precio de la electricidad (por ejemplo, PVPC).",
           "presence_entity": "Si está apagado, TankWise pasa a modo vacaciones (sin calentar con red).",
           "bottom_temperature_sensor": "Segunda sonda en la parte baja del depósito, si existe.",
-          "regulator_sensor": "Salida del regulador de potencia que gobierna la resistencia (por ejemplo, la salida PWM de un derivador de excedentes). Es el criterio principal para detectar el depósito lleno."
+          "regulator_sensor": "Salida del regulador de potencia que gobierna la resistencia (por ejemplo, la salida PWM de un derivador de excedentes). Es el criterio principal para detectar el depósito lleno.",
+          "manual_mode_entity": "Interruptor que obliga al regulador a calentar (por ejemplo, el modo manual del derivador). Si lo enciende una persona, cuenta como fallo de previsión.",
+          "person_automations": "Automatizaciones que encienden el modo manual en nombre de una persona (por ejemplo, un pulsador físico). Cualquier otra automatización no cuenta.",
+          "workday_sensor": "Sensor binario de la integración Workday, para distinguir los festivos."
         }
       }
     },
@@ -94,12 +100,18 @@
           "price_sensor": "Precio de la electricidad",
           "presence_entity": "Casa activada / presencia",
           "bottom_temperature_sensor": "Temperatura de la parte baja del termo",
-          "regulator_sensor": "Salida del regulador (%)"
+          "regulator_sensor": "Salida del regulador (%)",
+          "manual_mode_entity": "Modo manual del regulador",
+          "person_automations": "Automatizaciones que actúan por una persona",
+          "workday_sensor": "Sensor de día laborable"
         },
         "data_description": {
           "solar_forecast_sensor": "Sensor de previsión de energía de Forecast.Solar o Solcast. El planificador usará la curva horaria en una versión posterior.",
           "presence_entity": "Si está apagado, TankWise pasa a modo vacaciones (sin calentar con red).",
-          "regulator_sensor": "Salida del regulador de potencia que gobierna la resistencia (por ejemplo, la salida PWM de un derivador de excedentes). Es el criterio principal para detectar el depósito lleno."
+          "regulator_sensor": "Salida del regulador de potencia que gobierna la resistencia (por ejemplo, la salida PWM de un derivador de excedentes). Es el criterio principal para detectar el depósito lleno.",
+          "manual_mode_entity": "Interruptor que obliga al regulador a calentar (por ejemplo, el modo manual del derivador). Si lo enciende una persona, cuenta como fallo de previsión.",
+          "person_automations": "Automatizaciones que encienden el modo manual en nombre de una persona (por ejemplo, un pulsador físico). Cualquier otra automatización no cuenta.",
+          "workday_sensor": "Sensor binario de la integración Workday, para distinguir los festivos."
         }
       }
     },
@@ -142,7 +154,60 @@
           "uncertain": "Incierto",
           "learning": "Aprendiendo"
         }
+      },
+      "next_expected_draw": {
+        "name": "Próximo consumo previsto"
+      },
+      "demand_profile": {
+        "name": "Perfil de demanda",
+        "state": {
+          "learning": "Aprendiendo",
+          "ready": "Listo"
+        }
       }
+    }
+  },
+  "services": {
+    "import_history": {
+      "name": "Importar histórico",
+      "description": "Importa lecturas en bruto del termo (CSV minuto a minuto) y las pasa por el modelo del depósito para aprender el perfil de uso.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Instancia",
+          "description": "Instancia de TankWise destino."
+        },
+        "file_path": {
+          "name": "Archivo",
+          "description": "Ruta del archivo CSV dentro de la carpeta de configuración."
+        },
+        "manual_mode_is_failure": {
+          "name": "El modo manual cuenta como fallo",
+          "description": "Considerar cada activación del modo manual del archivo como un fallo de previsión."
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "invalid_file_type": {
+      "message": "El archivo debe ser un .csv."
+    },
+    "path_not_allowed": {
+      "message": "El archivo {path} está fuera de la carpeta de configuración y de los directorios permitidos."
+    },
+    "file_not_found": {
+      "message": "El archivo {path} no existe."
+    },
+    "file_too_large": {
+      "message": "El archivo {path} es demasiado grande."
+    },
+    "entry_not_found": {
+      "message": "No se encuentra la instancia de TankWise."
+    },
+    "entry_not_loaded": {
+      "message": "La instancia de TankWise no está cargada."
+    },
+    "invalid_file": {
+      "message": "No se puede importar el archivo: {error}"
     }
   }
 }

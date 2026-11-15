@@ -16,7 +16,21 @@
           "uncertain": "mdi:help-circle-outline",
           "learning": "mdi:school-outline"
         }
+      },
+      "next_expected_draw": {
+        "default": "mdi:shower"
+      },
+      "demand_profile": {
+        "default": "mdi:chart-timeline-variant",
+        "state": {
+          "learning": "mdi:school-outline"
+        }
       }
+    }
+  },
+  "services": {
+    "import_history": {
+      "service": "mdi:file-import-outline"
     }
   }
 }
