@@ -181,8 +181,8 @@
           "description": "Ruta del archivo CSV dentro de la carpeta de configuración."
         },
         "manual_mode_is_failure": {
-          "name": "El modo manual cuenta como fallo",
-          "description": "Considerar cada activación del modo manual del archivo como un fallo de previsión."
+          "name": "Modo manual sin origen cuenta como fallo",
+          "description": "Solo para archivos sin columna manual_source: considerar cada activación del modo manual como un fallo de previsión. Con manual_source, cuentan las activaciones hechas por un usuario o por una automatización que actúa por una persona."
         }
       }
     }

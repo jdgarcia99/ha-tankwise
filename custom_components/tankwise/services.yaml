@@ -12,6 +12,6 @@ import_history:
         text:
     manual_mode_is_failure:
       required: false
-      default: true
+      default: false
       selector:
         boolean:

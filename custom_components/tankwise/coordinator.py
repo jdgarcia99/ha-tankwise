@@ -474,6 +474,9 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
             self.shower_energy,
             local_tz,
             manual_mode_is_failure=manual_mode_is_failure,
+            person_automations=self.config_entry.options.get(
+                CONF_PERSON_AUTOMATIONS, []
+            ),
         )
         _LOGGER.info(
             "Imported %s days (%s draws, %s failures); %s rows skipped",

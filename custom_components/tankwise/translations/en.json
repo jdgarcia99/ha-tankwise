@@ -181,8 +181,8 @@
           "description": "Path of the CSV file inside the configuration folder."
         },
         "manual_mode_is_failure": {
-          "name": "Manual mode counts as failure",
-          "description": "Treat every manual mode activation in the file as a forecast failure."
+          "name": "Manual mode without source counts as failure",
+          "description": "Only for files without a manual_source column: treat every manual mode activation as a forecast failure. With manual_source, activations count when made by a user or by an automation acting for a person."
         }
       }
     }

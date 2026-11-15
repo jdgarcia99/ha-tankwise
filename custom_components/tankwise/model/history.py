@@ -1,9 +1,11 @@
 """Import of raw tank history (minute readings) through the tank model.
 
 The CSV holds one row per reading with a timestamp, the tank temperature,
-the heating element power and energy, the regulator output (%) and the
-regulator manual mode state. Rows are replayed through a fresh
-:class:`TankModel`, which detects the draws exactly as it does live; gaps
+the heating element power and energy, the regulator output (%), the
+regulator manual mode state and, optionally, who switched the manual mode on
+(``manual_source``: ``user``, ``automation:<entity_id>`` or empty). Rows are
+replayed through a fresh :class:`TankModel`, which detects the draws exactly
+as it does live; gaps
 and ``unavailable`` values are handled by the model itself (gap recovery
 and safe mode).
 
@@ -12,7 +14,7 @@ This module is pure Python and must not import Home Assistant.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 import csv
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, tzinfo
@@ -29,6 +31,7 @@ COLUMN_ALIASES: dict[str, tuple[str, ...]] = {
     "energy": ("energy", "energia", "energía"),
     "regulator": ("regulator", "pwm", "regulador"),
     "manual_mode": ("manual_mode", "manual", "modo_manual"),
+    "manual_source": ("manual_source", "source", "origen"),
 }
 REQUIRED_COLUMNS = ("timestamp", "temperature", "power", "energy")
 # A day counts as observed only if the readings cover most of it, so that a
@@ -37,6 +40,8 @@ MIN_DAY_COVERAGE = timedelta(hours=20)
 MISSING_VALUES = {"", "unavailable", "unknown", "none", "null", "nan", "-"}
 TRUE_VALUES = {"on", "true", "1", "yes", "si", "sí"}
 FALSE_VALUES = {"off", "false", "0", "no"}
+SOURCE_USER = "user"
+SOURCE_AUTOMATION_PREFIX = "automation:"
 TIMESTAMP_FORMATS = (
     "%d/%m/%Y %H:%M:%S",
     "%d/%m/%Y %H:%M",
@@ -55,6 +60,31 @@ class HistoryRow:
 
     sample: TankSample
     manual_mode: bool | None
+    # None: the file has no manual_source column; "": unknown origin.
+    manual_source: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ManualActivation:
+    """The regulator manual mode switched on (off to on)."""
+
+    timestamp: datetime
+    source: str | None
+
+
+def is_person_source(source: str, person_automations: Collection[str]) -> bool:
+    """Return True if a manual_source value means a person acted.
+
+    Same criterion as live: a user, or an automation listed as acting on
+    behalf of a person. Any other automation or an unknown origin does not
+    count.
+    """
+    source = source.strip()
+    if source == SOURCE_USER:
+        return True
+    if source.startswith(SOURCE_AUTOMATION_PREFIX):
+        return source[len(SOURCE_AUTOMATION_PREFIX) :] in person_automations
+    return False
 
 
 @dataclass(slots=True)
@@ -78,7 +108,7 @@ class ReplayResult:
     """Outcome of replaying a history through the tank model."""
 
     draws: list[ReplayedDraw] = field(default_factory=list)
-    manual_activations: list[datetime] = field(default_factory=list)
+    manual_activations: list[ManualActivation] = field(default_factory=list)
     observed_days: set[date] = field(default_factory=set)
     valid_samples: int = 0
 
@@ -89,15 +119,23 @@ def _normalise_header(name: str) -> str:
 
 
 def _map_columns(header: list[str]) -> dict[str, int]:
+    names = [_normalise_header(raw) for raw in header]
     mapping: dict[str, int] = {}
-    for index, raw in enumerate(header):
-        name = _normalise_header(raw)
-        for column, aliases in COLUMN_ALIASES.items():
-            if column in mapping:
+    # Exact names first, so that e.g. "manual_source" is not taken for
+    # "manual_mode" through the "manual" prefix; then "<alias>_<unit>" names.
+    for exact in (True, False):
+        for index, name in enumerate(names):
+            if index in mapping.values():
                 continue
-            if any(name == alias or name.startswith(f"{alias}_") for alias in aliases):
-                mapping[column] = index
-                break
+            for column, aliases in COLUMN_ALIASES.items():
+                if column in mapping:
+                    continue
+                if any(
+                    name == alias if exact else name.startswith(f"{alias}_")
+                    for alias in aliases
+                ):
+                    mapping[column] = index
+                    break
     missing = [column for column in REQUIRED_COLUMNS if column not in mapping]
     if missing:
         raise HistoryFormatError(f"missing columns: {', '.join(missing)}")
@@ -197,6 +235,11 @@ def parse_history_csv(text: str, default_tz: tzinfo) -> ParsedHistory:
                     regulator=_parse_number(cell(values, "regulator"), decimal_comma),
                 ),
                 manual_mode=_parse_bool(cell(values, "manual_mode")),
+                manual_source=(
+                    cell(values, "manual_source").strip()
+                    if "manual_source" in columns
+                    else None
+                ),
             )
         )
     rows.sort(key=lambda row: row.sample.timestamp)
@@ -244,7 +287,9 @@ def replay_history(
 
         if row.manual_mode is not None:
             if row.manual_mode and manual is False:
-                result.manual_activations.append(sample.timestamp)
+                result.manual_activations.append(
+                    ManualActivation(sample.timestamp, row.manual_source)
+                )
             manual = row.manual_mode
 
     result.observed_days = {
@@ -272,13 +317,19 @@ def apply_to_demand(
     shower_energy_kwh: float,
     local_tz: tzinfo,
     *,
-    manual_mode_is_failure: bool = True,
+    manual_mode_is_failure: bool = False,
+    person_automations: Collection[str] = (),
 ) -> ImportSummary:
     """Merge a replayed history into the demand model.
 
     Days already present in the demand history (observed live or imported
     before) are skipped, so importing twice does not count draws twice.
     Only fully covered days are imported.
+
+    A manual mode activation is a forecast failure when its ``manual_source``
+    is a user or one of ``person_automations``. Files without a
+    ``manual_source`` column use ``manual_mode_is_failure`` for every
+    activation instead.
     """
     new_days = {day for day in result.observed_days if not demand.is_observed(day)}
     skipped = len(result.observed_days) - len(new_days)
@@ -286,15 +337,20 @@ def apply_to_demand(
     def local_day(moment: datetime) -> date:
         return moment.astimezone(local_tz).date()
 
-    if manual_mode_is_failure:
-        for moment in result.manual_activations:
-            day = local_day(moment)
-            if day in new_days:
-                demand.add_failure(
-                    moment.astimezone(local_tz),
-                    day_type_of(day),
-                    FailureReason.MANUAL_MODE,
-                )
+    for activation in result.manual_activations:
+        day = local_day(activation.timestamp)
+        if day not in new_days:
+            continue
+        if activation.source is None:
+            is_failure = manual_mode_is_failure
+        else:
+            is_failure = is_person_source(activation.source, person_automations)
+        if is_failure:
+            demand.add_failure(
+                activation.timestamp.astimezone(local_tz),
+                day_type_of(day),
+                FailureReason.MANUAL_MODE,
+            )
 
     draws = failures = 0
     for replayed in result.draws:

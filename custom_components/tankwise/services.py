@@ -32,7 +32,7 @@ IMPORT_HISTORY_SCHEMA = vol.Schema(
     {
         vol.Required(ATTR_CONFIG_ENTRY_ID): cv.string,
         vol.Required(ATTR_FILE_PATH): cv.string,
-        vol.Optional(ATTR_MANUAL_MODE_IS_FAILURE, default=True): cv.boolean,
+        vol.Optional(ATTR_MANUAL_MODE_IS_FAILURE, default=False): cv.boolean,
     }
 )
 
