@@ -58,7 +58,9 @@ from .const import (
     CONF_CUTOFF_TEMPERATURE,
     CONF_ENERGY_SENSOR,
     CONF_MAINS_WATER_TEMPERATURE,
+    CONF_MANUAL_MODE_ENTITY,
     CONF_MIN_USEFUL_TEMPERATURE,
+    CONF_PERSON_AUTOMATIONS,
     CONF_POWER_SENSOR,
     CONF_PRESENCE_ENTITY,
     CONF_PRICE_SENSOR,
@@ -70,6 +72,7 @@ from .const import (
     CONF_TEMPERATURE_SENSOR,
     CONF_VOLUME,
     CONF_WATER_REGION,
+    CONF_WORKDAY_SENSOR,
     DEFAULT_NAME,
     DEFAULT_PARAMETERS,
     DOMAIN,
@@ -81,6 +84,8 @@ ENERGY_STATE_CLASSES = (SensorStateClass.TOTAL_INCREASING, SensorStateClass.TOTA
 
 # A regulator output is a percentage; some integrations publish it unitless.
 REGULATOR_UNITS: tuple[str | None, ...] = (PERCENTAGE, None)
+
+AUTOMATION_DOMAIN = "automation"
 
 ERROR_ENTITY_NOT_FOUND = "entity_not_found"
 ERROR_INVALID_UNIT = "invalid_unit"
@@ -142,6 +147,17 @@ OPTIONAL_SENSORS_SCHEMA = vol.Schema(
             EntitySelectorConfig(
                 domain=[SENSOR_DOMAIN, NUMBER_DOMAIN, INPUT_NUMBER_DOMAIN]
             )
+        ),
+        vol.Optional(CONF_MANUAL_MODE_ENTITY): EntitySelector(
+            EntitySelectorConfig(
+                domain=[SWITCH_DOMAIN, INPUT_BOOLEAN_DOMAIN, BINARY_SENSOR_DOMAIN]
+            )
+        ),
+        vol.Optional(CONF_PERSON_AUTOMATIONS): EntitySelector(
+            EntitySelectorConfig(domain=AUTOMATION_DOMAIN, multiple=True)
+        ),
+        vol.Optional(CONF_WORKDAY_SENSOR): EntitySelector(
+            EntitySelectorConfig(domain=BINARY_SENSOR_DOMAIN, integration="workday")
         ),
     }
 )

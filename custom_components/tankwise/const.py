@@ -23,6 +23,9 @@ CONF_PRICE_SENSOR: Final = "price_sensor"
 CONF_PRESENCE_ENTITY: Final = "presence_entity"
 CONF_BOTTOM_TEMPERATURE_SENSOR: Final = "bottom_temperature_sensor"
 CONF_REGULATOR_SENSOR: Final = "regulator_sensor"
+CONF_WORKDAY_SENSOR: Final = "workday_sensor"
+CONF_MANUAL_MODE_ENTITY: Final = "manual_mode_entity"
+CONF_PERSON_AUTOMATIONS: Final = "person_automations"
 
 OPTIONAL_SENSOR_KEYS: Final = (
     CONF_SOLAR_FORECAST_SENSOR,
@@ -31,6 +34,9 @@ OPTIONAL_SENSOR_KEYS: Final = (
     CONF_PRESENCE_ENTITY,
     CONF_BOTTOM_TEMPERATURE_SENSOR,
     CONF_REGULATOR_SENSOR,
+    CONF_WORKDAY_SENSOR,
+    CONF_MANUAL_MODE_ENTITY,
+    CONF_PERSON_AUTOMATIONS,
 )
 
 # Physical parameters (config entry options)
@@ -72,3 +78,13 @@ DEFAULT_PARAMETERS: Final = {
 
 STORAGE_VERSION: Final = 1
 STORAGE_SAVE_DELAY: Final = 300  # s
+
+# Demand model
+FORECAST_HORIZON_HOURS: Final = 36
+FORECAST_REFRESH: Final = timedelta(minutes=15)
+
+# Services
+SERVICE_IMPORT_HISTORY: Final = "import_history"
+ATTR_CONFIG_ENTRY_ID: Final = "config_entry_id"
+ATTR_FILE_PATH: Final = "file_path"
+ATTR_MANUAL_MODE_IS_FAILURE: Final = "manual_mode_is_failure"
