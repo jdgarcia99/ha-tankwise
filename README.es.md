@@ -29,7 +29,7 @@ o tus propias automatizaciones deciden cómo cubrirla.
 |------|-----------|--------|
 | 1 | Esqueleto, config flow, lectura de sensores | ✅ Hecha |
 | 2 | Modelo del depósito (estado de carga, recalibración, aprendizaje de pérdidas) | ✅ Hecha |
-| 3 | Detección de consumos y perfil aprendido | Pendiente |
+| 3 | Detección de consumos y perfil aprendido | En curso |
 | 4 | Planificador y contrato de salida | Pendiente |
 | 5 | Botón de refuerzo, selector de confort, modo vacaciones, diagnósticos | Pendiente |
 | 6 | Documentación completa y primera versión estable | Pendiente |
@@ -61,6 +61,13 @@ Todo se configura desde la interfaz; no hay nada en `configuration.yaml`.
 - Interruptor de presencia o «casa activada»: si está apagado, TankWise pasa a
   modo vacaciones.
 - Sonda de temperatura de la parte baja del termo.
+- Modo manual del regulador: el interruptor que obliga al regulador a
+  calentar (por ejemplo, el modo manual del derivador). Si lo enciende una
+  persona, cuenta como fallo de previsión. Las automatizaciones solo
+  cuentan si están en la lista de *automatizaciones que actúan por una
+  persona* (por ejemplo, un pulsador físico).
+- Sensor de día laborable (integración Workday), para distinguir los
+  festivos.
 - Salida del regulador (%): salida del regulador que gobierna la resistencia,
   por ejemplo la salida PWM de un derivador de excedentes. Si existe, es el
   criterio principal para detectar el depósito lleno (el regulador pide
@@ -92,6 +99,8 @@ referencia españolas para el dimensionado de agua caliente sanitaria.
 | Carga | Energía útil en porcentaje del depósito lleno |
 | Duchas disponibles | Energía útil dividida entre la energía por ducha |
 | Estado del modelo | `calibrated` (calibrado), `learning` (aún aprendiendo las pérdidas) o `uncertain` (incierto: sin recalibrar desde el arranque o tras una interrupción larga) |
+| Próximo consumo previsto | Cuándo se espera el siguiente uso de agua caliente, con su energía y probabilidad |
+| Perfil de demanda | `learning` (aprendiendo: menos de 14 días de datos) o `ready` (listo) |
 
 El coeficiente de pérdidas aprendido, la temperatura de corte aprendida y los
 últimos consumos detectados están en los diagnósticos de la integración.
@@ -123,6 +132,81 @@ de TankWise (por ejemplo, `sensor.<nombre>_energy_needed`) y se pueden
 renombrar en Home Assistant. Quien los use debe dejar que el usuario elija
 estas entidades (como hace SolarSplit en su config flow) en lugar de escribir
 los `entity_id` a mano.
+
+## Perfil de uso
+
+TankWise aprende cuándo se usa el agua caliente a partir de los consumos que
+detecta:
+
+- Franjas de 15 minutos para laborables, sábados y domingos/festivos (con el
+  sensor Workday, un festivo entre semana usa el perfil de domingo; los
+  sábados son siempre sábados).
+- Las últimas semanas pesan más (media vida de 21 días).
+- Las previsiones usan el percentil de confort (P80/P90/P95) de la demanda
+  acumulada de los días anteriores, así cubren la demanda diaria real sin
+  sumar los extremos de cada franja.
+- Los fallos de previsión hacen que esos días pesen más: un consumo empezado
+  con menos energía útil que media ducha, o el modo manual del regulador
+  encendido por una persona. Una ducha fuerte que deja el termo por debajo de
+  la temperatura mínima útil es normal, no un fallo.
+- Con menos de 14 días de datos se mezcla un perfil por defecto.
+- La energía por ducha se aprende en cuanto hay al menos cinco duchas.
+
+### Importar histórico
+
+Para saltarse el periodo de aprendizaje, importa lecturas en bruto minuto a
+minuto con la acción `tankwise.import_history` (solo administradores). El CSV
+necesita marca de tiempo, temperatura del termo, potencia y energía de la
+resistencia y, opcionalmente, la salida del regulador (%), el estado del modo
+manual (`on`/`off`) y `manual_source` (quién encendió el modo manual: `user`,
+`automation:<entity_id>` o vacío). Admite separador coma, punto y coma o tabulador, y coma
+decimal. Las lecturas se pasan por el modelo del depósito, así que los
+consumos y los fallos se detectan igual que en vivo; se toleran huecos y
+valores `unavailable`. Los días que ya están en el histórico se omiten. El
+archivo debe estar dentro de la carpeta de configuración (o de un directorio
+externo permitido).
+
+```yaml
+action: tankwise.import_history
+data:
+  config_entry_id: <tu instancia de TankWise>
+  file_path: /config/tankwise_history.csv
+```
+
+Una activación del modo manual cuenta como fallo de previsión con el mismo
+criterio que en vivo: si `manual_source` es `user` o una de las
+*automatizaciones que actúan por una persona*. En los archivos sin columna
+`manual_source` las activaciones no cuentan, salvo que se indique
+`manual_mode_is_failure: true`.
+
+### Exportar el histórico desde Home Assistant
+
+`tools/export_history.py` descarga los últimos N días de la API REST de Home
+Assistant (historial y registro) y escribe el CSV en el formato que espera
+`tankwise.import_history`, una fila por minuto e incluida `manual_source`. Solo
+necesita Python 3.12 o posterior (únicamente la biblioteca estándar).
+
+Crea un token de acceso de larga duración en tu perfil de Home Assistant y
+pásalo en la variable de entorno `HA_TOKEN`. El token solo se envía a Home
+Assistant; nunca se escribe en disco ni se muestra.
+
+```bash
+export HA_TOKEN="<token de larga duración>"   # PowerShell: $env:HA_TOKEN = "..."
+python tools/export_history.py \
+  --url http://homeassistant.local:8123 \
+  --temperature sensor.termo_temperatura \
+  --power sensor.termo_potencia \
+  --energy sensor.termo_energia \
+  --regulator sensor.derivador_pwm \
+  --manual-mode switch.derivador_modo_manual \
+  --days 10 \
+  --output tankwise_history.csv
+```
+
+Copia el archivo a la carpeta de configuración (por ejemplo,
+`/config/tankwise_history.csv`) y ejecuta la acción. Las unidades se convierten
+a °C, W y kWh. El historial solo guarda los cambios, así que cada minuto lleva
+el último valor conocido.
 
 ## Cómo funciona el modelo del depósito
 

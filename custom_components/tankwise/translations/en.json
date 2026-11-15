@@ -39,7 +39,10 @@
           "price_sensor": "Electricity price",
           "presence_entity": "Home active / presence",
           "bottom_temperature_sensor": "Tank bottom temperature",
-          "regulator_sensor": "Regulator output (%)"
+          "regulator_sensor": "Regulator output (%)",
+          "manual_mode_entity": "Regulator manual mode",
+          "person_automations": "Automations acting for a person",
+          "workday_sensor": "Workday sensor"
         },
         "data_description": {
           "solar_forecast_sensor": "Forecast.Solar or Solcast energy forecast sensor. The hourly curve will be used by the planner in a later version.",
@@ -47,7 +50,10 @@
           "price_sensor": "Electricity price sensor (e.g. PVPC).",
           "presence_entity": "When off, TankWise switches to holiday mode (no grid heating).",
           "bottom_temperature_sensor": "Second probe in the lower part of the tank, if available.",
-          "regulator_sensor": "Output of the power regulator that drives the heating element (e.g. the PWM output of a solar diverter). It is the main criterion to detect a full tank."
+          "regulator_sensor": "Output of the power regulator that drives the heating element (e.g. the PWM output of a solar diverter). It is the main criterion to detect a full tank.",
+          "manual_mode_entity": "Switch that forces the regulator to heat (e.g. the diverter manual mode). When a person switches it on, it counts as a forecast failure.",
+          "person_automations": "Automations that switch on the manual mode on behalf of a person (e.g. a physical push button). Any other automation does not count.",
+          "workday_sensor": "Binary sensor of the Workday integration, to tell holidays apart."
         }
       }
     },
@@ -94,12 +100,18 @@
           "price_sensor": "Electricity price",
           "presence_entity": "Home active / presence",
           "bottom_temperature_sensor": "Tank bottom temperature",
-          "regulator_sensor": "Regulator output (%)"
+          "regulator_sensor": "Regulator output (%)",
+          "manual_mode_entity": "Regulator manual mode",
+          "person_automations": "Automations acting for a person",
+          "workday_sensor": "Workday sensor"
         },
         "data_description": {
           "solar_forecast_sensor": "Forecast.Solar or Solcast energy forecast sensor. The hourly curve will be used by the planner in a later version.",
           "presence_entity": "When off, TankWise switches to holiday mode (no grid heating).",
-          "regulator_sensor": "Output of the power regulator that drives the heating element (e.g. the PWM output of a solar diverter). It is the main criterion to detect a full tank."
+          "regulator_sensor": "Output of the power regulator that drives the heating element (e.g. the PWM output of a solar diverter). It is the main criterion to detect a full tank.",
+          "manual_mode_entity": "Switch that forces the regulator to heat (e.g. the diverter manual mode). When a person switches it on, it counts as a forecast failure.",
+          "person_automations": "Automations that switch on the manual mode on behalf of a person (e.g. a physical push button). Any other automation does not count.",
+          "workday_sensor": "Binary sensor of the Workday integration, to tell holidays apart."
         }
       }
     },
@@ -142,7 +154,60 @@
           "uncertain": "Uncertain",
           "learning": "Learning"
         }
+      },
+      "next_expected_draw": {
+        "name": "Next expected draw"
+      },
+      "demand_profile": {
+        "name": "Demand profile",
+        "state": {
+          "learning": "Learning",
+          "ready": "Ready"
+        }
       }
+    }
+  },
+  "services": {
+    "import_history": {
+      "name": "Import history",
+      "description": "Imports raw tank readings (minute CSV) and replays them through the tank model to learn the usage profile.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Instance",
+          "description": "TankWise instance to import into."
+        },
+        "file_path": {
+          "name": "File",
+          "description": "Path of the CSV file inside the configuration folder."
+        },
+        "manual_mode_is_failure": {
+          "name": "Manual mode without source counts as failure",
+          "description": "Only for files without a manual_source column: treat every manual mode activation as a forecast failure. With manual_source, activations count when made by a user or by an automation acting for a person."
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "invalid_file_type": {
+      "message": "The file must be a .csv file."
+    },
+    "path_not_allowed": {
+      "message": "The file {path} is outside the configuration folder and the allowed directories."
+    },
+    "file_not_found": {
+      "message": "The file {path} does not exist."
+    },
+    "file_too_large": {
+      "message": "The file {path} is too large."
+    },
+    "entry_not_found": {
+      "message": "TankWise instance not found."
+    },
+    "entry_not_loaded": {
+      "message": "The TankWise instance is not loaded."
+    },
+    "invalid_file": {
+      "message": "The file cannot be imported: {error}"
     }
   }
 }

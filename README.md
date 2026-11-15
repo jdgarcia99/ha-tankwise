@@ -28,7 +28,7 @@ integration or your own automations decide how to fulfil it.
 |-------|---------|--------|
 | 1 | Skeleton, config flow, sensor reading | ✅ Done |
 | 2 | Tank model (state of charge, recalibration, loss learning) | ✅ Done |
-| 3 | Usage detection and learned profile | Planned |
+| 3 | Usage detection and learned profile | In progress |
 | 4 | Planner and output contract | Planned |
 | 5 | Boost button, comfort selector, holiday mode, diagnostics | Planned |
 | 6 | Full documentation and first stable release | Planned |
@@ -59,6 +59,11 @@ Everything is configured from the UI; nothing goes into `configuration.yaml`.
 - Electricity price (e.g. PVPC).
 - Presence / "home active" switch: when off, TankWise enters holiday mode.
 - Bottom tank temperature probe.
+- Regulator manual mode: the switch that forces the regulator to heat
+  (e.g. the diverter manual mode). When a person switches it on, it
+  counts as a forecast failure. Automations count only if they are listed
+  as *automations acting for a person* (e.g. a physical push button).
+- Workday sensor (Workday integration), to tell holidays apart.
 - Regulator output (%): output of the regulator that drives the heating
   element, e.g. the PWM output of a solar diverter. When available, it is the
   main criterion to detect a full tank (the regulator asks for power, the
@@ -90,6 +95,8 @@ tables for domestic hot water sizing.
 | Charge | Useful energy as a percentage of a full tank |
 | Showers available | Useful energy divided by the energy per shower |
 | Model status | `calibrated`, `learning` (heat losses still being learned) or `uncertain` (not recalibrated since start-up or since a long outage) |
+| Next expected draw | When the next hot water use is expected, with its energy and probability |
+| Demand profile | `learning` (fewer than 14 days of data) or `ready` |
 
 The learned heat loss coefficient, the learned cut-off temperature and the
 recent hot water draws are available in the integration diagnostics.
@@ -119,6 +126,79 @@ Entity IDs are **not** fixed: they derive from the name you give the
 TankWise instance (for example `sensor.<name>_energy_needed`) and can be
 renamed in Home Assistant. Consumers must let the user pick these entities
 (as SolarSplit does in its config flow) instead of hard-coding entity IDs.
+
+## Usage profile
+
+TankWise learns when hot water is used from the draws it detects:
+
+- 15-minute slots for workdays, Saturdays and Sundays/holidays (with the
+  Workday sensor, a weekday holiday uses the Sunday profile; Saturdays are
+  always Saturdays).
+- Recent weeks weigh more (half-life of 21 days).
+- Forecasts use the comfort percentile (P80/P90/P95) of the cumulative
+  demand of past days, so they cover the real daily demand without adding
+  up per-slot extremes.
+- Forecast failures make the affected days weigh more: a draw started with
+  less useful energy than half a shower, or the regulator manual mode
+  switched on by a person. A strong shower that simply leaves the tank below
+  the minimum useful temperature is normal, not a failure.
+- With fewer than 14 days of data, a default profile is blended in.
+- The energy per shower is learned once there are at least five showers.
+
+### Importing history
+
+To skip the learning period, import raw minute readings with the
+`tankwise.import_history` action (administrators only). The CSV needs a
+timestamp, the tank temperature, the heating element power and energy, and
+optionally the regulator output (%), the manual mode state (`on`/`off`) and
+`manual_source` (who switched the manual mode on: `user`,
+`automation:<entity_id>` or empty).
+Comma, semicolon or tab separators and decimal commas are accepted. The
+readings are replayed through the tank model, so draws and failures are
+detected exactly as they are live; gaps and `unavailable` values are
+tolerated. Days already in the history are skipped. The file must be inside
+the configuration folder (or an allowed external directory).
+
+```yaml
+action: tankwise.import_history
+data:
+  config_entry_id: <your TankWise entry>
+  file_path: /config/tankwise_history.csv
+```
+
+A manual mode activation counts as a forecast failure with the same rule as
+live: when `manual_source` is `user` or one of the *automations acting for a
+person*. Files without a `manual_source` column ignore manual mode
+activations unless `manual_mode_is_failure: true` is set.
+
+### Exporting history from Home Assistant
+
+`tools/export_history.py` downloads the last N days from the Home Assistant
+REST API (history and logbook) and writes the CSV in the format expected by
+`tankwise.import_history`, one row per minute, including `manual_source`. It
+only needs Python 3.12 or later (standard library only).
+
+Create a long-lived access token in your Home Assistant profile and pass it
+in the `HA_TOKEN` environment variable. The token is only sent to Home
+Assistant; it is never written to disk or printed.
+
+```bash
+export HA_TOKEN="<long-lived access token>"   # PowerShell: $env:HA_TOKEN = "..."
+python tools/export_history.py \
+  --url http://homeassistant.local:8123 \
+  --temperature sensor.water_heater_temperature \
+  --power sensor.water_heater_power \
+  --energy sensor.water_heater_energy \
+  --regulator sensor.diverter_pwm \
+  --manual-mode switch.diverter_manual_mode \
+  --days 10 \
+  --output tankwise_history.csv
+```
+
+Copy the file to the configuration folder (for example
+`/config/tankwise_history.csv`) and run the action. Units are converted to
+°C, W and kWh. The history only stores changes, so each minute holds the
+last known value.
 
 ## How the tank model works
 

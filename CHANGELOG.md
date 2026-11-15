@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Demand model (pure Python): 15-minute usage profile per day type (workday,
+  Saturday, Sunday/holiday), exponential weighting of recent weeks (21-day
+  half-life) and forecasts at the comfort percentile of cumulative demand.
+- Forecast failures: a draw started with less useful energy than half a
+  shower, or the regulator manual mode switched on by a person (directly or
+  through an automation listed as acting for a person).
+- Optional workday sensor (Workday integration) to recognise holidays.
+- Cold start with a default profile blended in until 14 days of data.
+- Learned energy per shower.
+- `tankwise.import_history` action: raw minute readings from a CSV are
+  replayed through the tank model to learn the profile from real history.
+  An optional `manual_source` column attributes manual mode activations with
+  the same rule as live.
+- `tools/export_history.py`: exports the last N days from the Home Assistant
+  REST API (history and logbook) as a CSV ready to import.
+- Sensors: next expected draw and demand profile status.
+- Demand profile, recent draws and failures in the diagnostics.
+
 ## [0.2.2] - 2026-11-16
 
 ### Fixed
