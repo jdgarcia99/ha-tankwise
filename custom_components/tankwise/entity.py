@@ -5,7 +5,7 @@ from __future__ import annotations
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
+from .const import CONFIGURATION_URL, DOMAIN, MANUFACTURER, MODEL
 from .coordinator import TankWiseCoordinator
 
 
@@ -24,6 +24,10 @@ class TankWiseEntity(CoordinatorEntity[TankWiseCoordinator]):
             identifiers={(DOMAIN, entry.entry_id)},
             name=entry.title,
             entry_type=DeviceEntryType.SERVICE,
+            manufacturer=MANUFACTURER,
+            model=MODEL,
+            sw_version=coordinator.sw_version,
+            configuration_url=CONFIGURATION_URL,
         )
 
     @property

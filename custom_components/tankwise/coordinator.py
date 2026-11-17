@@ -128,6 +128,8 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
             name=DOMAIN,
             update_interval=UPDATE_INTERVAL,
         )
+        # Integration version from manifest.json, shown on the device.
+        self.sw_version: str | None = None
         self._unusable: set[str] = set()
         # The regulator may be switched off seconds after a thermostat
         # cut-off, so its value is captured at the instant the power falls

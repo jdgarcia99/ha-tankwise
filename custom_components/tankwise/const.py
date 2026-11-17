@@ -9,6 +9,10 @@ from .model.water import DEFAULT_REGION
 
 DOMAIN: Final = "tankwise"
 
+MANUFACTURER: Final = "jdgarcia99"
+MODEL: Final = "TankWise"
+CONFIGURATION_URL: Final = "https://github.com/jdgarcia99/ha-tankwise"
+
 UPDATE_INTERVAL: Final = timedelta(seconds=60)
 
 # Required sensors (config entry data)
