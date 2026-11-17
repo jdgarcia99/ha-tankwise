@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 from datetime import timedelta
+import json
+from pathlib import Path
 from typing import Any
 
 from freezegun.api import FrozenDateTimeFactory
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import STATE_UNAVAILABLE
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.util import dt as dt_util
 import pytest
 from pytest_homeassistant_custom_component.common import (
@@ -16,7 +19,12 @@ from pytest_homeassistant_custom_component.common import (
     async_fire_time_changed,
 )
 
-from custom_components.tankwise.const import DOMAIN, UPDATE_INTERVAL
+from custom_components.tankwise.const import (
+    CONF_SHOWER_ENERGY,
+    DEFAULT_PARAMETERS,
+    DOMAIN,
+    UPDATE_INTERVAL,
+)
 
 from .conftest import set_input_states
 
@@ -28,6 +36,8 @@ CHARGE = "sensor.water_heater_charge"
 SHOWERS = "sensor.water_heater_showers_available"
 STATUS = "sensor.water_heater_model_status"
 ALL_SENSORS = (USEFUL_ENERGY, CHARGE, SHOWERS, STATUS)
+
+MANIFEST = Path(__file__).parents[2] / "custom_components" / DOMAIN / "manifest.json"
 
 
 async def _setup(hass: HomeAssistant, entry: MockConfigEntry) -> None:
@@ -203,3 +213,89 @@ async def test_entity_ids_are_english_in_any_language(
         assert hass.states.get(entity_id) is not None, entity_id
     assert hass.states.get(USEFUL_ENERGY).name == "Water heater Energía útil"
     assert hass.states.get(STATUS).name == "Water heater Estado del modelo"
+
+
+async def test_showers_unit_and_reference_energy(
+    hass: HomeAssistant, mock_entry: MockConfigEntry, freezer: FrozenDateTimeFactory
+) -> None:
+    """Showers have no unit and expose the energy per shower used."""
+    freezer.move_to(NOW)
+    set_input_states(hass, temperature="45.5", power="0")
+    await _setup(hass, mock_entry)
+
+    state = hass.states.get(SHOWERS)
+    assert "unit_of_measurement" not in state.attributes
+    assert state.attributes["energy_per_shower_kwh"] == 1.8
+    assert float(state.state) == pytest.approx(CAPACITY * (45.5 - 32) / 1.8)
+
+
+async def test_showers_have_no_unit_in_spanish(
+    hass: HomeAssistant, mock_entry: MockConfigEntry
+) -> None:
+    """No English unit shows up in a Spanish interface."""
+    hass.config.language = "es"
+    set_input_states(hass)
+    await _setup(hass, mock_entry)
+
+    state = hass.states.get(SHOWERS)
+    assert state.name == "Water heater Duchas disponibles"
+    assert "unit_of_measurement" not in state.attributes
+
+
+@pytest.mark.parametrize(
+    "entry_options", [{**DEFAULT_PARAMETERS, CONF_SHOWER_ENERGY: 2.5}]
+)
+async def test_energy_per_shower_follows_options(
+    hass: HomeAssistant, mock_entry: MockConfigEntry, freezer: FrozenDateTimeFactory
+) -> None:
+    """The attribute shows the configured energy per shower."""
+    freezer.move_to(NOW)
+    set_input_states(hass, temperature="45.5", power="0")
+    await _setup(hass, mock_entry)
+
+    state = hass.states.get(SHOWERS)
+    assert state.attributes["energy_per_shower_kwh"] == 2.5
+    assert float(state.state) == pytest.approx(CAPACITY * (45.5 - 32) / 2.5)
+
+
+async def test_native_values_are_not_rounded(
+    hass: HomeAssistant,
+    mock_entry: MockConfigEntry,
+    entity_registry: er.EntityRegistry,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """States keep full precision; rounding is left to the display precision."""
+    freezer.move_to(NOW)
+    set_input_states(hass, temperature="45.5", power="0")
+    await _setup(hass, mock_entry)
+
+    for entity_id, expected, precision in (
+        (USEFUL_ENERGY, CAPACITY * (45.5 - 32), 2),
+        (SHOWERS, CAPACITY * (45.5 - 32) / 1.8, 1),
+    ):
+        value = float(hass.states.get(entity_id).state)
+        assert value == pytest.approx(expected, rel=1e-12), entity_id
+        assert value != round(value, precision + 2), entity_id
+        options = entity_registry.async_get(entity_id).options
+        assert options["sensor"]["suggested_display_precision"] == precision
+
+
+async def test_device_info(
+    hass: HomeAssistant,
+    mock_entry: MockConfigEntry,
+    device_registry: dr.DeviceRegistry,
+) -> None:
+    """The service device shows its maker, model, version and repository."""
+    set_input_states(hass)
+    await _setup(hass, mock_entry)
+
+    device = device_registry.async_get_device_by_identifier(
+        (DOMAIN, mock_entry.entry_id), mock_entry.entry_id
+    )
+    assert device is not None
+    assert device.name == "Water heater"
+    assert device.manufacturer == "jdgarcia99"
+    assert device.model == "TankWise"
+    assert device.sw_version == json.loads(MANIFEST.read_text())["version"]
+    assert device.entry_type is dr.DeviceEntryType.SERVICE
+    assert device.configuration_url == "https://github.com/jdgarcia99/ha-tankwise"
