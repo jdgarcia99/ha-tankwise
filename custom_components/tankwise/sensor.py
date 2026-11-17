@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Any
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
@@ -16,6 +17,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.typing import StateType
 
+from .const import CONF_SHOWER_ENERGY
 from .coordinator import TankWiseConfigEntry, TankWiseCoordinator
 from .entity import TankWiseEntity
 from .model.tank import ModelStatus, TankState
@@ -28,6 +30,7 @@ class TankWiseSensorDescription(SensorEntityDescription):
     """Describe a TankWise tank sensor."""
 
     value_fn: Callable[[TankState], StateType]
+    attributes_fn: Callable[[TankWiseCoordinator], dict[str, Any]] | None = None
 
 
 SENSORS: tuple[TankWiseSensorDescription, ...] = (
@@ -50,10 +53,16 @@ SENSORS: tuple[TankWiseSensorDescription, ...] = (
     ),
     TankWiseSensorDescription(
         key="showers_available",
+        # No unit on purpose: Home Assistant takes custom units from the English
+        # translations in every language, and adding one would also raise a
+        # statistics repair for the history recorded without a unit.
         translation_key="showers_available",
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=1,
         value_fn=lambda tank: tank.showers_available,
+        attributes_fn=lambda coordinator: {
+            "energy_per_shower_kwh": float(coordinator.parameters[CONF_SHOWER_ENERGY])
+        },
     ),
     TankWiseSensorDescription(
         key="model_status",
@@ -100,3 +109,10 @@ class TankWiseSensor(TankWiseEntity, SensorEntity):
     def native_value(self) -> StateType:
         """Return the sensor value."""
         return self.entity_description.value_fn(self.coordinator.data.tank)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Return the reference values the sensor value is derived from."""
+        if (attributes_fn := self.entity_description.attributes_fn) is None:
+            return None
+        return attributes_fn(self.coordinator)
