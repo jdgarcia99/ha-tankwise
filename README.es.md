@@ -20,7 +20,7 @@ o tus propias automatizaciones deciden cómo cubrirla.
 
 ## Estado del proyecto
 
-> **Desarrollo inicial (0.2.2, fase 2).** TankWise modela el depósito y
+> **Desarrollo inicial (0.2.3, fase 2).** TankWise modela el depósito y
 > publica su estado de carga. El aprendizaje del uso y el plan de
 > calentamiento (la salida para otras integraciones) todavía no están
 > disponibles.
@@ -90,7 +90,7 @@ referencia españolas para el dimensionado de agua caliente sanitaria.
 |---------|-------------|
 | Energía útil | kWh almacenados por encima de la temperatura mínima útil |
 | Carga | Energía útil en porcentaje del depósito lleno |
-| Duchas disponibles | Energía útil dividida entre la energía por ducha |
+| Duchas disponibles | Energía útil dividida entre la energía por ducha (sin unidad; el atributo `energy_per_shower_kwh` muestra la energía por ducha usada) |
 | Estado del modelo | `calibrated` (calibrado), `learning` (aún aprendiendo las pérdidas) o `uncertain` (incierto: sin recalibrar desde el arranque o tras una interrupción larga) |
 
 El coeficiente de pérdidas aprendido, la temperatura de corte aprendida y los

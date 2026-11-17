@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-11-17
+
+### Added
+
+- The TankWise device now shows its manufacturer, model, software version
+  (taken from the integration manifest) and a link to the repository.
+- The "Showers available" sensor has the attribute `energy_per_shower_kwh`,
+  the energy per shower used to compute it.
+
 ## [0.2.2] - 2026-11-16
 
 ### Fixed
@@ -77,7 +86,8 @@ and the heating plan will follow.
 - The output contract entities (energy needed, deadline, grid allowed,
   requested power and urgency) arrive in a later release.
 
-[Unreleased]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.2.3...HEAD
+[0.2.3]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/jdgarcia99/ha-tankwise/releases/tag/v0.2.0

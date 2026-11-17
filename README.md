@@ -20,7 +20,7 @@ integration or your own automations decide how to fulfil it.
 
 ## Project status
 
-> **Early development (0.2.2, phase 2).** TankWise models the tank and
+> **Early development (0.2.3, phase 2).** TankWise models the tank and
 > publishes its state of charge. Usage learning and the heating plan (the
 > output for other integrations) are not available yet.
 
@@ -88,7 +88,7 @@ tables for domestic hot water sizing.
 |--------|-------------|
 | Useful energy | kWh stored above the minimum useful temperature |
 | Charge | Useful energy as a percentage of a full tank |
-| Showers available | Useful energy divided by the energy per shower |
+| Showers available | Useful energy divided by the energy per shower (no unit; attribute `energy_per_shower_kwh` shows the energy per shower used) |
 | Model status | `calibrated`, `learning` (heat losses still being learned) or `uncertain` (not recalibrated since start-up or since a long outage) |
 
 The learned heat loss coefficient, the learned cut-off temperature and the
