@@ -15,7 +15,7 @@ CONFIGURATION_URL: Final = "https://github.com/jdgarcia99/ha-tankwise"
 
 UPDATE_INTERVAL: Final = timedelta(seconds=60)
 CONFIG_ENTRY_VERSION: Final = 2
-CONFIG_ENTRY_MINOR_VERSION: Final = 2
+CONFIG_ENTRY_MINOR_VERSION: Final = 3
 
 # ---------------------------------------------------------------------------
 # Required inputs (config entry data, changed with "Reconfigure")
@@ -192,6 +192,7 @@ SHORTAGE_WINDOW: Final = timedelta(days=7)
 ISSUE_MISSING_INPUTS: Final = "missing_required_inputs"
 ISSUE_HEATER_SWITCH_OFF: Final = "heater_switch_off"
 ISSUE_REGULATOR_LOST: Final = "regulator_lost"
+ISSUE_CONFLICTING_AUTOMATIONS: Final = "conflicting_automations"
 
 # Events
 EVENT_PLAN_AT_RISK: Final = "tankwise_plan_at_risk"

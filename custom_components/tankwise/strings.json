@@ -726,6 +726,10 @@
     "regulator_lost": {
       "title": "The regulator of {name} keeps disconnecting",
       "description": "TankWise had to open the water heater switch several times in the last week because the regulator (e.g. FreeDS) became unavailable while heating. Check its Wi-Fi connection and power supply."
+    },
+    "conflicting_automations": {
+      "title": "Other automations control the water heater of {name}",
+      "description": "TankWise controls the regulator and the water heater switch in this mode, but these enabled automations switch them too and would fight it:\n\n{automations}\n\nDisable them (or switch TankWise back to shadow mode). To start a boost from a push button, use the TankWise blueprint instead."
     }
   },
   "services": {

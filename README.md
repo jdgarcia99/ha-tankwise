@@ -17,13 +17,11 @@ purchase price plus the value of the solar surplus).
 
 ## Project status
 
-> **Development (0.9.0, phase 6 of 7).** TankWise learns the tank and the
+> **0.10.0: all seven phases done.** TankWise learns the tank and the
 > household's usage, computes the heating plan and, in the auto, eco, comfort
-> and holiday modes, **controls the regulator** with its safeties. It still
-> starts in shadow mode (publishes the plan without acting): compare the
-> planned cost with the real one, then switch to auto and disable the
-> automations that also switch the regulator manual mode, or they will fight
-> each other.
+> and holiday modes, **controls the regulator** with its safeties. It starts
+> in shadow mode (publishes the plan without acting): follow the
+> [migration guide](docs/migration.md) to move from your automations.
 
 | Phase | Content | Status |
 |-------|---------|--------|
@@ -33,7 +31,7 @@ purchase price plus the value of the solar surplus).
 | 4 | Controller, safeties and degraded mode; automatic mode | ✅ Done |
 | 5 | Boost with a blueprint for external push buttons | ✅ Done |
 | 6 | Solar forecast, SolarSplit coordination and anti-legionella cycle | ✅ Done |
-| 7 | Migration from automations and full documentation | Planned |
+| 7 | Migration from automations and full documentation | ✅ Done |
 
 ## Installation
 
@@ -210,6 +208,7 @@ respected until the next change; the safeties still apply to it.
 | Probe unavailable or not updated for 10 minutes | Back to automatic, degraded mode, no grid heating |
 | Regulator unavailable beyond a margin (2 minutes, advanced option) while TankWise has it in manual mode, or while the element heats outside the plan | The heater switch is opened as a last resort; when the regulator returns it is set to automatic and the heater switch is closed again. A repair issue appears if this happens three times in a week |
 | Heater switch off (not by TankWise) | No action; repair issue |
+| Other enabled automations switch the regulator manual mode, its output or the heater switch | Repair issue listing them (they would fight the controller) |
 | Mode changed to shadow or off | The regulator is given back in automatic if TankWise had it in manual mode |
 
 **Degraded mode** (binary sensor): without a plan (no prices, or the tank
@@ -352,6 +351,13 @@ hour by itself (e.g. on sunny days), nothing extra is heated.
 - **Safe mode.** Without the probe or the power, the model freezes and the
   tank sensors become unavailable; nothing is invented. After an outage longer
   than 30 minutes the state is uncertain until the next full tank.
+
+## Documentation
+
+- [Migration from automations](docs/migration.md): shadow mode, comparison,
+  switching to auto and cleaning up.
+- [Architecture](docs/architecture.md): how the tank model, the demand
+  forecast, the optimiser and the controller work.
 
 ## Development
 

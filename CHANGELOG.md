@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-11-20
+
+Seventh phase: migration from automations and full documentation.
+
+### Added
+
+- Repair issue "Other automations control the water heater": in the modes
+  that act, lists the enabled automations that switch the regulator manual
+  mode, its output or the water heater switch, which would fight the
+  controller. Checked every five minutes.
+- Migration guide (`docs/migration.md`) and architecture description
+  (`docs/architecture.md`), linked from the README.
+
+### Changed
+
+- The option of the daily solar forecast sensor, unused since 0.9, is
+  removed from existing entries (config entry version 2.3).
+- `automation` added to the integration's after dependencies.
+
 ## [0.9.0] - 2026-11-20
 
 Sixth phase: solar forecast, selling the surplus, coordination with other
@@ -471,7 +490,8 @@ and the heating plan will follow.
 - The output contract entities (energy needed, deadline, grid allowed,
   requested power and urgency) arrive in a later release.
 
-[Unreleased]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.6.0...v0.7.0

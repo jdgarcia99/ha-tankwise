@@ -30,6 +30,7 @@ from .const import (
     DOMAIN,
     EVENT_BOOST_FINISHED,
     EVENT_BOOST_STARTED,
+    ISSUE_CONFLICTING_AUTOMATIONS,
     ISSUE_HEATER_SWITCH_OFF,
     ISSUE_REGULATOR_LOST,
     SETTING_BOOST_DURATION,
@@ -63,6 +64,8 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 
+AUTOMATION_DOMAIN = "automation"
+CONFLICT_CHECK = timedelta(minutes=5)
 ACTIVE_MODES = frozenset({Mode.AUTO, Mode.ECO, Mode.COMFORT, Mode.HOLIDAY})
 SLOT = timedelta(minutes=15)
 # A slot planned at (almost) full power is heated whole.
@@ -96,6 +99,7 @@ class TankWiseController:
         # so a restart does not announce them again).
         self.announced_risks: list[str] = []
         self.boost: Boost | None = None
+        self._conflicts: tuple[list[str], datetime | None] = ([], None)
         self._started: datetime | None = None
 
     # ------------------------------------------------------------------
@@ -567,9 +571,66 @@ class TankWiseController:
     # Repair issues and plan at risk
     # ------------------------------------------------------------------
 
+    def conflicting_automations(self) -> list[str]:
+        """Enabled automations that switch what TankWise controls.
+
+        They would fight the controller: the regulator manual mode, its
+        output switch or the heater switch. Automations that only start a
+        boost (e.g. from the blueprint) do not refer to them.
+        """
+        if AUTOMATION_DOMAIN not in self.hass.config.components:
+            return []
+        from homeassistant.components.automation import (
+            automations_with_entity,
+        )
+
+        entry = self.coordinator.config_entry
+        controlled = [
+            entry.data.get(CONF_MANUAL_MODE_SWITCH),
+            entry.data.get(CONF_HEATER_SWITCH),
+            entry.options.get(CONF_REGULATOR_OUTPUT_SWITCH),
+        ]
+        found: set[str] = set()
+        for entity_id in controlled:
+            if entity_id:
+                found.update(automations_with_entity(self.hass, entity_id))
+        return sorted(
+            automation
+            for automation in found
+            if (state := self.hass.states.get(automation)) is not None
+            and state.state == "on"
+        )
+
     def _update_issues(self, now: datetime, heater_switch_off: bool) -> None:
         entry = self.coordinator.config_entry
         placeholders = {"name": entry.title}
+        if not self.active:
+            self._conflicts = ([], None)  # checked at once when it acts
+        elif self._conflicts[1] is None or now - self._conflicts[1] >= CONFLICT_CHECK:
+            self._conflicts = (self.conflicting_automations(), now)
+        conflicts = self._conflicts[0]
+        identifier = issue_id(ISSUE_CONFLICTING_AUTOMATIONS, entry.entry_id)
+        if conflicts:
+            names = [
+                f"- {state.name if (state := self.hass.states.get(item)) else item}"
+                f" (`{item}`)"
+                for item in conflicts
+            ]
+            ir.async_create_issue(
+                self.hass,
+                DOMAIN,
+                identifier,
+                is_fixable=False,
+                is_persistent=False,
+                severity=ir.IssueSeverity.WARNING,
+                translation_key=ISSUE_CONFLICTING_AUTOMATIONS,
+                translation_placeholders={
+                    **placeholders,
+                    "automations": "\n".join(names),
+                },
+            )
+        else:
+            ir.async_delete_issue(self.hass, DOMAIN, identifier)
         for kind, present in (
             (ISSUE_HEATER_SWITCH_OFF, heater_switch_off),
             (ISSUE_REGULATOR_LOST, self.state.repeated_cuts(now)),
