@@ -202,6 +202,11 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
                 )
             except ValueError as err:
                 _LOGGER.warning("Discarding stored tank state: %s", err)
+            else:
+                if removed := self.model.purge_cutoffs(self.tank_params):
+                    _LOGGER.info(
+                        "Forgot %d learned cut-offs below the plausible range", removed
+                    )
         if "demand" in stored:
             try:
                 self.demand = DemandModel.from_dict(stored["demand"], self.demand.tz)
@@ -413,6 +418,10 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
             manual_mode=readings.manual_mode,
             ambient_temperature=readings.ambient_temperature,
             power_drop=self._drop_detector.drop,
+            regulator_configured=bool(
+                self.config_entry.data.get(CONF_MANUAL_MODE_SWITCH)
+                or self.config_entry.options.get(CONF_REGULATOR_SENSOR)
+            ),
         )
         tank = self.model.update(sample, self.tank_params_at(readings.timestamp))
         self._last_sample = sample

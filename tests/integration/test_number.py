@@ -20,12 +20,12 @@ from custom_components.tankwise.model.water import mains_water_temperature
 
 from .conftest import set_input_states
 
-SHOWER = "number.water_heater_shower_temperature"
-COMFORT = "number.water_heater_comfort_min_temperature"
-MAINS = "number.water_heater_mains_water_temperature"
-LITERS = "sensor.water_heater_available_liters"
-USEFUL = "sensor.water_heater_useful_energy"
-MAINS_SENSOR = "sensor.water_heater_mains_water_temperature"
+SHOWER = "number.tankwise_shower_temperature"
+COMFORT = "number.tankwise_comfort_min_temperature"
+MAINS = "number.tankwise_mains_water_temperature"
+LITERS = "sensor.tankwise_available_liters"
+USEFUL = "sensor.tankwise_useful_energy"
+MAINS_SENSOR = "sensor.tankwise_mains_water_temperature"
 NOW = "2026-11-15 12:00:00+00:00"
 
 

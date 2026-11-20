@@ -10,10 +10,21 @@ from .coordinator import TankWiseCoordinator
 from .model.appointments import Appointment
 
 
+def tankwise_entity_id(platform: str, object_id: str) -> str:
+    """Return the entity ID TankWise gives an entity (``sensor.tankwise_x``)."""
+    return f"{platform}.{DOMAIN}_{object_id}"
+
+
 class TankWiseEntity(CoordinatorEntity[TankWiseCoordinator]):
-    """Entity attached to the TankWise service device of a config entry."""
+    """Entity attached to the TankWise service device of a config entry.
+
+    The entity ID is fixed to ``<platform>.tankwise_<object id>`` so it does
+    not depend on the device name or its area (Home Assistant adds the area
+    to generated entity IDs). Users can still rename it.
+    """
 
     _attr_has_entity_name = True
+    _platform: str = ""
 
     def __init__(
         self,
@@ -26,6 +37,8 @@ class TankWiseEntity(CoordinatorEntity[TankWiseCoordinator]):
         entry = coordinator.config_entry
         self._object_id = object_id or key
         self._attr_unique_id = f"{entry.entry_id}_{key}"
+        if self._platform:
+            self.entity_id = tankwise_entity_id(self._platform, self._object_id)
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, entry.entry_id)},
             name=entry.title,

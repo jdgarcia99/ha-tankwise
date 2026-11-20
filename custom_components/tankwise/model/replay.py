@@ -102,6 +102,9 @@ def replay(
     first = start if start is not None else min(c.timestamp for c in temperatures)
     last = end if end is not None else timeline[-1][0]
     detector = PowerDropDetector(params_at(first).power_threshold_w)
+    regulator_configured = bool(
+        series.get(ROLE_MANUAL_MODE) or series.get(ROLE_REGULATOR)
+    )
     current: dict[str, Value] = dict.fromkeys(ROLES)
 
     index = 0
@@ -128,6 +131,7 @@ def replay(
             manual_mode=_bool(current[ROLE_MANUAL_MODE]),
             ambient_temperature=_float(current[ROLE_AMBIENT]),
             power_drop=detector.drop,
+            regulator_configured=regulator_configured,
         )
         state = model.update(sample, params_at(moment))
         if on_sample is not None:

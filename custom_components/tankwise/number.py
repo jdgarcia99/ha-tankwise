@@ -94,6 +94,8 @@ async def async_setup_entry(
 class TankWiseNumber(TankWiseEntity, NumberEntity):
     """A runtime setting persisted with the learned state."""
 
+    _platform = "number"
+
     entity_description: TankWiseNumberDescription
 
     def __init__(
@@ -117,6 +119,8 @@ class TankWiseNumber(TankWiseEntity, NumberEntity):
 
 class AppointmentLiters(AppointmentEntity, NumberEntity):
     """Minimum litres at the shower temperature for an appointment."""
+
+    _platform = "number"
 
     _attr_entity_category = EntityCategory.CONFIG
     _attr_device_class = NumberDeviceClass.VOLUME_STORAGE

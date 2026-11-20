@@ -169,12 +169,14 @@
           "name": "Nombre",
           "time": "Agua lista para",
           "days": "Días",
+          "duration": "Duración del bloque",
           "liters": "Agua mínima",
           "enabled": "Activa"
         },
         "data_description": {
-          "liters": "Litros a la temperatura de ducha (40 °C por defecto) que deben estar disponibles a esa hora. El sensor 'litros sugeridos' muestra lo que se suele usar.",
-          "days": "Laborables y festivos necesitan el sensor Workday."
+          "liters": "Litros a la temperatura de ducha (40 °C por defecto) que deben estar disponibles al empezar el bloque para cubrirlo entero sin recalentar. El sensor 'litros sugeridos' muestra lo que suele usar el bloque.",
+          "days": "Laborables y festivos necesitan el sensor Workday.",
+          "duration": "Tiempo que dura el uso de agua caliente tras la cita (p. ej. 60 min para la ducha de la mañana, 180 min para las duchas de la tarde)."
         }
       }
     },

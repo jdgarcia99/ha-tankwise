@@ -17,6 +17,7 @@ from custom_components.tankwise.const import (
     CONF_POWER_SENSOR,
     CONF_PRICE_SENSOR,
     CONF_TEMPERATURE_SENSOR,
+    CONFIG_ENTRY_MINOR_VERSION,
     CONFIG_ENTRY_VERSION,
     DEFAULT_PARAMETERS,
     DOMAIN,
@@ -127,6 +128,7 @@ def mock_entry(entry_options: dict[str, Any]) -> MockConfigEntry:
         title="Water heater",
         unique_id=TEMPERATURE,
         version=CONFIG_ENTRY_VERSION,
+        minor_version=CONFIG_ENTRY_MINOR_VERSION,
         data=dict(REQUIRED_INPUT),
         options=entry_options,
     )

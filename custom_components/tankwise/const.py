@@ -15,6 +15,7 @@ CONFIGURATION_URL: Final = "https://github.com/jdgarcia99/ha-tankwise"
 
 UPDATE_INTERVAL: Final = timedelta(seconds=60)
 CONFIG_ENTRY_VERSION: Final = 2
+CONFIG_ENTRY_MINOR_VERSION: Final = 2
 
 # ---------------------------------------------------------------------------
 # Required inputs (config entry data, changed with "Reconfigure")

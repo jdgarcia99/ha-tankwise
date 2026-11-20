@@ -41,6 +41,7 @@ def test_slug_and_round_trip() -> None:
         "days": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
         "liters": 50,
         "enabled": True,
+        "duration": 60,
     }
     assert Appointment.from_dict(data) == MORNING
 
@@ -54,6 +55,7 @@ def test_slug_and_round_trip() -> None:
     ],
 )
 def test_invalid_appointment(data: dict) -> None:
+    """Missing fields, bad time, unknown day."""
     with pytest.raises(ValueError):
         Appointment.from_dict(data)
 
@@ -139,3 +141,34 @@ def test_only_recent_weeks_count() -> None:
     )
     assert usage.days == 28
     assert now - timedelta(days=42) < now
+
+
+def test_duration_defaults_and_limits() -> None:
+    data = MORNING.as_dict()
+    del data["duration"]
+    assert Appointment.from_dict(data).duration == timedelta(hours=1)  # 0.4 beta
+    with pytest.raises(ValueError):
+        Appointment.from_dict({**MORNING.as_dict(), "duration": 5})
+    with pytest.raises(ValueError):
+        Appointment.from_dict({**MORNING.as_dict(), "duration": 13 * 60})
+
+
+def test_usage_covers_the_whole_block() -> None:
+    """A 3 h block from 17:00 sees every evening shower of the household."""
+    model = DemandModel(TZ)
+    now = feed(model, FIRST, 28, household(FIRST, 28))
+    params = DemandParams(mode=DayTypeMode.ALL)
+    block = Appointment(
+        "b",
+        "Tarde",
+        time(17),
+        frozenset({"mon", "tue", "wed", "thu", "fri", "sat", "sun"}),
+        120,
+        duration=timedelta(hours=3),
+    )
+    usage = appointment_usage(
+        block, model, params, now, shower_temperature=40, mains_temperature=15
+    )
+    one_shower = liters_from_energy(EVENING_KWH, 40, 15)
+    assert usage.p50 >= one_shower * 0.95  # at least the gym shower every day
+    assert usage.p90 == pytest.approx(one_shower * 3, rel=0.05)  # strong days

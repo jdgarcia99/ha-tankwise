@@ -156,7 +156,7 @@ async def test_failure_does_not_break_setup(
     assert info.status is BootstrapStatus.FAILED
     assert info.error == "database locked"
     assert "Could not import the tank history" in caplog.text
-    assert hass.states.get("sensor.water_heater_stored_energy").state != "unavailable"
+    assert hass.states.get("sensor.tankwise_stored_energy").state != "unavailable"
 
 
 def test_states_to_changes_converts_units_and_bad_values() -> None:

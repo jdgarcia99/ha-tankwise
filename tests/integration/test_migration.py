@@ -117,10 +117,10 @@ async def test_v1_entry_is_migrated(
     }
     assert v1_entry.options == {
         CONF_VOLUME: 100,
-        "rated_power": 1450,
+        "rated_power": 1500,  # 0.2 default replaced
         "water_region": "balearic_islands",
         "cutoff_power_threshold": 50,
-        CONF_CUTOFF_TEMPERATURE: 47.0,
+        CONF_CUTOFF_TEMPERATURE: 68.0,  # 0.2 default replaced
         CONF_ENERGY_SENSOR: ENERGY,
         CONF_OCCUPANCY_ENTITY: OCCUPANCY,
         CONF_EXPORT_POWER_SENSOR: "sensor.solar_surplus",
@@ -133,6 +133,9 @@ async def test_v1_entry_is_migrated(
     assert coordinator.settings["mains_water_temperature"] == 16.5
     assert coordinator.model.ua == pytest.approx(0.0086 * 116.3, rel=1e-3)
     assert coordinator.model.as_dict()["calibration_count"] == 9
+    # Cut-offs learned around 47 °C cannot be thermostat cut-offs at 68 °C.
+    assert coordinator.model.as_dict()["cutoff_samples"] == []
+    assert v1_entry.minor_version == 2
 
     issue = issue_registry.async_get_issue(
         DOMAIN, f"missing_required_inputs_{v1_entry.entry_id}"
@@ -174,3 +177,58 @@ async def test_future_version_is_not_loaded(hass: HomeAssistant) -> None:
     entry.add_to_hass(hass)
     assert not await hass.config_entries.async_setup(entry.entry_id)
     assert entry.state is ConfigEntryState.MIGRATION_ERROR
+
+
+async def test_custom_cutoff_is_kept(hass: HomeAssistant) -> None:
+    """Only the 0.2 defaults are replaced, not values chosen by the user."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        version=2,
+        minor_version=1,
+        data={
+            "name": "x",
+            CONF_TEMPERATURE_SENSOR: TEMPERATURE,
+            CONF_POWER_SENSOR: POWER,
+        },
+        options={CONF_CUTOFF_TEMPERATURE: 62.0, "rated_power": 2000},
+    )
+    entry.add_to_hass(hass)
+    set_input_states(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert entry.options[CONF_CUTOFF_TEMPERATURE] == 62.0
+    assert entry.options["rated_power"] == 2000
+    assert entry.minor_version == 2
+
+
+async def test_entity_ids_with_area_prefix_are_renamed(
+    hass: HomeAssistant,
+    mock_entry: MockConfigEntry,
+    entity_registry: er.EntityRegistry,
+) -> None:
+    """sensor.coladuria_tankwise_x becomes sensor.tankwise_x; custom IDs stay."""
+    mock_entry.add_to_hass(hass)
+    prefixed = entity_registry.async_get_or_create(
+        "sensor",
+        DOMAIN,
+        f"{mock_entry.entry_id}_stored_energy",
+        config_entry=mock_entry,
+        suggested_object_id="coladuria_tankwise_stored_energy",
+    )
+    custom = entity_registry.async_get_or_create(
+        "sensor",
+        DOMAIN,
+        f"{mock_entry.entry_id}_charge",
+        config_entry=mock_entry,
+        suggested_object_id="my_tank_charge",
+    )
+    assert prefixed.entity_id == "sensor.coladuria_tankwise_stored_energy"
+    set_input_states(hass)
+    assert await hass.config_entries.async_setup(mock_entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert entity_registry.async_get("sensor.coladuria_tankwise_stored_energy") is None
+    renamed = entity_registry.async_get("sensor.tankwise_stored_energy")
+    assert renamed is not None and renamed.id == prefixed.id  # same entry
+    assert entity_registry.async_get(custom.entity_id) is not None
+    assert hass.states.get("sensor.tankwise_stored_energy") is not None

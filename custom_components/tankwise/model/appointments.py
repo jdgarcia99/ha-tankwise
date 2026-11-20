@@ -1,13 +1,14 @@
 """Hot water appointments: "hot water ready by" times set by the user.
 
-An appointment asks for a minimum amount of water at the shower temperature
-(litres at 40 °C by default) ready at a time of day, on some days of the
-week, or on workdays/holidays when a workday sensor is configured. The
-optimiser treats it as a hard constraint (phase 3).
+An appointment opens a block of usage (e.g. 17:00 for 3 hours) on some days
+of the week, or on workdays/holidays when a workday sensor is configured.
+Its minimum litres (at the shower temperature, 40 °C by default) must be
+available at the start of the block and cover the whole block without
+reheating within it. The optimiser treats it as a hard constraint (phase 3).
 
-To help choosing the litres, the water actually drawn in the hour after each
-appointment is measured on the observed days and summarised as P50/P90 of
-the last weeks (the suggested litres).
+To help choosing the litres, the water actually drawn during the block is
+measured on the observed days and summarised as P50/P90 of the last weeks
+(the suggested litres).
 
 This module is pure Python and must not import Home Assistant.
 """
@@ -36,7 +37,9 @@ MAX_APPOINTMENTS = 6
 DAY_WORKDAY = "workday"
 DAY_HOLIDAY = "holiday"
 DAY_OPTIONS = (*WEEKDAY_NAMES, DAY_WORKDAY, DAY_HOLIDAY)
-USAGE_WINDOW = timedelta(hours=1)
+DEFAULT_DURATION = timedelta(hours=1)
+MIN_DURATION = timedelta(minutes=15)
+MAX_DURATION = timedelta(hours=12)
 USAGE_WEEKS = 4
 DEFAULT_LITERS = 50.0
 
@@ -51,6 +54,7 @@ class Appointment:
     days: frozenset[str]
     liters: float
     enabled: bool = True
+    duration: timedelta = DEFAULT_DURATION
 
     @property
     def slug(self) -> str:
@@ -97,6 +101,7 @@ class Appointment:
             "days": [day for day in DAY_OPTIONS if day in self.days],
             "liters": self.liters,
             "enabled": self.enabled,
+            "duration": int(self.duration.total_seconds() // 60),
         }
 
     @classmethod
@@ -106,6 +111,10 @@ class Appointment:
             days = frozenset(str(day) for day in data["days"])
             if not days <= set(DAY_OPTIONS):
                 raise ValueError(f"unknown days {sorted(days - set(DAY_OPTIONS))}")
+            minutes = float(data.get("duration", DEFAULT_DURATION.total_seconds() / 60))
+            duration = timedelta(minutes=minutes)
+            if not MIN_DURATION <= duration <= MAX_DURATION:
+                raise ValueError(f"duration out of range: {minutes} min")
             return cls(
                 id=str(data["id"]),
                 name=str(data["name"]),
@@ -113,6 +122,7 @@ class Appointment:
                 days=days,
                 liters=float(data["liters"]),
                 enabled=bool(data.get("enabled", True)),
+                duration=duration,
             )
         except (KeyError, TypeError, ValueError) as err:
             raise ValueError(f"invalid appointment: {err}") from err
@@ -157,7 +167,7 @@ def energy_from_liters(
 
 @dataclass(frozen=True, slots=True)
 class AppointmentUsage:
-    """Water drawn in the hour after an appointment on the observed days."""
+    """Water drawn during the block of an appointment on the observed days."""
 
     p50: float | None
     p90: float | None
@@ -174,7 +184,7 @@ def appointment_usage(
     mains_temperature: float,
     weeks: int = USAGE_WEEKS,
 ) -> AppointmentUsage:
-    """Measure the litres drawn in the hour after the appointment.
+    """Measure the litres drawn during the block of the appointment.
 
     Only the observed days of the last ``weeks`` weeks on which the
     appointment applies are used, weighted by recency like the profile.
@@ -182,7 +192,9 @@ def appointment_usage(
     today = now.astimezone(demand.tz).date()
     oldest = today - timedelta(weeks=weeks)
     first = slot_of(datetime.combine(today, appointment.time))
-    last = first + int(USAGE_WINDOW.total_seconds() // 60 // SLOT_MINUTES)
+    last = first + max(
+        1, int(appointment.duration.total_seconds() // 60 // SLOT_MINUTES)
+    )
     days = [
         obs
         for obs in demand.observations

@@ -169,12 +169,14 @@
           "name": "Name",
           "time": "Hot water ready by",
           "days": "Days",
+          "duration": "Block duration",
           "liters": "Minimum water",
           "enabled": "Active"
         },
         "data_description": {
-          "liters": "Litres at the shower temperature (40 °C by default) that must be available at that time. The 'suggested litres' sensor shows what is usually used.",
-          "days": "Workdays and holidays need the Workday sensor."
+          "liters": "Litres at the shower temperature (40 °C by default) that must be available when the block starts to cover the whole block without reheating. The 'suggested litres' sensor shows what the block usually uses.",
+          "days": "Workdays and holidays need the Workday sensor.",
+          "duration": "Time the hot water use lasts after the appointment (e.g. 60 min for a morning shower, 180 min for the evening showers)."
         }
       }
     },

@@ -368,6 +368,7 @@ APPOINTMENT_INPUT = {
     "name": "Ducha mañana",
     "time": "06:30:00",
     "days": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
+    "duration": 60.0,
     "liters": 60.0,
     "enabled": True,
 }
@@ -398,6 +399,7 @@ async def test_add_edit_and_remove_appointments(
     assert item["name"] == "Ducha mañana"
     assert item["time"] == "06:30"
     assert item["liters"] == 60.0
+    assert item["duration"] == 60
     appointment_id = item["id"]
     assert mock_entry.options[CONF_ENERGY_SENSOR] == ENERGY
 
@@ -416,12 +418,18 @@ async def test_add_edit_and_remove_appointments(
     assert result["step_id"] == "appointment"
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],
-        {**APPOINTMENT_INPUT, "time": "07:00:00", "days": ["sat", "sun"]},
+        {
+            **APPOINTMENT_INPUT,
+            "time": "07:00:00",
+            "days": ["sat", "sun"],
+            "duration": 180,
+        },
     )
     [item] = mock_entry.options[CONF_APPOINTMENTS]
     assert item["id"] == appointment_id
     assert item["time"] == "07:00"
     assert item["days"] == ["sat", "sun"]
+    assert item["duration"] == 180
 
     result = await _appointments_menu(hass, mock_entry)
     result = await hass.config_entries.options.async_configure(

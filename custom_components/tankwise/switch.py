@@ -31,6 +31,8 @@ async def async_setup_entry(
 class AppointmentSwitch(AppointmentEntity, SwitchEntity):
     """Whether the appointment is active."""
 
+    _platform = "switch"
+
     _attr_entity_category = EntityCategory.CONFIG
 
     @property

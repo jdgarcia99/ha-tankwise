@@ -295,6 +295,8 @@ async def async_setup_entry(
 class TankWiseSensor(TankWiseEntity, SensorEntity):
     """A sensor derived from the coordinator data."""
 
+    _platform = "sensor"
+
     entity_description: TankWiseSensorDescription
 
     def __init__(
@@ -331,6 +333,8 @@ class TankWiseSensor(TankWiseEntity, SensorEntity):
 
 class SuggestedLitersSensor(AppointmentEntity, SensorEntity):
     """Litres drawn in the hour after an appointment (P90 of recent weeks)."""
+
+    _platform = "sensor"
 
     _attr_device_class = SensorDeviceClass.VOLUME_STORAGE
     _attr_native_unit_of_measurement = UnitOfVolume.LITERS

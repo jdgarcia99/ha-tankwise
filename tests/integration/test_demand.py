@@ -51,8 +51,8 @@ EVENING = {
     "liters": 120.0,
     "enabled": True,
 }
-DEMAND_TODAY = "sensor.water_heater_demand_today"
-DEMAND_FORECAST = "sensor.water_heater_demand_forecast"
+DEMAND_TODAY = "sensor.tankwise_demand_today"
+DEMAND_FORECAST = "sensor.tankwise_demand_forecast"
 
 
 @pytest.fixture
@@ -143,20 +143,20 @@ async def test_appointment_entities(
     freezer.move_to(NOW)
     await _setup(hass, mock_entry, history=14)
 
-    time_state = hass.states.get("time.water_heater_ducha_manana_time")
+    time_state = hass.states.get("time.tankwise_ducha_manana_time")
     assert time_state.state == "06:30:00"
     assert time_state.name == "Water heater Ducha mañana time"
-    assert float(hass.states.get("number.water_heater_ducha_manana_liters").state) == 60
-    assert hass.states.get("switch.water_heater_ducha_manana_enabled").state == "on"
-    suggested = hass.states.get("sensor.water_heater_ducha_manana_suggested_liters")
+    assert float(hass.states.get("number.tankwise_ducha_manana_liters").state) == 60
+    assert hass.states.get("switch.tankwise_ducha_manana_enabled").state == "on"
+    suggested = hass.states.get("sensor.tankwise_ducha_manana_suggested_liters")
     # 1.4 kWh in 06:30-07:30 with showers at 40 °C.
     mains = mock_entry.runtime_data.tank_params.mains_temperature
     assert float(suggested.state) == pytest.approx(
         1.4 / (0.001163 * (40 - mains)), rel=1e-3
     )
     assert suggested.attributes["days"] == 14
-    assert hass.states.get("time.water_heater_tarde_time").state == "17:00:00"
-    entry = entity_registry.async_get("time.water_heater_ducha_manana_time")
+    assert hass.states.get("time.tankwise_tarde_time").state == "17:00:00"
+    entry = entity_registry.async_get("time.tankwise_ducha_manana_time")
     assert entry.unique_id == f"{mock_entry.entry_id}_appointment_a1b2c3d4_time"
 
 
@@ -167,27 +167,27 @@ async def test_appointment_entities_update_the_options(
     await hass.services.async_call(
         "time",
         "set_value",
-        {ATTR_ENTITY_ID: "time.water_heater_ducha_manana_time", ATTR_TIME: time(7, 15)},
+        {ATTR_ENTITY_ID: "time.tankwise_ducha_manana_time", ATTR_TIME: time(7, 15)},
         blocking=True,
     )
     await hass.services.async_call(
         "number",
         SERVICE_SET_VALUE,
-        {ATTR_ENTITY_ID: "number.water_heater_ducha_manana_liters", ATTR_VALUE: 80},
+        {ATTR_ENTITY_ID: "number.tankwise_ducha_manana_liters", ATTR_VALUE: 80},
         blocking=True,
     )
     await hass.services.async_call(
         "switch",
         SERVICE_TURN_OFF,
-        {ATTR_ENTITY_ID: "switch.water_heater_ducha_manana_enabled"},
+        {ATTR_ENTITY_ID: "switch.tankwise_ducha_manana_enabled"},
         blocking=True,
     )
     await hass.async_block_till_done()
     morning = mock_entry.options[CONF_APPOINTMENTS][0]
     assert morning == {**MORNING, "time": "07:15", "liters": 80, "enabled": False}
     assert mock_entry.options[CONF_APPOINTMENTS][1] == EVENING
-    assert hass.states.get("time.water_heater_ducha_manana_time").state == "07:15:00"
-    assert hass.states.get("switch.water_heater_ducha_manana_enabled").state == "off"
+    assert hass.states.get("time.tankwise_ducha_manana_time").state == "07:15:00"
+    assert hass.states.get("switch.tankwise_ducha_manana_enabled").state == "off"
     # Changing an appointment from its entities does not reload the entry.
     assert mock_entry.runtime_data is not None
 
@@ -196,14 +196,14 @@ async def test_entities_of_removed_appointments_are_deleted(
     hass: HomeAssistant, mock_entry: MockConfigEntry, entity_registry: er.EntityRegistry
 ) -> None:
     await _setup(hass, mock_entry)
-    assert entity_registry.async_get("switch.water_heater_tarde_enabled")
+    assert entity_registry.async_get("switch.tankwise_tarde_enabled")
     hass.config_entries.async_update_entry(
         mock_entry, options={**mock_entry.options, CONF_APPOINTMENTS: [MORNING]}
     )
     assert await hass.config_entries.async_reload(mock_entry.entry_id)
     await hass.async_block_till_done()
-    assert entity_registry.async_get("switch.water_heater_tarde_enabled") is None
-    assert entity_registry.async_get("switch.water_heater_ducha_manana_enabled")
+    assert entity_registry.async_get("switch.tankwise_tarde_enabled") is None
+    assert entity_registry.async_get("switch.tankwise_ducha_manana_enabled")
 
 
 async def test_diagnostic_sensors_are_disabled_by_default(
@@ -216,12 +216,12 @@ async def test_diagnostic_sensors_are_disabled_by_default(
         "cutoff_temperature",
         "capacity_factor",
     ):
-        entry = entity_registry.async_get(f"sensor.water_heater_{key}")
+        entry = entity_registry.async_get(f"sensor.tankwise_{key}")
         assert (
             entry is not None
             and entry.disabled_by is er.RegistryEntryDisabler.INTEGRATION
         )
-        assert hass.states.get(f"sensor.water_heater_{key}") is None
+        assert hass.states.get(f"sensor.tankwise_{key}") is None
 
 
 async def test_workday_sensor_and_check_date(

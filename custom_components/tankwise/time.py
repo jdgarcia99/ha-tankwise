@@ -31,6 +31,8 @@ async def async_setup_entry(
 class AppointmentTime(AppointmentEntity, TimeEntity):
     """Time by which the water must be ready."""
 
+    _platform = "time"
+
     _attr_entity_category = EntityCategory.CONFIG
 
     @property

@@ -51,7 +51,7 @@ MIN_UA = 0.3
 MAX_UA = 3.0
 DEFAULT_CAPACITY_FACTOR = 0.9  # k_cap
 MIN_CAPACITY_FACTOR = 0.6
-MAX_CAPACITY_FACTOR = 1.1
+MAX_CAPACITY_FACTOR = 1.0  # the probe cannot see more heat than was added
 
 # Heater energy sanity margin over the rated power
 HEATER_ENERGY_MARGIN = 1.25
@@ -67,7 +67,14 @@ FULL_CHECK_WINDOW = timedelta(minutes=30)
 REGULATOR_DEMAND_PERCENT = 10.0
 # A regulator decrease (or the manual mode switched off) this shortly before
 # the power fell means the regulator stopped the heating, not the thermostat.
-REGULATOR_FALLING_WINDOW = timedelta(seconds=10)
+REGULATOR_FALLING_WINDOW = timedelta(seconds=30)
+# The manual mode reported off (or the PWM output at rest) this shortly
+# after the power fell also means an external order stopped the heating: the
+# regulator state often reaches Home Assistant a few seconds after the power.
+REGULATOR_STOP_AFTER = timedelta(seconds=60)
+# A cut-off this far below the configured cut-off temperature is not a
+# thermostat cut-off (e.g. an automation stopping the heating at 45 °C).
+CUTOFF_PLAUSIBLE_BELOW = 12.0
 MIN_EPISODE_ENERGY_KWH = 0.02
 BACKUP_FULL_MARGIN = 2.5  # °C below the cut-off temperature
 CUTOFF_LEARN_MARGIN = 1.0  # °C, backup cut-offs closer than this are learned
@@ -188,6 +195,16 @@ class PowerDropDetector:
             if timestamp - moment <= REGULATOR_FALLING_WINDOW
         ]
 
+    def _withdraw(self, timestamp: datetime) -> None:
+        """The regulator stopped right after the power fell: not a cut-off."""
+        drop = self.drop
+        if (
+            drop is not None
+            and drop.demand
+            and timedelta(0) <= timestamp - drop.timestamp <= REGULATOR_STOP_AFTER
+        ):
+            self.drop = PowerDrop(timestamp=drop.timestamp, demand=False)
+
     def update_regulator(self, timestamp: datetime, value: float | None) -> None:
         """Record a regulator output change (%)."""
         if (
@@ -196,12 +213,15 @@ class PowerDropDetector:
             and value < self._regulator
         ):
             self._record_fall(timestamp)
+            if value <= REGULATOR_DEMAND_PERCENT:
+                self._withdraw(timestamp)
         self._regulator = value
 
     def update_manual(self, timestamp: datetime, value: bool | None) -> None:
         """Record a manual mode change (full power requested when on)."""
         if value is False and self._manual:
             self._record_fall(timestamp)
+            self._withdraw(timestamp)
         self._manual = value
 
     @property
@@ -242,6 +262,10 @@ class TankSample:
     ambient_temperature: float | None = None
     # Last power drop seen by a PowerDropDetector, if any.
     power_drop: PowerDrop | None = None
+    # A regulator (manual mode or PWM output) is configured. When it is but
+    # its state is unavailable, a stop of the heating is left undecided: the
+    # temperature backup criterion is only for installations without one.
+    regulator_configured: bool = False
 
     @property
     def valid(self) -> bool:
@@ -653,7 +677,7 @@ class TankModel:
 
         self._track_capacity_episode(sample, heat, elapsed, ambient, params)
 
-        if full is not None:
+        if full is not None and self._plausible_cutoff(params):
             self._calibrate(now, regulator_confirmed=full, params=params)
 
         self._history.append(_HistoryPoint(now, self._probe))
@@ -786,7 +810,7 @@ class TankModel:
                 tracker.last_heating_sample is None
                 or drop.timestamp >= tracker.last_heating_sample
             )
-            and (tracker.drop_demand is None or drop.timestamp > tracker.below_since)
+            and (tracker.drop_demand is None or drop.timestamp >= tracker.below_since)
         ):
             # Exact instant of the cut-off and the regulator state then.
             tracker.below_since = drop.timestamp
@@ -825,13 +849,35 @@ class TankModel:
                 tracker.state = HeaterState.IDLE
             return None
 
-        # Backup criterion: no regulator information (or it is unavailable).
+        if sample.regulator_configured:
+            # Regulator configured but unavailable: nothing can be concluded.
+            if now - tracker.below_since > FULL_CHECK_WINDOW:
+                tracker.state = HeaterState.IDLE
+            return None
+
+        # Backup criterion: no regulator in the installation.
         if now - tracker.below_since >= FULL_CONFIRM:
             tracker.state = HeaterState.IDLE
             assert self._probe is not None
             if self._probe >= self.cutoff_temperature(params) - BACKUP_FULL_MARGIN:
                 return False
         return None
+
+    def _plausible_cutoff(self, params: TankParams) -> bool:
+        """Return True if the probe is high enough for a thermostat cut-off."""
+        assert self._probe is not None
+        return self._probe >= params.cutoff_temperature - CUTOFF_PLAUSIBLE_BELOW
+
+    def purge_cutoffs(self, params: TankParams) -> int:
+        """Forget learned cut-offs that cannot be thermostat cut-offs.
+
+        Returns how many were removed.
+        """
+        minimum = params.cutoff_temperature - CUTOFF_PLAUSIBLE_BELOW
+        kept = [value for value in self._cutoff_samples if value >= minimum]
+        removed = len(self._cutoff_samples) - len(kept)
+        self._cutoff_samples = kept
+        return removed
 
     def _calibrate(
         self, now: datetime, *, regulator_confirmed: bool, params: TankParams

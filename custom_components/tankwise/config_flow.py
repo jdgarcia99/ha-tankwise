@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Collection
-from datetime import time
+from datetime import time, timedelta
 from typing import Any
 from uuid import uuid4
 
@@ -30,6 +30,7 @@ from homeassistant.const import (
     PERCENTAGE,
     UnitOfPower,
     UnitOfTemperature,
+    UnitOfTime,
     UnitOfVolume,
 )
 from homeassistant.core import HomeAssistant, callback
@@ -82,6 +83,7 @@ from .const import (
     CONF_VOLUME,
     CONF_WATER_REGION,
     CONF_WORKDAY_ENTITY,
+    CONFIG_ENTRY_MINOR_VERSION,
     CONFIG_ENTRY_VERSION,
     DEFAULT_NAME,
     DEFAULT_PARAMETERS,
@@ -119,6 +121,7 @@ CONF_APPOINTMENT_TIME = "time"
 CONF_APPOINTMENT_DAYS = "days"
 CONF_APPOINTMENT_LITERS = "liters"
 CONF_APPOINTMENT_ENABLED = "enabled"
+CONF_APPOINTMENT_DURATION = "duration"
 
 
 def _sensor_selector(device_class: SensorDeviceClass | None = None) -> EntitySelector:
@@ -246,6 +249,9 @@ def _appointment_schema(with_workday: bool) -> vol.Schema:
                     mode=SelectSelectorMode.LIST,
                 )
             ),
+            vol.Required(CONF_APPOINTMENT_DURATION): _number_selector(
+                15, 720, 15, UnitOfTime.MINUTES
+            ),
             vol.Required(CONF_APPOINTMENT_LITERS): _number_selector(
                 0, 300, 5, UnitOfVolume.LITERS
             ),
@@ -371,6 +377,7 @@ class TankWiseConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle the TankWise config flow."""
 
     VERSION = CONFIG_ENTRY_VERSION
+    MINOR_VERSION = CONFIG_ENTRY_MINOR_VERSION
 
     def __init__(self) -> None:
         """Initialise the flow."""
@@ -623,6 +630,9 @@ class TankWiseOptionsFlow(OptionsFlowWithReload):
                     days=frozenset(user_input[CONF_APPOINTMENT_DAYS]),
                     liters=float(user_input[CONF_APPOINTMENT_LITERS]),
                     enabled=bool(user_input[CONF_APPOINTMENT_ENABLED]),
+                    duration=timedelta(
+                        minutes=float(user_input[CONF_APPOINTMENT_DURATION])
+                    ),
                 ).as_dict()
                 items = [
                     item if existing.get("id") == item["id"] else existing
@@ -640,12 +650,14 @@ class TankWiseOptionsFlow(OptionsFlowWithReload):
                 CONF_APPOINTMENT_TIME: f"{current['time']}:00",
                 CONF_APPOINTMENT_DAYS: current["days"],
                 CONF_APPOINTMENT_LITERS: current["liters"],
+                CONF_APPOINTMENT_DURATION: current.get("duration", 60),
                 CONF_APPOINTMENT_ENABLED: current.get("enabled", True),
             }
         else:
             suggested = {
                 CONF_APPOINTMENT_DAYS: list(WEEKDAY_NAMES),
                 CONF_APPOINTMENT_LITERS: DEFAULT_LITERS,
+                CONF_APPOINTMENT_DURATION: 60,
                 CONF_APPOINTMENT_ENABLED: True,
             }
         return self.async_show_form(
