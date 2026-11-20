@@ -14,6 +14,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.tankwise.const import (
     CONF_AMBIENT_SENSOR,
     CONF_AMBIENT_TEMPERATURE,
+    CONF_APPOINTMENTS,
     CONF_CUTOFF_POWER_THRESHOLD,
     CONF_CUTOFF_TEMPERATURE,
     CONF_ENERGY_SENSOR,
@@ -27,12 +28,15 @@ from custom_components.tankwise.const import (
     CONF_OCCUPANCY_ENTITY,
     CONF_POWER_SENSOR,
     CONF_PRICE_SENSOR,
+    CONF_PROFILE_DAYS,
+    CONF_PROFILE_MODE,
     CONF_RATED_POWER,
     CONF_REGULATOR_SENSOR,
     CONF_SOLAR_FORECAST_SENSOR,
     CONF_TEMPERATURE_SENSOR,
     CONF_VOLUME,
     CONF_WATER_REGION,
+    CONF_WORKDAY_ENTITY,
     DEFAULT_PARAMETERS,
     DOMAIN,
 )
@@ -74,10 +78,13 @@ ALL_OPTIONAL = {
 
 @pytest.fixture
 def mock_setup_entry() -> Generator[AsyncMock]:
-    """Avoid setting up the integration when a flow creates an entry."""
-    with patch(
-        "custom_components.tankwise.async_setup_entry", return_value=True
-    ) as mock_setup:
+    """Avoid setting up (and unloading) the integration in flow tests."""
+    with (
+        patch(
+            "custom_components.tankwise.async_setup_entry", return_value=True
+        ) as mock_setup,
+        patch("custom_components.tankwise.async_unload_entry", return_value=True),
+    ):
         yield mock_setup
 
 
@@ -271,57 +278,214 @@ async def test_already_configured(
     assert result["reason"] == "already_configured"
 
 
-async def test_options_flow(
+async def _options_menu(hass: HomeAssistant, entry: MockConfigEntry, choice: str):
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    assert result["type"] is FlowResultType.MENU
+    assert result["menu_options"] == ["parameters", "inputs", "appointments"]
+    return await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": choice}
+    )
+
+
+async def test_options_parameters_with_advanced_section(
     hass: HomeAssistant, mock_setup_entry: AsyncMock, mock_entry: MockConfigEntry
 ) -> None:
-    """Parameters first, then the optional inputs; integers stay integers."""
+    """Volume and region on top; learned initial values folded away."""
     mock_entry.add_to_hass(hass)
-    set_input_states(hass)
-    set_optional_states(hass)
+    result = await _options_menu(hass, mock_entry, "parameters")
+    assert result["step_id"] == "parameters"
+    schema_keys = [str(key) for key in result["data_schema"].schema]
+    assert schema_keys == [CONF_VOLUME, CONF_WATER_REGION, "advanced"]
 
-    result = await hass.config_entries.options.async_init(mock_entry.entry_id)
-    assert result["step_id"] == "init"
-    parameters = {
-        CONF_VOLUME: 150.0,
-        CONF_RATED_POWER: 2000.0,
-        CONF_WATER_REGION: "mainland",
-        CONF_AMBIENT_TEMPERATURE: 15.0,
-        CONF_CUTOFF_TEMPERATURE: 65.0,
-        CONF_CUTOFF_POWER_THRESHOLD: 40.0,
-    }
     result = await hass.config_entries.options.async_configure(
-        result["flow_id"], parameters
-    )
-    assert result["step_id"] == "inputs"
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {CONF_AMBIENT_SENSOR: AMBIENT, CONF_ENERGY_SENSOR: ENERGY}
+        result["flow_id"],
+        {
+            CONF_VOLUME: 150.0,
+            CONF_WATER_REGION: "mainland",
+            "advanced": {
+                CONF_RATED_POWER: 2000.0,
+                CONF_AMBIENT_TEMPERATURE: 15.0,
+                CONF_CUTOFF_TEMPERATURE: 65.0,
+                CONF_CUTOFF_POWER_THRESHOLD: 40.0,
+                CONF_PROFILE_MODE: "weekday",
+                CONF_PROFILE_DAYS: 20.0,
+            },
+        },
     )
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert mock_entry.options == {
-        **parameters,
         CONF_VOLUME: 150,
+        CONF_WATER_REGION: "mainland",
         CONF_RATED_POWER: 2000,
+        CONF_AMBIENT_TEMPERATURE: 15.0,
+        CONF_CUTOFF_TEMPERATURE: 65.0,
         CONF_CUTOFF_POWER_THRESHOLD: 40,
-        CONF_AMBIENT_SENSOR: AMBIENT,
-        CONF_ENERGY_SENSOR: ENERGY,
+        CONF_PROFILE_MODE: "weekday",
+        CONF_PROFILE_DAYS: 20,
+        CONF_ENERGY_SENSOR: ENERGY,  # inputs are kept
     }
-    assert isinstance(mock_entry.options[CONF_VOLUME], int)
+    assert isinstance(mock_entry.options[CONF_PROFILE_DAYS], int)
 
 
-async def test_options_flow_invalid_input(
+async def test_options_inputs(
+    hass: HomeAssistant, mock_setup_entry: AsyncMock, mock_entry: MockConfigEntry
+) -> None:
+    """Inputs replace the previous inputs and keep the parameters."""
+    mock_entry.add_to_hass(hass)
+    set_input_states(hass)
+    set_optional_states(hass)
+    hass.states.async_set("binary_sensor.workday_sensor", "on")
+    result = await _options_menu(hass, mock_entry, "inputs")
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            CONF_AMBIENT_SENSOR: AMBIENT,
+            CONF_WORKDAY_ENTITY: "binary_sensor.workday_sensor",
+        },
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert mock_entry.options == {
+        **DEFAULT_PARAMETERS,
+        CONF_AMBIENT_SENSOR: AMBIENT,
+        CONF_WORKDAY_ENTITY: "binary_sensor.workday_sensor",
+    }
+
+
+async def test_options_inputs_invalid(
     hass: HomeAssistant, mock_setup_entry: AsyncMock, mock_entry: MockConfigEntry
 ) -> None:
     mock_entry.add_to_hass(hass)
     set_input_states(hass)
     hass.states.async_set(AMBIENT, "18", {"unit_of_measurement": "W"})
-    result = await hass.config_entries.options.async_init(mock_entry.entry_id)
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], dict(DEFAULT_PARAMETERS)
-    )
+    result = await _options_menu(hass, mock_entry, "inputs")
     result = await hass.config_entries.options.async_configure(
         result["flow_id"], {CONF_AMBIENT_SENSOR: AMBIENT}
     )
     assert result["errors"] == {CONF_AMBIENT_SENSOR: "invalid_unit"}
+
+
+APPOINTMENT_INPUT = {
+    "name": "Ducha mañana",
+    "time": "06:30:00",
+    "days": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
+    "liters": 60.0,
+    "enabled": True,
+}
+
+
+async def _appointments_menu(hass: HomeAssistant, entry: MockConfigEntry):
+    result = await _options_menu(hass, entry, "appointments")
+    assert result["type"] is FlowResultType.MENU
+    return result
+
+
+async def test_add_edit_and_remove_appointments(
+    hass: HomeAssistant, mock_setup_entry: AsyncMock, mock_entry: MockConfigEntry
+) -> None:
+    mock_entry.add_to_hass(hass)
+
+    result = await _appointments_menu(hass, mock_entry)
+    assert result["menu_options"] == ["add_appointment"]
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "add_appointment"}
+    )
+    assert result["step_id"] == "appointment"
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], APPOINTMENT_INPUT
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    [item] = mock_entry.options[CONF_APPOINTMENTS]
+    assert item["name"] == "Ducha mañana"
+    assert item["time"] == "06:30"
+    assert item["liters"] == 60.0
+    appointment_id = item["id"]
+    assert mock_entry.options[CONF_ENERGY_SENSOR] == ENERGY
+
+    result = await _appointments_menu(hass, mock_entry)
+    assert result["menu_options"] == [
+        "add_appointment",
+        "edit_appointment",
+        "remove_appointment",
+    ]
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "edit_appointment"}
+    )
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"appointment": appointment_id}
+    )
+    assert result["step_id"] == "appointment"
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {**APPOINTMENT_INPUT, "time": "07:00:00", "days": ["sat", "sun"]},
+    )
+    [item] = mock_entry.options[CONF_APPOINTMENTS]
+    assert item["id"] == appointment_id
+    assert item["time"] == "07:00"
+    assert item["days"] == ["sat", "sun"]
+
+    result = await _appointments_menu(hass, mock_entry)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "remove_appointment"}
+    )
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"appointment": [appointment_id]}
+    )
+    assert mock_entry.options[CONF_APPOINTMENTS] == []
+
+
+async def test_appointment_validation_and_limit(
+    hass: HomeAssistant, mock_setup_entry: AsyncMock, mock_entry: MockConfigEntry
+) -> None:
+    mock_entry.add_to_hass(hass)
+    result = await _appointments_menu(hass, mock_entry)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "add_appointment"}
+    )
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {**APPOINTMENT_INPUT, "days": []}
+    )
+    assert result["errors"] == {"days": "no_days"}
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {**APPOINTMENT_INPUT, "name": "  "}
+    )
+    assert result["errors"] == {"name": "no_name"}
+
+    hass.config_entries.async_update_entry(
+        mock_entry,
+        options={
+            **mock_entry.options,
+            CONF_APPOINTMENTS: [
+                {**APPOINTMENT_INPUT, "id": f"id{i}", "time": "06:30"} for i in range(6)
+            ],
+        },
+    )
+    result = await _appointments_menu(hass, mock_entry)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "add_appointment"}
+    )
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "too_many_appointments"
+
+
+async def test_workday_days_need_the_workday_sensor(
+    hass: HomeAssistant, mock_setup_entry: AsyncMock, mock_entry: MockConfigEntry
+) -> None:
+    mock_entry.add_to_hass(hass)
+
+    async def day_options() -> list[str]:
+        result = await _appointments_menu(hass, mock_entry)
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"next_step_id": "add_appointment"}
+        )
+        selector = result["data_schema"].schema["days"]
+        return [option for option in selector.config["options"]]
+
+    assert "workday" not in await day_options()
+    hass.config_entries.async_update_entry(
+        mock_entry,
+        options={**mock_entry.options, CONF_WORKDAY_ENTITY: "binary_sensor.workday"},
+    )
+    assert {"workday", "holiday"} <= set(await day_options())
 
 
 async def test_reconfigure(

@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import Collection
+from datetime import time
 from typing import Any
+from uuid import uuid4
 
 from homeassistant.components.binary_sensor import DOMAIN as BINARY_SENSOR_DOMAIN
 from homeassistant.components.input_boolean import DOMAIN as INPUT_BOOLEAN_DOMAIN
@@ -31,16 +33,20 @@ from homeassistant.const import (
     UnitOfVolume,
 )
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.data_entry_flow import section
 from homeassistant.helpers.selector import (
+    BooleanSelector,
     EntitySelector,
     EntitySelectorConfig,
     NumberSelector,
     NumberSelectorConfig,
     NumberSelectorMode,
+    SelectOptionDict,
     SelectSelector,
     SelectSelectorConfig,
     SelectSelectorMode,
     TextSelector,
+    TimeSelector,
 )
 from homeassistant.util.unit_conversion import (
     EnergyConverter,
@@ -50,8 +56,10 @@ from homeassistant.util.unit_conversion import (
 import voluptuous as vol
 
 from .const import (
+    ADVANCED_PARAMETERS,
     CONF_AMBIENT_SENSOR,
     CONF_AMBIENT_TEMPERATURE,
+    CONF_APPOINTMENTS,
     CONF_CUTOFF_POWER_THRESHOLD,
     CONF_CUTOFF_TEMPERATURE,
     CONF_ENERGY_SENSOR,
@@ -65,19 +73,31 @@ from .const import (
     CONF_OCCUPANCY_ENTITY,
     CONF_POWER_SENSOR,
     CONF_PRICE_SENSOR,
+    CONF_PROFILE_DAYS,
+    CONF_PROFILE_MODE,
     CONF_RATED_POWER,
     CONF_REGULATOR_SENSOR,
     CONF_SOLAR_FORECAST_SENSOR,
     CONF_TEMPERATURE_SENSOR,
     CONF_VOLUME,
     CONF_WATER_REGION,
+    CONF_WORKDAY_ENTITY,
     CONFIG_ENTRY_VERSION,
     DEFAULT_NAME,
     DEFAULT_PARAMETERS,
     DOMAIN,
     INTEGER_PARAMETERS,
     OPTIONAL_INPUT_KEYS,
+    SECTION_ADVANCED,
 )
+from .model.appointments import (
+    DAY_HOLIDAY,
+    DAY_WORKDAY,
+    DEFAULT_LITERS,
+    MAX_APPOINTMENTS,
+    Appointment,
+)
+from .model.demand import WEEKDAY_NAMES, DayTypeMode
 from .model.water import REGIONS
 
 ENERGY_STATE_CLASSES = (SensorStateClass.TOTAL_INCREASING, SensorStateClass.TOTAL)
@@ -92,6 +112,13 @@ ERROR_ENTITY_NOT_FOUND = "entity_not_found"
 ERROR_INVALID_UNIT = "invalid_unit"
 ERROR_INVALID_STATE_CLASS = "invalid_state_class"
 ERROR_NOT_NUMERIC = "not_numeric"
+
+CONF_APPOINTMENT = "appointment"
+CONF_APPOINTMENT_NAME = "name"
+CONF_APPOINTMENT_TIME = "time"
+CONF_APPOINTMENT_DAYS = "days"
+CONF_APPOINTMENT_LITERS = "liters"
+CONF_APPOINTMENT_ENABLED = "enabled"
 
 
 def _sensor_selector(device_class: SensorDeviceClass | None = None) -> EntitySelector:
@@ -158,15 +185,15 @@ OPTIONAL_INPUTS_SCHEMA = vol.Schema(
         vol.Optional(CONF_AMBIENT_SENSOR): _sensor_selector(
             SensorDeviceClass.TEMPERATURE
         ),
+        vol.Optional(CONF_WORKDAY_ENTITY): EntitySelector(
+            EntitySelectorConfig(domain=BINARY_SENSOR_DOMAIN, integration="workday")
+        ),
     }
 )
 
 PARAMETERS_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_VOLUME): _number_selector(10, 500, 1, UnitOfVolume.LITERS),
-        vol.Required(CONF_RATED_POWER): _number_selector(
-            100, 6000, 10, UnitOfPower.WATT
-        ),
         vol.Required(CONF_WATER_REGION): SelectSelector(
             SelectSelectorConfig(
                 options=list(REGIONS),
@@ -174,17 +201,57 @@ PARAMETERS_SCHEMA = vol.Schema(
                 mode=SelectSelectorMode.DROPDOWN,
             )
         ),
-        vol.Required(CONF_AMBIENT_TEMPERATURE): _number_selector(
-            0, 40, 0.5, UnitOfTemperature.CELSIUS
-        ),
-        vol.Required(CONF_CUTOFF_TEMPERATURE): _number_selector(
-            35, 85, 0.5, UnitOfTemperature.CELSIUS
-        ),
-        vol.Required(CONF_CUTOFF_POWER_THRESHOLD): _number_selector(
-            0, 500, 1, UnitOfPower.WATT
+        vol.Required(SECTION_ADVANCED): section(
+            vol.Schema(
+                {
+                    vol.Required(CONF_RATED_POWER): _number_selector(
+                        100, 6000, 10, UnitOfPower.WATT
+                    ),
+                    vol.Required(CONF_AMBIENT_TEMPERATURE): _number_selector(
+                        0, 40, 0.5, UnitOfTemperature.CELSIUS
+                    ),
+                    vol.Required(CONF_CUTOFF_TEMPERATURE): _number_selector(
+                        35, 85, 0.5, UnitOfTemperature.CELSIUS
+                    ),
+                    vol.Required(CONF_CUTOFF_POWER_THRESHOLD): _number_selector(
+                        0, 500, 1, UnitOfPower.WATT
+                    ),
+                    vol.Required(CONF_PROFILE_MODE): SelectSelector(
+                        SelectSelectorConfig(
+                            options=[mode.value for mode in DayTypeMode],
+                            translation_key=CONF_PROFILE_MODE,
+                            mode=SelectSelectorMode.DROPDOWN,
+                        )
+                    ),
+                    vol.Required(CONF_PROFILE_DAYS): _number_selector(4, 60, 1, "d"),
+                }
+            ),
+            {"collapsed": True},
         ),
     }
 )
+
+
+def _appointment_schema(with_workday: bool) -> vol.Schema:
+    days = [*WEEKDAY_NAMES, *((DAY_WORKDAY, DAY_HOLIDAY) if with_workday else ())]
+    return vol.Schema(
+        {
+            vol.Required(CONF_APPOINTMENT_NAME): TextSelector(),
+            vol.Required(CONF_APPOINTMENT_TIME): TimeSelector(),
+            vol.Required(CONF_APPOINTMENT_DAYS): SelectSelector(
+                SelectSelectorConfig(
+                    options=days,
+                    multiple=True,
+                    translation_key=CONF_APPOINTMENT_DAYS,
+                    mode=SelectSelectorMode.LIST,
+                )
+            ),
+            vol.Required(CONF_APPOINTMENT_LITERS): _number_selector(
+                0, 300, 5, UnitOfVolume.LITERS
+            ),
+            vol.Required(CONF_APPOINTMENT_ENABLED): BooleanSelector(),
+        }
+    )
 
 
 def _validate_measurement(
@@ -279,7 +346,7 @@ def _validate_optional_inputs(
             error := _validate_numeric(hass, entity_id)
         ):
             errors[key] = error
-    for key in (CONF_MASTER_ENTITY, CONF_OCCUPANCY_ENTITY):
+    for key in (CONF_MASTER_ENTITY, CONF_OCCUPANCY_ENTITY, CONF_WORKDAY_ENTITY):
         if (entity_id := user_input.get(key)) and (
             error := _validate_exists(hass, entity_id)
         ):
@@ -387,23 +454,49 @@ class TankWiseConfigFlow(ConfigFlow, domain=DOMAIN):
 
 
 class TankWiseOptionsFlow(OptionsFlowWithReload):
-    """Handle TankWise options: installation parameters and optional inputs."""
+    """Handle TankWise options: parameters, inputs and hot water appointments."""
 
     def __init__(self) -> None:
         """Initialise the options flow."""
-        self._parameters: dict[str, Any] = {}
+        self._editing: str | None = None
+
+    def _save(self, **changes: Any) -> ConfigFlowResult:
+        return self.async_create_entry(data={**self.config_entry.options, **changes})
+
+    @property
+    def _appointments(self) -> list[dict[str, Any]]:
+        return list(self.config_entry.options.get(CONF_APPOINTMENTS, []))
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Edit the installation parameters."""
-        if user_input is not None:
-            self._parameters = _clean_parameters(user_input)
-            return await self.async_step_inputs()
+        """Choose what to change."""
+        return self.async_show_menu(
+            step_id="init", menu_options=["parameters", "inputs", "appointments"]
+        )
 
-        suggested = {**DEFAULT_PARAMETERS, **self.config_entry.options}
+    async def async_step_parameters(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Edit the installation parameters (advanced ones folded)."""
+        if user_input is not None:
+            flat = {
+                key: value
+                for key, value in user_input.items()
+                if key != SECTION_ADVANCED
+            }
+            flat.update(user_input.get(SECTION_ADVANCED, {}))
+            return self._save(**_clean_parameters(flat))
+
+        current = {**DEFAULT_PARAMETERS, **self.config_entry.options}
+        suggested = {
+            key: value
+            for key, value in current.items()
+            if key in PARAMETERS_SCHEMA.schema
+        }
+        suggested[SECTION_ADVANCED] = {key: current[key] for key in ADVANCED_PARAMETERS}
         return self.async_show_form(
-            step_id="init",
+            step_id="parameters",
             data_schema=self.add_suggested_values_to_schema(
                 PARAMETERS_SCHEMA, suggested
             ),
@@ -417,8 +510,13 @@ class TankWiseOptionsFlow(OptionsFlowWithReload):
         if user_input is not None:
             errors = _validate_optional_inputs(self.hass, user_input)
             if not errors:
+                options = {
+                    key: value
+                    for key, value in self.config_entry.options.items()
+                    if key not in OPTIONAL_INPUT_KEYS
+                }
                 return self.async_create_entry(
-                    data={**self._parameters, **_clean_optional_inputs(user_input)}
+                    data={**options, **_clean_optional_inputs(user_input)}
                 )
 
         return self.async_show_form(
@@ -426,6 +524,134 @@ class TankWiseOptionsFlow(OptionsFlowWithReload):
             data_schema=self.add_suggested_values_to_schema(
                 OPTIONAL_INPUTS_SCHEMA,
                 user_input if user_input is not None else self.config_entry.options,
+            ),
+            errors=errors,
+        )
+
+    async def async_step_appointments(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Add, edit or remove hot water appointments."""
+        options = ["add_appointment"]
+        if self._appointments:
+            options += ["edit_appointment", "remove_appointment"]
+        return self.async_show_menu(step_id="appointments", menu_options=options)
+
+    async def async_step_add_appointment(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Add an appointment (at most six)."""
+        if len(self._appointments) >= MAX_APPOINTMENTS:
+            return self.async_abort(reason="too_many_appointments")
+        self._editing = None
+        return await self.async_step_appointment()
+
+    async def async_step_edit_appointment(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Choose the appointment to edit."""
+        if user_input is not None:
+            self._editing = user_input[CONF_APPOINTMENT]
+            return await self.async_step_appointment()
+        return self.async_show_form(
+            step_id="edit_appointment",
+            data_schema=vol.Schema(
+                {vol.Required(CONF_APPOINTMENT): self._appointment_selector()}
+            ),
+        )
+
+    async def async_step_remove_appointment(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Choose the appointments to remove."""
+        if user_input is not None:
+            removed = set(user_input[CONF_APPOINTMENT])
+            return self._save(
+                **{
+                    CONF_APPOINTMENTS: [
+                        item
+                        for item in self._appointments
+                        if item.get("id") not in removed
+                    ]
+                }
+            )
+        return self.async_show_form(
+            step_id="remove_appointment",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_APPOINTMENT): self._appointment_selector(
+                        multiple=True
+                    )
+                }
+            ),
+        )
+
+    def _appointment_selector(self, *, multiple: bool = False) -> SelectSelector:
+        return SelectSelector(
+            SelectSelectorConfig(
+                options=[
+                    SelectOptionDict(
+                        value=item["id"], label=f"{item['name']} ({item['time']})"
+                    )
+                    for item in self._appointments
+                ],
+                multiple=multiple,
+                mode=SelectSelectorMode.LIST,
+            )
+        )
+
+    async def async_step_appointment(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Edit the fields of an appointment."""
+        with_workday = bool(self.config_entry.options.get(CONF_WORKDAY_ENTITY))
+        errors: dict[str, str] = {}
+        current = next(
+            (item for item in self._appointments if item.get("id") == self._editing),
+            None,
+        )
+        if user_input is not None:
+            if not user_input[CONF_APPOINTMENT_DAYS]:
+                errors[CONF_APPOINTMENT_DAYS] = "no_days"
+            elif not str(user_input[CONF_APPOINTMENT_NAME]).strip():
+                errors[CONF_APPOINTMENT_NAME] = "no_name"
+            else:
+                item = Appointment(
+                    id=current["id"] if current else uuid4().hex[:8],
+                    name=str(user_input[CONF_APPOINTMENT_NAME]).strip(),
+                    time=time.fromisoformat(user_input[CONF_APPOINTMENT_TIME]),
+                    days=frozenset(user_input[CONF_APPOINTMENT_DAYS]),
+                    liters=float(user_input[CONF_APPOINTMENT_LITERS]),
+                    enabled=bool(user_input[CONF_APPOINTMENT_ENABLED]),
+                ).as_dict()
+                items = [
+                    item if existing.get("id") == item["id"] else existing
+                    for existing in self._appointments
+                ]
+                if current is None:
+                    items.append(item)
+                return self._save(**{CONF_APPOINTMENTS: items})
+
+        if user_input is not None:
+            suggested = user_input
+        elif current is not None:
+            suggested = {
+                CONF_APPOINTMENT_NAME: current["name"],
+                CONF_APPOINTMENT_TIME: f"{current['time']}:00",
+                CONF_APPOINTMENT_DAYS: current["days"],
+                CONF_APPOINTMENT_LITERS: current["liters"],
+                CONF_APPOINTMENT_ENABLED: current.get("enabled", True),
+            }
+        else:
+            suggested = {
+                CONF_APPOINTMENT_DAYS: list(WEEKDAY_NAMES),
+                CONF_APPOINTMENT_LITERS: DEFAULT_LITERS,
+                CONF_APPOINTMENT_ENABLED: True,
+            }
+        return self.async_show_form(
+            step_id="appointment",
+            data_schema=self.add_suggested_values_to_schema(
+                _appointment_schema(with_workday), suggested
             ),
             errors=errors,
         )

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Generator
 from typing import Any
+from unittest.mock import PropertyMock, patch
 
 from homeassistant.core import HomeAssistant
 import pytest
@@ -44,6 +46,17 @@ REQUIRED_INPUT = {
     CONF_MANUAL_MODE_SWITCH: MANUAL,
     CONF_PRICE_SENSOR: PRICE,
 }
+
+
+@pytest.fixture
+def entity_registry_enabled_by_default() -> Generator[None]:
+    """Create the entities that are disabled by default as enabled."""
+    with patch(
+        "homeassistant.helpers.entity.Entity.entity_registry_enabled_default",
+        new_callable=PropertyMock,
+        return_value=True,
+    ):
+        yield
 
 
 @pytest.fixture(autouse=True)

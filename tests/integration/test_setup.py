@@ -80,6 +80,8 @@ LEARNED_SENSORS = (
     MAINS_SENSOR,
 )
 
+pytestmark = pytest.mark.usefixtures("entity_registry_enabled_by_default")
+
 MANIFEST = Path(__file__).parents[2] / "custom_components" / DOMAIN / "manifest.json"
 
 

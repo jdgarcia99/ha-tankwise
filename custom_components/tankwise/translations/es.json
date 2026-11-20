@@ -33,7 +33,8 @@
           "grid_export_sensor": "Energía exportada a la red",
           "export_power_sensor": "Potencia exportada a la red ahora",
           "solar_forecast_sensor": "Previsión solar",
-          "ambient_sensor": "Temperatura ambiente junto al termo"
+          "ambient_sensor": "Temperatura ambiente junto al termo",
+          "workday_entity": "Sensor de días laborables"
         },
         "data_description": {
           "energy_sensor": "Recomendada. Energía acumulada del termo (total o total creciente). Sin ella se integra la potencia.",
@@ -45,7 +46,8 @@
           "grid_export_sensor": "Recomendada. Energía total exportada a la red.",
           "export_power_sensor": "Recomendada. Potencia que se está inyectando a la red ahora.",
           "solar_forecast_sensor": "Previsión horaria de Forecast.Solar o Solcast.",
-          "ambient_sensor": "Temperatura de la estancia donde está el termo. Sin ella se usa el valor fijo de las opciones."
+          "ambient_sensor": "Temperatura de la estancia donde está el termo. Sin ella se usa el valor fijo de las opciones.",
+          "workday_entity": "Sensor binario de la integración Workday. Con él, los festivos se aprenden aparte de los laborables y las citas se pueden fijar para laborables o festivos."
         }
       },
       "reconfigure": {
@@ -81,21 +83,40 @@
   "options": {
     "step": {
       "init": {
+        "title": "Opciones de TankWise",
+        "menu_options": {
+          "parameters": "Parámetros de la instalación",
+          "inputs": "Entradas",
+          "appointments": "Citas de agua caliente"
+        }
+      },
+      "parameters": {
         "title": "Parámetros de la instalación",
         "data": {
           "volume": "Volumen del depósito",
-          "rated_power": "Potencia de calentamiento (valor inicial)",
-          "water_region": "Región del agua de red",
-          "ambient_temperature": "Temperatura ambiente (sin sensor)",
-          "cutoff_temperature": "Temperatura de corte del termostato (valor inicial)",
-          "cutoff_power_threshold": "Umbral de potencia de corte del termostato"
+          "water_region": "Región del agua de red"
         },
         "data_description": {
-          "rated_power": "Potencia de la resistencia. Después se aprende del sensor de potencia.",
-          "water_region": "Se usa para estimar la temperatura del agua de red de cada día. Se puede fijar a mano con el número 'Temperatura del agua de red'.",
-          "ambient_temperature": "Temperatura alrededor del termo que se usa para las pérdidas cuando no hay sensor de ambiente.",
-          "cutoff_temperature": "Temperatura de la sonda cuando corta el termostato (depósito lleno). Después se aprende de los cortes detectados.",
-          "cutoff_power_threshold": "Con el regulador pidiendo potencia, por debajo de esta potencia durante 3 minutos se considera que ha cortado el termostato."
+          "water_region": "Se usa para estimar la temperatura del agua de red de cada día. Se puede fijar a mano con el número 'Temperatura del agua de red'."
+        },
+        "sections": {
+          "advanced": {
+            "name": "Opciones avanzadas",
+            "description": "Valores iniciales de lo que TankWise aprende y ajustes del perfil de uso. Los valores por defecto sirven para la mayoría de instalaciones.",
+            "data": {
+              "rated_power": "Potencia de calentamiento (valor inicial)",
+              "ambient_temperature": "Temperatura ambiente sin sensor",
+              "cutoff_temperature": "Temperatura de corte del termostato (valor inicial)",
+              "cutoff_power_threshold": "Umbral de potencia de corte del termostato",
+              "profile_mode": "Agrupar los días del perfil de uso",
+              "profile_days": "Días de cada tipo en el perfil de uso"
+            },
+            "data_description": {
+              "rated_power": "Después se aprende del sensor de potencia.",
+              "cutoff_temperature": "Después se aprende de los cortes detectados.",
+              "profile_days": "Más días dan una previsión más estable cuando el uso cambia de un día a otro; menos días se adaptan antes."
+            }
+          }
         }
       },
       "inputs": {
@@ -110,13 +131,50 @@
           "grid_export_sensor": "Energía exportada a la red",
           "export_power_sensor": "Potencia exportada a la red ahora",
           "solar_forecast_sensor": "Previsión solar",
-          "ambient_sensor": "Temperatura ambiente junto al termo"
+          "ambient_sensor": "Temperatura ambiente junto al termo",
+          "workday_entity": "Sensor de días laborables"
         },
         "data_description": {
           "energy_sensor": "Recomendada. Energía acumulada del termo (total o total creciente). Sin ella se integra la potencia.",
           "regulator_sensor": "Salida PWM del regulador (p. ej. FreeDS). Ayuda a distinguir un corte del termostato de una parada del regulador.",
           "occupancy_entity": "Apagada, no se espera demanda y esos días no se aprenden.",
-          "ambient_sensor": "Temperatura de la estancia donde está el termo. Sin ella se usa el valor fijo de los parámetros."
+          "ambient_sensor": "Temperatura de la estancia donde está el termo. Sin ella se usa el valor fijo de los parámetros.",
+          "workday_entity": "Sensor binario de la integración Workday. Con él, los festivos se aprenden aparte de los laborables y las citas se pueden fijar para laborables o festivos."
+        }
+      },
+      "appointments": {
+        "title": "Citas de agua caliente",
+        "description": "Horas a las que el agua caliente debe estar lista, con una cantidad mínima de agua (como máximo seis).",
+        "menu_options": {
+          "add_appointment": "Añadir una cita",
+          "edit_appointment": "Editar una cita",
+          "remove_appointment": "Eliminar citas"
+        }
+      },
+      "edit_appointment": {
+        "title": "Editar una cita",
+        "data": {
+          "appointment": "Cita"
+        }
+      },
+      "remove_appointment": {
+        "title": "Eliminar citas",
+        "data": {
+          "appointment": "Cita"
+        }
+      },
+      "appointment": {
+        "title": "Cita de agua caliente",
+        "data": {
+          "name": "Nombre",
+          "time": "Agua lista para",
+          "days": "Días",
+          "liters": "Agua mínima",
+          "enabled": "Activa"
+        },
+        "data_description": {
+          "liters": "Litros a la temperatura de ducha (40 °C por defecto) que deben estar disponibles a esa hora. El sensor 'litros sugeridos' muestra lo que se suele usar.",
+          "days": "Laborables y festivos necesitan el sensor Workday."
         }
       }
     },
@@ -124,7 +182,12 @@
       "entity_not_found": "No se encuentra la entidad.",
       "invalid_unit": "La entidad tiene una unidad de medida no compatible.",
       "invalid_state_class": "El sensor de energía debe tener la clase de estado 'total' o 'total_increasing'.",
-      "not_numeric": "El estado de la entidad no es un número."
+      "not_numeric": "El estado de la entidad no es un número.",
+      "no_days": "Elige al menos un día.",
+      "no_name": "Escribe un nombre."
+    },
+    "abort": {
+      "too_many_appointments": "Ya hay seis citas, el máximo."
     }
   },
   "selector": {
@@ -133,6 +196,33 @@
         "balearic_islands": "Islas Baleares",
         "mainland": "Península (genérico)",
         "canary_islands": "Islas Canarias"
+      }
+    },
+    "profile_mode": {
+      "options": {
+        "weekday": "Cada día de la semana por separado",
+        "workday_weekend": "Laborables y fines de semana/festivos",
+        "all": "Todos los días iguales"
+      }
+    },
+    "days": {
+      "options": {
+        "mon": "Lunes",
+        "tue": "Martes",
+        "wed": "Miércoles",
+        "thu": "Jueves",
+        "fri": "Viernes",
+        "sat": "Sábado",
+        "sun": "Domingo",
+        "workday": "Laborables",
+        "holiday": "Festivos y no laborables"
+      }
+    },
+    "reset_part": {
+      "options": {
+        "losses": "Pérdidas de calor",
+        "demand": "Perfil de uso",
+        "all": "Todo"
       }
     }
   },
@@ -236,6 +326,58 @@
             }
           }
         }
+      },
+      "demand_today": {
+        "name": "Demanda de agua caliente hoy",
+        "state_attributes": {
+          "p50": {
+            "name": "Día habitual"
+          },
+          "remaining_p50": {
+            "name": "Resto de hoy (día habitual)"
+          },
+          "remaining_p90": {
+            "name": "Resto de hoy (día fuerte)"
+          },
+          "day_type": {
+            "name": "Tipo de día"
+          },
+          "observed_days": {
+            "name": "Días observados"
+          },
+          "profile_status": {
+            "name": "Estado del perfil",
+            "state": {
+              "learning": "Aprendiendo",
+              "ready": "Listo"
+            }
+          }
+        }
+      },
+      "demand_forecast": {
+        "name": "Previsión de demanda de agua caliente",
+        "state_attributes": {
+          "p50": {
+            "name": "Habitual"
+          },
+          "start": {
+            "name": "Inicio"
+          },
+          "end": {
+            "name": "Fin"
+          }
+        }
+      },
+      "appointment_suggested_liters": {
+        "name": "{appointment} litros sugeridos",
+        "state_attributes": {
+          "p50": {
+            "name": "Habitual"
+          },
+          "days": {
+            "name": "Días medidos"
+          }
+        }
       }
     },
     "number": {
@@ -247,6 +389,19 @@
       },
       "mains_water_temperature": {
         "name": "Temperatura del agua de red (0 = automática)"
+      },
+      "appointment_liters": {
+        "name": "{appointment} litros"
+      }
+    },
+    "time": {
+      "appointment_time": {
+        "name": "{appointment} hora"
+      }
+    },
+    "switch": {
+      "appointment_enabled": {
+        "name": "{appointment} activa"
       }
     }
   },
@@ -254,6 +409,27 @@
     "missing_required_inputs": {
       "title": "TankWise necesita más información",
       "description": "La nueva versión de TankWise necesita algunas entidades que todavía no están configuradas en {name}: {inputs}.\n\nAbre **Ajustes → Dispositivos y servicios → TankWise**, elige **Reconfigurar** en {name} y selecciónalas."
+    }
+  },
+  "services": {
+    "reset_learning": {
+      "name": "Reiniciar el aprendizaje",
+      "description": "Olvida lo que TankWise ha aprendido: las pérdidas de calor, el perfil de uso o todo.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Termo",
+          "description": "Instancia de TankWise. Todas si se deja vacío."
+        },
+        "part": {
+          "name": "Qué olvidar",
+          "description": "Pérdidas de calor, perfil de uso o todo."
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "entry_not_loaded": {
+      "message": "La instancia de TankWise {entry_id} no está cargada."
     }
   }
 }

@@ -95,6 +95,8 @@ async def test_history_is_imported_on_first_start(
     assert coordinator.model.as_dict()["cutoff_samples"]
     assert any(event.energy_kwh > 1.0 for event in coordinator.model.consumptions)
     assert coordinator.data.tank.last_consumption is not None
+    # The demand profile was rebuilt from the same history.
+    assert coordinator.bootstrap.days == len(coordinator.demand.observations)
 
     stored = hass_storage[f"{DOMAIN}.{mock_entry.entry_id}"]["data"]
     assert stored["bootstrap"]["status"] == "done"

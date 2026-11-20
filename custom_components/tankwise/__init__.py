@@ -7,10 +7,16 @@ from typing import Any
 
 from homeassistant.const import CONF_NAME, Platform
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import entity_registry as er, issue_registry as ir
+from homeassistant.helpers import (
+    config_validation as cv,
+    entity_registry as er,
+    issue_registry as ir,
+)
+from homeassistant.helpers.typing import ConfigType
 from homeassistant.loader import async_get_integration
 
 from .const import (
+    CONF_APPOINTMENTS,
     CONF_CUTOFF_POWER_THRESHOLD,
     CONF_CUTOFF_TEMPERATURE,
     CONF_ENERGY_SENSOR,
@@ -31,11 +37,19 @@ from .const import (
     SETTING_MAINS_WATER_TEMPERATURE,
 )
 from .coordinator import TankWiseConfigEntry, TankWiseCoordinator
+from .services import async_setup_services
 from .storage import TankWiseStore
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS: list[Platform] = [Platform.NUMBER, Platform.SENSOR]
+PLATFORMS: list[Platform] = [
+    Platform.NUMBER,
+    Platform.SENSOR,
+    Platform.SWITCH,
+    Platform.TIME,
+]
+
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 # Version 1 (0.2.x) option keys renamed in version 2.
 _V1_RENAMED_OPTIONS = {
@@ -54,9 +68,16 @@ _V1_KEPT_PARAMETERS = (
 _V1_REMOVED_SENSORS = ("showers_available",)
 
 
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Register the services (they work with any loaded entry)."""
+    async_setup_services(hass)
+    return True
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: TankWiseConfigEntry) -> bool:
     """Set up TankWise from a config entry."""
     _async_update_missing_inputs_issue(hass, entry)
+    _async_remove_stale_appointment_entities(hass, entry)
 
     coordinator = TankWiseCoordinator(hass, entry)
     integration = await async_get_integration(hass, DOMAIN)
@@ -141,6 +162,22 @@ async def _async_migrate_v1(hass: HomeAssistant, entry: TankWiseConfigEntry) -> 
         entry, data=data, options=options, version=CONFIG_ENTRY_VERSION
     )
     _LOGGER.info("Migrated TankWise entry %s to version 2", entry.title)
+
+
+def _async_remove_stale_appointment_entities(
+    hass: HomeAssistant, entry: TankWiseConfigEntry
+) -> None:
+    """Remove the entities of appointments deleted in the options."""
+    current = {item.get("id") for item in entry.options.get(CONF_APPOINTMENTS, [])}
+    prefix = f"{entry.entry_id}_appointment_"
+    registry = er.async_get(hass)
+    for registry_entry in er.async_entries_for_config_entry(registry, entry.entry_id):
+        unique_id = registry_entry.unique_id
+        if not unique_id.startswith(prefix):
+            continue
+        appointment_id = unique_id.removeprefix(prefix).split("_", 1)[0]
+        if appointment_id not in current:
+            registry.async_remove(registry_entry.entity_id)
 
 
 def _missing_inputs_issue_id(entry_id: str) -> str:

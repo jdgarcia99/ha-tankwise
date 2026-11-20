@@ -13,8 +13,8 @@ recorder history (see :mod:`.bootstrap`).
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass, replace
-from datetime import datetime
+from dataclasses import dataclass, field, replace
+from datetime import date, datetime, timedelta
 import logging
 from typing import Any
 
@@ -35,6 +35,7 @@ from .const import (
     BOOTSTRAP_DAYS,
     CONF_AMBIENT_SENSOR,
     CONF_AMBIENT_TEMPERATURE,
+    CONF_APPOINTMENTS,
     CONF_CUTOFF_POWER_THRESHOLD,
     CONF_CUTOFF_TEMPERATURE,
     CONF_ENERGY_SENSOR,
@@ -48,18 +49,25 @@ from .const import (
     CONF_OCCUPANCY_ENTITY,
     CONF_POWER_SENSOR,
     CONF_PRICE_SENSOR,
+    CONF_PROFILE_DAYS,
+    CONF_PROFILE_MODE,
     CONF_RATED_POWER,
     CONF_REGULATOR_SENSOR,
     CONF_SOLAR_FORECAST_SENSOR,
     CONF_TEMPERATURE_SENSOR,
     CONF_VOLUME,
     CONF_WATER_REGION,
+    CONF_WORKDAY_ENTITY,
     DEFAULT_PARAMETERS,
     DEFAULT_SETTINGS,
     DOMAIN,
+    FORECAST_HOURS,
     MAINS_AUTOMATIC,
     MAINS_SOURCE_MANUAL,
     MAINS_SOURCE_TABLE,
+    PART_ALL,
+    PART_DEMAND,
+    PART_LOSSES,
     SETTING_COMFORT_MIN_TEMPERATURE,
     SETTING_MAINS_WATER_TEMPERATURE,
     SETTING_SHOWER_TEMPERATURE,
@@ -67,13 +75,22 @@ from .const import (
     UPDATE_INTERVAL,
 )
 from .inputs import InputError, parse_bool, parse_measurement, parse_numeric, state_unit
+from .model.appointments import (
+    Appointment,
+    AppointmentUsage,
+    appointment_usage,
+    load_appointments,
+)
+from .model.demand import DayTypeMode, DemandForecast, DemandModel, DemandParams
 from .model.replay import (
     ROLE_AMBIENT,
     ROLE_ENERGY,
     ROLE_MANUAL_MODE,
+    ROLE_OCCUPANCY,
     ROLE_POWER,
     ROLE_REGULATOR,
     ROLE_TEMPERATURE,
+    ROLE_WORKDAY,
 )
 from .model.tank import PowerDropDetector, TankModel, TankParams, TankSample, TankState
 from .model.water import mains_water_temperature
@@ -108,6 +125,7 @@ class TankReadings:
     export_power: float | None = None
     solar_forecast: float | None = None
     ambient_temperature: float | None = None
+    workday: bool | None = None
 
     @property
     def required_available(self) -> bool:
@@ -123,6 +141,11 @@ class TankWiseData:
     tank: TankState
     shortages_7d: int
     mains_source: str
+    forecast: DemandForecast
+    # P50 and P90 (kWh) of today's total and of the rest of today.
+    demand_today: tuple[float, float]
+    demand_remaining: tuple[float, float]
+    appointment_usage: dict[str, AppointmentUsage] = field(default_factory=dict)
 
 
 class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
@@ -153,6 +176,9 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
         self.settings: dict[str, float] = dict(DEFAULT_SETTINGS)
         self.bootstrap = BootstrapInfo(BootstrapStatus.PENDING)
         self._last_sample: TankSample | None = None
+        self.demand = DemandModel(dt_util.get_default_time_zone())
+        # Workday status of the coming days, from the workday integration.
+        self._workdays: dict[date, bool] = {}
 
     # ------------------------------------------------------------------
     # Persistence
@@ -176,10 +202,16 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
                 )
             except ValueError as err:
                 _LOGGER.warning("Discarding stored tank state: %s", err)
+        if "demand" in stored:
+            try:
+                self.demand = DemandModel.from_dict(stored["demand"], self.demand.tz)
+            except ValueError as err:
+                _LOGGER.warning("Discarding stored demand profile: %s", err)
 
     def _stored_data(self) -> dict[str, Any]:
         return {
             "tank": self.model.as_dict(),
+            "demand": self.demand.as_dict(),
             "settings": dict(self.settings),
             "bootstrap": self.bootstrap.as_dict(),
         }
@@ -212,13 +244,21 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
             ROLE_REGULATOR: options.get(CONF_REGULATOR_SENSOR),
             ROLE_MANUAL_MODE: data.get(CONF_MANUAL_MODE_SWITCH),
             ROLE_AMBIENT: options.get(CONF_AMBIENT_SENSOR),
+            ROLE_OCCUPANCY: options.get(CONF_OCCUPANCY_ENTITY),
+            ROLE_WORKDAY: options.get(CONF_WORKDAY_ENTITY),
         }
-        info, result = await async_bootstrap(
-            self.hass, roles, self.tank_params_at, days=BOOTSTRAP_DAYS
+        info, result, demand = await async_bootstrap(
+            self.hass,
+            roles,
+            self.tank_params_at,
+            days=BOOTSTRAP_DAYS,
+            tz=self.demand.tz,
         )
         self.bootstrap = info
         if result is not None and result.samples:
             self.model = result.model
+            if demand is not None:
+                self.demand = demand
             await self.async_save_now()
             await self.async_request_refresh()
         else:
@@ -301,6 +341,50 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
         """Return the tank model parameters now."""
         return self.tank_params_at(dt_util.utcnow())
 
+    @property
+    def demand_params(self) -> DemandParams:
+        """Return the settings of the demand profile."""
+        parameters = self.parameters
+        try:
+            mode = DayTypeMode(parameters[CONF_PROFILE_MODE])
+        except ValueError:
+            mode = DayTypeMode.WORKDAY_WEEKEND
+        return DemandParams(mode=mode, observations=int(parameters[CONF_PROFILE_DAYS]))
+
+    @property
+    def appointments(self) -> list[Appointment]:
+        """Return the hot water appointments of the options."""
+        return load_appointments(self.config_entry.options.get(CONF_APPOINTMENTS, []))
+
+    def async_update_appointment(self, appointment_id: str, **changes: Any) -> None:
+        """Change an appointment from its entities and store it in the options."""
+        items = []
+        for item in self.config_entry.options.get(CONF_APPOINTMENTS, []):
+            if item.get("id") == appointment_id:
+                item = {**item, **changes}
+            items.append(item)
+        self.hass.config_entries.async_update_entry(
+            self.config_entry,
+            options={**self.config_entry.options, CONF_APPOINTMENTS: items},
+        )
+        if self.data is not None:
+            self.async_set_updated_data(
+                replace(self.data, appointment_usage=self._appointment_usage())
+            )
+
+    async def async_reset_learning(self, part: str) -> None:
+        """Forget learned data: losses, the demand profile or everything."""
+        if part == PART_LOSSES:
+            self.model.reset_losses()
+        elif part == PART_DEMAND:
+            self.demand.reset()
+        elif part == PART_ALL:
+            self.model.reset_learning()
+            self.demand.reset()
+        _LOGGER.info("Learned data reset: %s", part)
+        await self.async_save_now()
+        await self.async_request_refresh()
+
     async def async_set_setting(self, key: str, value: float) -> None:
         """Change a runtime setting (number entity) and refresh the state."""
         self.settings[key] = float(value)
@@ -332,14 +416,104 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
         )
         tank = self.model.update(sample, self.tank_params_at(readings.timestamp))
         self._last_sample = sample
+        now = readings.timestamp
+        self.demand.update(
+            now,
+            available=tank.available,
+            occupied=readings.occupancy,
+            draws=self.model.consumptions,
+            workday=readings.workday,
+        )
+        workdays = await self._async_workdays(now, readings.workday)
+        params = self.demand_params
+        forecast = self.demand.forecast(
+            now,
+            params,
+            hours=FORECAST_HOURS,
+            occupied=readings.occupancy,
+            workdays=workdays,
+        )
+        today = dt_util.as_local(now).date()
+        midnight = dt_util.start_of_local_day(today + timedelta(days=1))
+        if readings.occupancy is False:
+            demand_today = (0.0, 0.0)
+        else:
+            demand_today = self.demand.day_totals(
+                today, now, params, workdays.get(today)
+            )
         self._store.async_schedule_save(self._stored_data)
-        _mains, source = self.mains_water_temperature_at(readings.timestamp)
+        _mains, source = self.mains_water_temperature_at(now)
         return TankWiseData(
             readings=readings,
             tank=tank,
-            shortages_7d=self._count_shortages(readings.timestamp),
+            shortages_7d=self._count_shortages(now),
             mains_source=source,
+            forecast=forecast,
+            demand_today=demand_today,
+            demand_remaining=(
+                forecast.window(now, midnight, 0.5),
+                forecast.window(now, midnight, 0.9),
+            ),
+            appointment_usage=self._appointment_usage(),
         )
+
+    def _appointment_usage(self) -> dict[str, AppointmentUsage]:
+        """Measure the litres used in the hour after each appointment."""
+        now = dt_util.utcnow()
+        params = self.tank_params_at(now)
+        return {
+            appointment.id: appointment_usage(
+                appointment,
+                self.demand,
+                self.demand_params,
+                now,
+                shower_temperature=params.shower_temperature,
+                mains_temperature=params.mains_temperature,
+            )
+            for appointment in self.appointments
+        }
+
+    async def _async_workdays(
+        self, now: datetime, today_workday: bool | None
+    ) -> dict[date, bool]:
+        """Return the workday status of today and the next two days."""
+        entity_id = self.config_entry.options.get(CONF_WORKDAY_ENTITY)
+        today = dt_util.as_local(now).date()
+        self._workdays = {
+            day: value for day, value in self._workdays.items() if day >= today
+        }
+        if not entity_id:
+            return {}
+        if today_workday is not None:
+            self._workdays[today] = today_workday
+        for offset in (1, 2):
+            day = today + timedelta(days=offset)
+            if (
+                day not in self._workdays
+                and (value := await self._async_check_workday(entity_id, day))
+                is not None
+            ):
+                self._workdays[day] = value
+        return dict(self._workdays)
+
+    async def _async_check_workday(self, entity_id: str, day: date) -> bool | None:
+        """Ask the workday integration whether a date is a workday."""
+        if not self.hass.services.has_service("workday", "check_date"):
+            return None
+        try:
+            response = await self.hass.services.async_call(
+                "workday",
+                "check_date",
+                {"check_date": day},
+                target={"entity_id": entity_id},
+                blocking=True,
+                return_response=True,
+            )
+        except Exception as err:
+            _LOGGER.debug("Workday check of %s failed: %s", day, err)
+            return None
+        value = (response or {}).get(entity_id, {}).get("workday")
+        return value if isinstance(value, bool) else None
 
     def _count_shortages(self, now: datetime) -> int:
         return sum(
@@ -379,6 +553,7 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
             ambient_temperature=self._read_measurement(
                 options.get(CONF_AMBIENT_SENSOR), "temperature"
             ),
+            workday=self._read_bool(options.get(CONF_WORKDAY_ENTITY)),
         )
 
     def _read(self, entity_id: str | None, parse: Callable[[State], Any]) -> Any:
