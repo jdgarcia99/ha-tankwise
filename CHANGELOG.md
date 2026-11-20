@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-20
+
+Second phase: TankWise learns the household's hot water usage and forecasts
+the demand. It still does not act on any device.
+
+### Added
+
+- Usage profile: each complete day (at least 20 hours observed, home
+  occupied) is kept as the energy drawn in 96 slots of 15 minutes. Days are
+  grouped as workdays and weekends/holidays (or per weekday, or all alike);
+  the last 16 days of each type are used, recent ones weighing more.
+- Forecast of the next 36 hours with P50 and P90 per slot, computed on the
+  cumulative curve of each day so that a strong day is not inflated by
+  showers that move from one slot to another.
+- A draw that left the water below the comfort temperature raises the
+  forecast of its time of day by 20 % for two weeks.
+- Optional Workday sensor: holidays are learned apart from workdays, and the
+  coming days are checked with the Workday integration.
+- Hot water appointments (up to six): "water ready by" time, days, minimum
+  litres at the shower temperature and active or not. Each one has time,
+  litres and active entities synchronised with the options, and a suggested
+  litres sensor (P90 of the water used in the hour after it in the last four
+  weeks).
+- Sensors: hot water demand today and hot water demand forecast (36 hours,
+  slots as an attribute that is not recorded).
+- `tankwise.reset_learning` service (heat losses, usage profile or
+  everything).
+- The history import also rebuilds the usage profile.
+
+### Changed
+
+- The options are a menu: installation parameters, inputs and hot water
+  appointments. Heating power, ambient temperature, thermostat cut-off and
+  the usage profile settings are folded under "Advanced options".
+- The heat loss coefficient, learned heating power, thermostat cut-off
+  temperature and effective capacity factor sensors are disabled by default
+  for new installations.
+
 ## [0.3.0] - 2026-11-20
 
 First phase of the full control of the water heater: TankWise learns the
@@ -139,7 +177,8 @@ and the heating plan will follow.
 - The output contract entities (energy needed, deadline, grid allowed,
   requested power and urgency) arrive in a later release.
 
-[Unreleased]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.2.3...v0.3.0
 [0.2.3]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.2.1...v0.2.2

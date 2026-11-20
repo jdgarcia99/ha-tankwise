@@ -17,14 +17,15 @@ purchase price plus the value of the solar surplus).
 
 ## Project status
 
-> **Development (0.3.0, phase 1 of 7).** TankWise learns how the tank
-> behaves and detects every hot water draw, but **it does not control any
-> device yet**. Keep your current automations until phase 4.
+> **Development (0.4.0, phase 2 of 7).** TankWise learns how the tank
+> behaves, detects every hot water draw and forecasts the demand, but **it
+> does not control any device yet**. Keep your current automations until
+> phase 4.
 
 | Phase | Content | Status |
 |-------|---------|--------|
 | 1 | Thermal model, draw detection, history import, sensors (no control) | ✅ Done |
-| 2 | Demand profile and forecast | Planned |
+| 2 | Demand profile and forecast, hot water appointments | ✅ Done |
 | 3 | Prices, surplus value and optimiser; shadow mode with the plan | Planned |
 | 4 | Controller, safeties and degraded mode; automatic mode | Planned |
 | 5 | Boost with a blueprint for external push buttons | Planned |
@@ -62,17 +63,26 @@ and no entity ID is fixed in the code.
 - Grid injection price, grid import and export energy, current export power.
 - Solar forecast (Forecast.Solar or Solcast).
 - Ambient temperature where the tank is.
+- Workday sensor (Workday integration): holidays are learned apart and
+  appointments can be set for workdays or holidays.
 
-**Options (installation parameters)**
+**Options**
+
+The options menu has three parts: installation parameters, inputs and hot
+water appointments. The parameters show only the tank volume and the mains
+water region; everything TankWise learns by itself is folded under
+**Advanced options**:
 
 | Parameter | Default |
 |-----------|---------|
 | Volume | 100 L |
-| Heating power (initial value, then learned) | 1500 W |
 | Mains water region | Balearic Islands |
-| Ambient temperature without sensor | 20 °C |
-| Thermostat cut-off temperature (initial value, then learned) | 68 °C |
-| Thermostat cut-off power threshold | 50 W |
+| *Advanced:* heating power (initial value, then learned) | 1500 W |
+| *Advanced:* ambient temperature without sensor | 20 °C |
+| *Advanced:* thermostat cut-off temperature (initial value, then learned) | 68 °C |
+| *Advanced:* thermostat cut-off power threshold | 50 W |
+| *Advanced:* group days of the usage profile | Workdays and weekends/holidays |
+| *Advanced:* days of each type in the usage profile | 16 |
 
 **Settings (number entities)**
 
@@ -85,6 +95,21 @@ and no entity ID is fixed in the code.
 Entities that come from a 0.2 installation are migrated automatically and
 keep what was learned. A repair issue asks you to complete the new required
 inputs with **Reconfigure**.
+
+## Hot water appointments
+
+An appointment says "hot water ready by this time, with at least this much
+water": name, time, days of the week (or workdays/holidays with the Workday
+sensor), minimum litres at the shower temperature and active or not. Up to
+six, none by default. They are added in **Options → Hot water appointments**.
+
+Each appointment gets entities to adjust it from a dashboard (changes are
+saved in the options): `time.<name>_<appointment>_time`,
+`number.<name>_<appointment>_liters` and `switch.<name>_<appointment>_enabled`.
+The sensor `sensor.<name>_<appointment>_suggested_liters` shows the litres
+actually used in the hour after the appointment (P90 of the last four weeks)
+to help choosing the minimum. From phase 3 the planner treats every active
+appointment as a hard constraint.
 
 ## Entities
 
@@ -102,14 +127,22 @@ are translated.
 | Model status | `calibrated`, `learning` or `uncertain` |
 | Last draw | Start of the last hot water draw, with its energy, minimum temperature and whether there was a shortage |
 | Hot water shortages (7 days) | Draws that left the water below the minimum comfort temperature |
-| Heat loss coefficient (diagnostic) | Learned UA, in W/K |
-| Learned heating power (diagnostic) | Mean power of the heating element at full output |
-| Thermostat cut-off temperature (diagnostic) | Median of the last 20 cut-offs |
-| Effective capacity factor (diagnostic) | Share of the heating energy seen by the probe |
+| Hot water demand today | Energy a strong day needs (P90), with the usual day (P50) and the rest of today as attributes |
+| Hot water demand forecast | Demand of the next 36 hours (P90), with the 15-minute slots as an attribute |
+| Heat loss coefficient (diagnostic, disabled by default) | Learned UA, in W/K |
+| Learned heating power (diagnostic, disabled by default) | Mean power of the heating element at full output |
+| Thermostat cut-off temperature (diagnostic, disabled by default) | Median of the last 20 cut-offs |
+| Effective capacity factor (diagnostic, disabled by default) | Share of the heating energy seen by the probe |
 | Mains water temperature (diagnostic) | Value in use and its source |
 
-The diagnostics include the learned parameters, the history import result
-and the last 50 draws.
+The diagnostics include the learned parameters, the history import result,
+the observed days of the usage profile and the last 50 draws.
+
+## Services
+
+| Service | Description |
+|---------|-------------|
+| `tankwise.reset_learning` | Forgets the heat losses (`part: losses`), the usage profile (`part: demand`) or everything (`part: all`, default). Optional `config_entry_id`. |
 
 ## How the tank model works
 
@@ -131,9 +164,17 @@ and the last 50 draws.
   compared with the predicted one. A draw starts when the residual
   accumulated over 10 minutes falls below −1 °C and ends when it stays close to
   zero for 5 minutes. Its energy is `C · ΔT_residual / k_cap`.
+- **Usage profile.** Each complete day (at least 20 h observed, home
+  occupied) is stored as the energy drawn in its 96 slots of 15 minutes. The
+  forecast uses the last 16 days of the same type, recent ones weighing more
+  (half-life of three weeks). Percentiles are taken on the cumulative curve
+  of each day, not slot by slot: the P90 of a day is a "strong" day, and
+  showers that move by 15 to 30 minutes do not count twice. A draw that left
+  the water below the comfort temperature raises the forecast of its time of
+  day by 20 % for two weeks. With the home unoccupied the forecast is zero.
 - **History import.** On the first start the last 10 days of the recorder are
-  replayed through the model, so losses, cut-offs and draws are known from
-  day one.
+  replayed through the models, so losses, cut-offs, draws and the usage
+  profile are known from day one.
 - **Safe mode.** Without the probe or the power, the model freezes and the
   tank sensors become unavailable; nothing is invented. After an outage longer
   than 30 minutes the state is uncertain until the next full tank.
