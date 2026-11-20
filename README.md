@@ -17,7 +17,7 @@ purchase price plus the value of the solar surplus).
 
 ## Project status
 
-> **Development (0.4.1, phase 2 of 7).** TankWise learns how the tank
+> **Development (0.5.0, phase 2 of 7).** TankWise learns how the tank
 > behaves, detects every hot water draw and forecasts the demand, but **it
 > does not control any device yet**. Keep your current automations until
 > phase 4.
@@ -111,8 +111,11 @@ saved in the options): `time.<name>_<appointment>_time`,
 `number.<name>_<appointment>_liters` and `switch.<name>_<appointment>_enabled`.
 The sensor `sensor.<name>_<appointment>_suggested_liters` shows the litres
 actually used during the block (P90 of the last four weeks)
-to help choosing the minimum. From phase 3 the planner treats every active
-appointment as a hard constraint.
+to help choosing the minimum, and `sensor.<name>_<appointment>_required_temperature`
+the tank temperature needed when the block starts. If that temperature is
+above the learned thermostat cut-off, `binary_sensor.tankwise_plan_at_risk`
+turns on: even a full tank does not cover the block. From phase 3 the planner
+treats every active appointment as a hard constraint on useful litres.
 
 ## Entities
 
@@ -125,7 +128,8 @@ are translated.
 | Stored energy | kWh stored above the mains water temperature |
 | Useful energy | kWh stored above the minimum comfort temperature |
 | Charge | Useful energy as a percentage of a full tank |
-| Hot water available | Litres available at the shower temperature |
+| Hot water available | Useful litres at the shower temperature before the water runs below the comfort temperature (theoretical litres as an attribute) |
+| Plan at risk (binary) | On when an active appointment needs more than a full tank gives |
 | Modelled temperature | Equivalent tank temperature tracked by the model |
 | Model status | `calibrated`, `learning` or `uncertain` |
 | Last draw | Start of the last hot water draw, with its energy, minimum temperature and whether there was a shortage |
@@ -150,8 +154,10 @@ the observed days of the usage profile and the last 50 draws.
 ## How the tank model works
 
 - **Energy and litres.** `C = V · 0.001163` kWh/K. Stored energy
-  `E = C · (T − T_mains)` and litres at the shower temperature
-  `L = V · (T − T_mains) / (T_shower − T_mains)`.
+  `E = C · (T − T_mains)`. The incoming cold water mixes with the hot water,
+  so only the heat above the comfort temperature is usable: useful litres at
+  the shower temperature `L = k_use · V · (T − T_comfort) / (T_shower − T_mains)`,
+  with `k_use` learned from real shortages.
 - **Losses.** `P = UA · (T − T_ambient)`. UA is learned by recursive least
   squares from the slope of the probe over rest windows of at least two hours
   (no heating, no draws), within 0.3–3 W/K.

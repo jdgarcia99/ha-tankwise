@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-20
+
+### Changed
+
+- "Hot water available" now shows the useful litres: water at the shower
+  temperature that can be drawn before the outlet falls below the comfort
+  temperature, `k_use · V · (T − T_comfort) / (T_shower − T_mains)`. The
+  previous value assumed a perfectly stratified tank and overestimated the
+  water 3 to 7 times (190 litres at 63.7 °C on the reference installation,
+  where the water ran lukewarm after about 100 litres); it is kept as the
+  `theoretical_liters` attribute.
+
+### Added
+
+- Usable factor `k_use`, learned from real shortages (litres drawn since the
+  last heating until the water fell below the comfort temperature, over the
+  useful litres predicted then); 1.0 at first, between 0.5 and 1.5.
+- Per appointment, `sensor.tankwise_<appointment>_required_temperature`: the
+  tank temperature needed when the block starts to cover the larger of the
+  minimum litres and the P90 of the litres used during the block.
+- `binary_sensor.tankwise_plan_at_risk`: on when an active appointment needs
+  more than the learned thermostat cut-off, i.e. even a full tank does not
+  cover its block (appointments are suspended with nobody home).
+
 ## [0.4.1] - 2026-11-20
 
 ### Fixed
@@ -232,7 +256,8 @@ and the heating plan will follow.
 - The output contract entities (energy needed, deadline, grid allowed,
   requested power and urgency) arrive in a later release.
 
-[Unreleased]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.2.3...v0.3.0
