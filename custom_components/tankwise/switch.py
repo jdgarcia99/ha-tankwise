@@ -10,7 +10,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .coordinator import TankWiseConfigEntry
-from .entity import AppointmentEntity
+from .entity import AppointmentEntity, TankWiseEntity
 
 PARALLEL_UPDATES = 0
 
@@ -23,8 +23,13 @@ async def async_setup_entry(
     """Set up one switch per appointment."""
     coordinator = entry.runtime_data
     async_add_entities(
-        AppointmentSwitch(coordinator, appointment, "enabled")
-        for appointment in coordinator.appointments
+        [
+            CompensationCapSwitch(coordinator, "compensation_cap"),
+            *(
+                AppointmentSwitch(coordinator, appointment, "enabled")
+                for appointment in coordinator.appointments
+            ),
+        ]
     )
 
 
@@ -48,3 +53,24 @@ class AppointmentSwitch(AppointmentEntity, SwitchEntity):
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Suspend the appointment."""
         self.coordinator.async_update_appointment(self._appointment_id, enabled=False)
+
+
+class CompensationCapSwitch(TankWiseEntity, SwitchEntity):
+    """The surplus compensation cap of the month was reached: surplus is free."""
+
+    _platform = "switch"
+    _attr_translation_key = "compensation_cap"
+    _attr_entity_category = EntityCategory.CONFIG
+
+    @property
+    def is_on(self) -> bool:
+        """Return True when the surplus is worth nothing."""
+        return self.coordinator.planner.compensation_cap
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Mark the cap as reached."""
+        await self.coordinator.async_set_compensation_cap(True)
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Mark the cap as not reached."""
+        await self.coordinator.async_set_compensation_cap(False)

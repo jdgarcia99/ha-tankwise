@@ -311,15 +311,16 @@ async def test_demand_profile_is_persisted(
     assert len(mock_entry.runtime_data.demand.observations) == 3
 
 
-async def test_required_temperature_and_plan_at_risk(
+async def test_required_temperature_and_rescue(
     hass: HomeAssistant, mock_entry: MockConfigEntry, freezer: FrozenDateTimeFactory
 ) -> None:
-    """The evening needs more than a full tank gives: plan at risk."""
+    """The evening needs more than a full tank: the rescue recharge covers it."""
     freezer.move_to(NOW)
     big_evening = {
         **EVENING,
         "liters": 150.0,
         "days": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
+        "duration": 180,
     }
     entry = MockConfigEntry(
         domain=DOMAIN,
@@ -334,7 +335,6 @@ async def test_required_temperature_and_plan_at_risk(
     mains = coordinator.data.tank.mains_temperature
 
     morning = hass.states.get("sensor.tankwise_ducha_manana_required_temperature")
-    # Morning: 60 L minimum above the 46 L used: 38 + 60 * (40 - mains) / 100.
     assert float(morning.state) == pytest.approx(38 + 60 * (40 - mains) / 100, abs=0.05)
     assert morning.attributes["liters_source"] == "minimum"
     assert morning.attributes["feasible"] is True
@@ -343,8 +343,36 @@ async def test_required_temperature_and_plan_at_risk(
     assert float(evening.state) == pytest.approx(
         38 + 150 * (40 - mains) / 100, abs=0.05
     )
-    assert evening.attributes["feasible"] is False
+    assert evening.attributes["feasible"] is False  # beyond a full tank...
+    # ... but the rescue recharge inside the block covers the deficit.
+    assert hass.states.get("binary_sensor.tankwise_plan_at_risk").state == "off"
+    plan = coordinator.planner.plan
+    assert plan is not None and plan.rescue_kwh > 0
 
+
+async def test_strict_mode_is_at_risk(
+    hass: HomeAssistant, mock_entry: MockConfigEntry, freezer: FrozenDateTimeFactory
+) -> None:
+    """Without rescue (strict mode) the same appointment puts the plan at risk."""
+    freezer.move_to(NOW)
+    big_evening = {
+        **EVENING,
+        "liters": 150.0,
+        "days": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
+    }
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Water heater",
+        version=2,
+        minor_version=2,
+        data=dict(mock_entry.data),
+        options={
+            **mock_entry.options,
+            CONF_APPOINTMENTS: [big_evening],
+            "rescue": False,
+        },
+    )
+    await _setup(hass, entry)
     risk = hass.states.get("binary_sensor.tankwise_plan_at_risk")
     assert risk.state == "on"
     assert risk.attributes["appointments"][0]["name"] == "Tarde"
@@ -376,7 +404,7 @@ async def test_plan_not_at_risk_with_nobody_home(
         version=2,
         minor_version=2,
         data=dict(mock_entry.data),
-        options={**mock_entry.options, CONF_APPOINTMENTS: [big]},
+        options={**mock_entry.options, CONF_APPOINTMENTS: [big], "rescue": False},
     )
     await _setup(hass, entry)
     assert hass.states.get("binary_sensor.tankwise_plan_at_risk").state == "on"

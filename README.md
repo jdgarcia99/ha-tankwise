@@ -17,16 +17,16 @@ purchase price plus the value of the solar surplus).
 
 ## Project status
 
-> **Development (0.5.0, phase 2 of 7).** TankWise learns how the tank
-> behaves, detects every hot water draw and forecasts the demand, but **it
-> does not control any device yet**. Keep your current automations until
-> phase 4.
+> **Development (0.6.0, phase 3 of 7).** TankWise learns the tank and the
+> household's usage and publishes the heating plan, but **it does not
+> control any device yet** (shadow mode). Keep your current automations
+> until phase 4 and compare the planned cost with the real one.
 
 | Phase | Content | Status |
 |-------|---------|--------|
 | 1 | Thermal model, draw detection, history import, sensors (no control) | ✅ Done |
 | 2 | Demand profile and forecast, hot water appointments | ✅ Done |
-| 3 | Prices, surplus value and optimiser; shadow mode with the plan | Planned |
+| 3 | Prices, surplus value and optimiser; shadow mode with the plan | ✅ Done |
 | 4 | Controller, safeties and degraded mode; automatic mode | Planned |
 | 5 | Boost with a blueprint for external push buttons | Planned |
 | 6 | Solar forecast, SolarSplit coordination and anti-legionella cycle | Planned |
@@ -145,10 +145,54 @@ are translated.
 The diagnostics include the learned parameters, the history import result,
 the observed days of the usage profile and the last 50 draws.
 
+## Heating plan (shadow mode)
+
+Every 15 minutes, and whenever something relevant changes, TankWise computes
+the cheapest heating plan for the next 36 hours: how much grid energy to put
+in each slot and whether to take the solar surplus or let it go to the grid
+(when the injection price pays more than heating at night costs). Every
+appointment must start with enough useful litres for its whole block; the
+rest of the demand is covered slot by slot plus a reserve. Grid heating runs
+last two hours at most.
+
+**Rescue recharge** (option, on by default): if an appointment block needs
+more than a full tank, the tank is filled before the block and, inside the
+block, only the energy missing to cover the usual demand left in it is
+heated, never after the block. Rescues are logged and counted per month
+(kWh and €). The plan at risk turns on only when not even the rescue covers
+the appointment. With the option off (strict mode) nothing is heated inside
+a block.
+
+| Mode | Behaviour |
+|------|-----------|
+| Auto | Usual demand of a strong day (P90) |
+| Eco | Usual demand of a normal day (P50): cheaper, more risk |
+| Comfort | P90 plus 20 % |
+| Holiday | No grid heating, solar surplus only |
+| Shadow (default) | Publishes the plan without acting |
+| Off | No plan |
+
+Until phase 4 every mode only publishes the plan. Compare **Planned cost** with
+**Water heater cost** (real) and look at the logbook: external orders on the
+regulator manual mode that contradict the plan are logged there.
+
+| Entity | Description |
+|--------|-------------|
+| Heating plan | Cost of the plan for the next 36 hours; the slots are an attribute |
+| Next heating | Start of the next grid heating, with its duration, energy and cost |
+| `<appointment>` predicted temperature | Temperature the plan expects when the block starts |
+| Water heater cost today / this month | Real cost: grid at the purchase price, surplus at its value |
+| Planned cost today / this month | What the plan spends |
+| Estimated savings this month | Real cost minus planned cost |
+| Rescue recharges energy / cost this month | kWh and € of rescue recharges |
+| Planned grid heating (binary) | The current slot of the plan heats from the grid |
+| Mode (select), hot water reserve and surplus value (numbers), compensation cap reached (switch), replan (button) | Settings |
+
 ## Services
 
 | Service | Description |
 |---------|-------------|
+| `tankwise.replan` | Computes the heating plan now. Optional `config_entry_id`. |
 | `tankwise.reset_learning` | Forgets the heat losses (`part: losses`), the usage profile (`part: demand`) or everything (`part: all`, default). Optional `config_entry_id`. |
 
 ## How the tank model works

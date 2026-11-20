@@ -74,6 +74,8 @@ CONF_CUTOFF_TEMPERATURE: Final = "cutoff_temperature"
 CONF_CUTOFF_POWER_THRESHOLD: Final = "cutoff_power_threshold"
 CONF_PROFILE_MODE: Final = "profile_mode"
 CONF_PROFILE_DAYS: Final = "profile_days"
+# Rescue recharge inside appointment blocks (off: strict mode).
+CONF_RESCUE: Final = "rescue"
 
 # Options flow section with the parameters most users never change.
 SECTION_ADVANCED: Final = "advanced"
@@ -98,6 +100,7 @@ DEFAULT_CUTOFF_TEMPERATURE: Final = 68.0  # °C, initial value (then learned)
 DEFAULT_CUTOFF_POWER_THRESHOLD: Final = 50  # W
 DEFAULT_PROFILE_MODE: Final = "workday_weekend"
 DEFAULT_PROFILE_DAYS: Final = 16
+DEFAULT_RESCUE: Final = True
 
 DEFAULT_PARAMETERS: Final = {
     CONF_VOLUME: DEFAULT_VOLUME,
@@ -108,6 +111,7 @@ DEFAULT_PARAMETERS: Final = {
     CONF_CUTOFF_POWER_THRESHOLD: DEFAULT_CUTOFF_POWER_THRESHOLD,
     CONF_PROFILE_MODE: DEFAULT_PROFILE_MODE,
     CONF_PROFILE_DAYS: DEFAULT_PROFILE_DAYS,
+    CONF_RESCUE: DEFAULT_RESCUE,
 }
 INTEGER_PARAMETERS: Final = (
     CONF_VOLUME,
@@ -122,6 +126,8 @@ INTEGER_PARAMETERS: Final = (
 SETTING_SHOWER_TEMPERATURE: Final = "shower_temperature"
 SETTING_COMFORT_MIN_TEMPERATURE: Final = "comfort_min_temperature"
 SETTING_MAINS_WATER_TEMPERATURE: Final = "mains_water_temperature"
+SETTING_RESERVE_LITERS: Final = "reserve_liters"
+SETTING_SURPLUS_VALUE: Final = "surplus_value"
 
 MAINS_AUTOMATIC: Final = 0.0  # mains water number value meaning "use the table"
 
@@ -129,7 +135,14 @@ DEFAULT_SETTINGS: Final[dict[str, float]] = {
     SETTING_SHOWER_TEMPERATURE: 40.0,
     SETTING_COMFORT_MIN_TEMPERATURE: 38.0,
     SETTING_MAINS_WATER_TEMPERATURE: MAINS_AUTOMATIC,
+    # Useful litres always kept for unplanned taps.
+    SETTING_RESERVE_LITERS: 10.0,
+    # €/kWh of the surplus when there is no injection price sensor.
+    SETTING_SURPLUS_VALUE: 0.0,
 }
+
+# Control state (select and switch entities, persisted in the store)
+DEFAULT_MODE: Final = "shadow"
 
 MAINS_SOURCE_TABLE: Final = "table"
 MAINS_SOURCE_MANUAL: Final = "manual"
@@ -157,5 +170,11 @@ PART_DEMAND: Final = "demand"
 PART_ALL: Final = "all"
 RESET_PARTS: Final = (PART_LOSSES, PART_DEMAND, PART_ALL)
 
+SERVICE_REPLAN: Final = "replan"
+
 # Forecast horizon
 FORECAST_HOURS: Final = 36
+
+# Planning
+REPLAN_DEVIATION: Final = 3.0  # °C between the plan and the tank
+SURPLUS_EXPORT_W: Final = 50.0  # exporting above this: heating with surplus

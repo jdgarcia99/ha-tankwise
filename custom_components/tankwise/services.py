@@ -14,6 +14,7 @@ from .const import (
     DOMAIN,
     PART_ALL,
     RESET_PARTS,
+    SERVICE_REPLAN,
     SERVICE_RESET_LEARNING,
 )
 from .coordinator import TankWiseConfigEntry
@@ -24,6 +25,9 @@ RESET_LEARNING_SCHEMA = vol.Schema(
         vol.Optional(ATTR_PART, default=PART_ALL): vol.In(RESET_PARTS),
     }
 )
+
+
+REPLAN_SCHEMA = vol.Schema({vol.Optional(ATTR_CONFIG_ENTRY_ID): cv.string})
 
 
 def _loaded_entries(
@@ -57,3 +61,9 @@ def async_setup_services(hass: HomeAssistant) -> None:
     hass.services.async_register(
         DOMAIN, SERVICE_RESET_LEARNING, _reset_learning, RESET_LEARNING_SCHEMA
     )
+
+    async def _replan(call: ServiceCall) -> None:
+        for entry in _loaded_entries(hass, call):
+            await entry.runtime_data.async_replan("service")
+
+    hass.services.async_register(DOMAIN, SERVICE_REPLAN, _replan, REPLAN_SCHEMA)

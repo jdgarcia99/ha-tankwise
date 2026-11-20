@@ -94,10 +94,12 @@
         "title": "Installation parameters",
         "data": {
           "volume": "Tank volume",
-          "water_region": "Mains water region"
+          "water_region": "Mains water region",
+          "rescue": "Rescue recharge inside appointment blocks"
         },
         "data_description": {
-          "water_region": "Used to estimate the mains water temperature of each day. It can be fixed by hand with the 'Mains water temperature' number."
+          "water_region": "Used to estimate the mains water temperature of each day. It can be fixed by hand with the 'Mains water temperature' number.",
+          "rescue": "If the useful litres left do not cover the usual demand left in a block, heat only the missing energy inside the block. Off: strict mode, never heat inside a block."
         },
         "sections": {
           "advanced": {
@@ -416,6 +418,102 @@
             "name": "Reachable"
           }
         }
+      },
+      "plan": {
+        "name": "Heating plan",
+        "state_attributes": {
+          "mode": {
+            "name": "Mode"
+          },
+          "computed_at": {
+            "name": "Computed at"
+          },
+          "reason": {
+            "name": "Reason"
+          },
+          "tomorrow_prices": {
+            "name": "Tomorrow's prices known"
+          },
+          "deviations_today": {
+            "name": "External orders against the plan today"
+          },
+          "grid_kwh": {
+            "name": "Grid energy"
+          },
+          "rescue_kwh": {
+            "name": "Rescue energy"
+          },
+          "rescue_cost": {
+            "name": "Rescue cost"
+          },
+          "at_risk": {
+            "name": "At risk"
+          }
+        }
+      },
+      "next_heating": {
+        "name": "Next heating",
+        "state_attributes": {
+          "end": {
+            "name": "End"
+          },
+          "duration_min": {
+            "name": "Duration"
+          },
+          "energy_kwh": {
+            "name": "Energy"
+          },
+          "cost": {
+            "name": "Cost"
+          },
+          "rescue": {
+            "name": "Rescue recharge"
+          }
+        }
+      },
+      "cost_today": {
+        "name": "Water heater cost today"
+      },
+      "cost_month": {
+        "name": "Water heater cost this month"
+      },
+      "planned_cost_today": {
+        "name": "Planned cost today"
+      },
+      "planned_cost_month": {
+        "name": "Planned cost this month"
+      },
+      "estimated_savings_month": {
+        "name": "Estimated savings this month"
+      },
+      "rescue_cost_month": {
+        "name": "Rescue recharges cost this month"
+      },
+      "rescue_energy_month": {
+        "name": "Rescue recharges energy this month"
+      },
+      "appointment_predicted_temperature": {
+        "name": "{appointment} predicted temperature",
+        "state_attributes": {
+          "start": {
+            "name": "Block start"
+          },
+          "predicted_liters": {
+            "name": "Predicted useful litres"
+          },
+          "required_temperature": {
+            "name": "Required temperature"
+          },
+          "rescue_kwh": {
+            "name": "Rescue energy"
+          },
+          "rescue_cost": {
+            "name": "Rescue cost"
+          },
+          "at_risk": {
+            "name": "At risk"
+          }
+        }
       }
     },
     "number": {
@@ -430,6 +528,12 @@
       },
       "appointment_liters": {
         "name": "{appointment} litres"
+      },
+      "reserve_liters": {
+        "name": "Hot water reserve"
+      },
+      "surplus_value": {
+        "name": "Surplus value without injection price"
       }
     },
     "time": {
@@ -440,6 +544,9 @@
     "switch": {
       "appointment_enabled": {
         "name": "{appointment} active"
+      },
+      "compensation_cap": {
+        "name": "Surplus compensation cap reached"
       }
     },
     "binary_sensor": {
@@ -453,6 +560,38 @@
             "name": "Thermostat cut-off"
           }
         }
+      },
+      "planned_grid_heating": {
+        "name": "Planned grid heating",
+        "state_attributes": {
+          "rescue": {
+            "name": "Rescue recharge"
+          },
+          "solar_allowed": {
+            "name": "Surplus allowed"
+          },
+          "grid_kwh": {
+            "name": "Grid energy"
+          }
+        }
+      }
+    },
+    "select": {
+      "mode": {
+        "name": "Mode",
+        "state": {
+          "auto": "Auto",
+          "eco": "Eco",
+          "comfort": "Comfort",
+          "holiday": "Holiday",
+          "shadow": "Shadow",
+          "off": "Off"
+        }
+      }
+    },
+    "button": {
+      "replan": {
+        "name": "Replan"
       }
     }
   },
@@ -474,6 +613,16 @@
         "part": {
           "name": "What to forget",
           "description": "Heat losses, usage profile or everything."
+        }
+      }
+    },
+    "replan": {
+      "name": "Replan",
+      "description": "Computes the heating plan now.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Water heater",
+          "description": "TankWise instance. All of them if empty."
         }
       }
     }

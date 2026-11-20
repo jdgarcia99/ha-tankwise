@@ -17,7 +17,9 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from .const import (
     SETTING_COMFORT_MIN_TEMPERATURE,
     SETTING_MAINS_WATER_TEMPERATURE,
+    SETTING_RESERVE_LITERS,
     SETTING_SHOWER_TEMPERATURE,
+    SETTING_SURPLUS_VALUE,
 )
 from .coordinator import TankWiseConfigEntry, TankWiseCoordinator
 from .entity import AppointmentEntity, TankWiseEntity
@@ -33,6 +35,30 @@ class TankWiseNumberDescription(NumberEntityDescription):
 
 
 NUMBERS: tuple[TankWiseNumberDescription, ...] = (
+    TankWiseNumberDescription(
+        key=SETTING_RESERVE_LITERS,
+        translation_key=SETTING_RESERVE_LITERS,
+        setting=SETTING_RESERVE_LITERS,
+        device_class=NumberDeviceClass.VOLUME_STORAGE,
+        native_unit_of_measurement=UnitOfVolume.LITERS,
+        native_min_value=0,
+        native_max_value=100,
+        native_step=5,
+        mode=NumberMode.BOX,
+        entity_category=EntityCategory.CONFIG,
+    ),
+    TankWiseNumberDescription(
+        # Value of the solar surplus when there is no injection price sensor.
+        key=SETTING_SURPLUS_VALUE,
+        translation_key=SETTING_SURPLUS_VALUE,
+        setting=SETTING_SURPLUS_VALUE,
+        native_unit_of_measurement="€/kWh",
+        native_min_value=0,
+        native_max_value=0.5,
+        native_step=0.005,
+        mode=NumberMode.BOX,
+        entity_category=EntityCategory.CONFIG,
+    ),
     TankWiseNumberDescription(
         key=SETTING_SHOWER_TEMPERATURE,
         translation_key=SETTING_SHOWER_TEMPERATURE,
