@@ -726,6 +726,10 @@
     "regulator_lost": {
       "title": "El regulador de {name} se desconecta a menudo",
       "description": "TankWise ha tenido que abrir el interruptor del termo varias veces en la última semana porque el regulador (p. ej. FreeDS) dejó de estar disponible mientras calentaba. Revisa su conexión Wi-Fi y su alimentación."
+    },
+    "conflicting_automations": {
+      "title": "Otras automatizaciones controlan el termo de {name}",
+      "description": "En este modo TankWise controla el regulador y el interruptor del termo, pero estas automatizaciones activas también los cambian y se pelearían con él:\n\n{automations}\n\nDesactívalas (o vuelve a poner TankWise en modo Sombra). Para iniciar un Boost desde un pulsador, usa el blueprint de TankWise."
     }
   },
   "services": {

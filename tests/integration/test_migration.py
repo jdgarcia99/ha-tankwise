@@ -20,6 +20,8 @@ from custom_components.tankwise.const import (
     CONF_REGULATOR_SENSOR,
     CONF_TEMPERATURE_SENSOR,
     CONF_VOLUME,
+    CONFIG_ENTRY_MINOR_VERSION,
+    DEFAULT_PARAMETERS,
     DOMAIN,
 )
 
@@ -29,6 +31,7 @@ from .conftest import (
     POWER,
     PRICE,
     REGULATOR,
+    REQUIRED_INPUT,
     TEMPERATURE,
     set_input_states,
 )
@@ -135,7 +138,7 @@ async def test_v1_entry_is_migrated(
     assert coordinator.model.as_dict()["calibration_count"] == 9
     # Cut-offs learned around 47 °C cannot be thermostat cut-offs at 68 °C.
     assert coordinator.model.as_dict()["cutoff_samples"] == []
-    assert v1_entry.minor_version == 2
+    assert v1_entry.minor_version == CONFIG_ENTRY_MINOR_VERSION
 
     issue = issue_registry.async_get_issue(
         DOMAIN, f"missing_required_inputs_{v1_entry.entry_id}"
@@ -198,7 +201,7 @@ async def test_custom_cutoff_is_kept(hass: HomeAssistant) -> None:
     await hass.async_block_till_done()
     assert entry.options[CONF_CUTOFF_TEMPERATURE] == 62.0
     assert entry.options["rated_power"] == 2000
-    assert entry.minor_version == 2
+    assert entry.minor_version == CONFIG_ENTRY_MINOR_VERSION
 
 
 async def test_entity_ids_with_area_prefix_are_renamed(
@@ -232,3 +235,21 @@ async def test_entity_ids_with_area_prefix_are_renamed(
     assert renamed is not None and renamed.id == prefixed.id  # same entry
     assert entity_registry.async_get(custom.entity_id) is not None
     assert hass.states.get("sensor.tankwise_stored_energy") is not None
+
+
+async def test_daily_solar_forecast_sensor_is_dropped(hass: HomeAssistant) -> None:
+    """0.9 → 0.10: the option of the daily forecast sensor is removed."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        version=2,
+        minor_version=2,
+        data=dict(REQUIRED_INPUT),
+        options={**DEFAULT_PARAMETERS, "solar_forecast_sensor": "sensor.forecast"},
+    )
+    entry.add_to_hass(hass)
+    set_input_states(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert entry.minor_version == CONFIG_ENTRY_MINOR_VERSION
+    assert "solar_forecast_sensor" not in entry.options
+    assert entry.options["volume"] == DEFAULT_PARAMETERS["volume"]

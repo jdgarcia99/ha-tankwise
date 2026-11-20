@@ -131,7 +131,25 @@ async def async_migrate_entry(hass: HomeAssistant, entry: TankWiseConfigEntry) -
         await _async_migrate_v1(hass, entry)
     if entry.version == 2 and entry.minor_version < 2:
         _async_migrate_v2_1(hass, entry)
+    if entry.version == 2 and entry.minor_version < 3:
+        _async_migrate_v2_2(hass, entry)
     return True
+
+
+def _async_migrate_v2_2(hass: HomeAssistant, entry: TankWiseConfigEntry) -> None:
+    """0.9 → 0.10: forget the daily solar forecast sensor (no longer used).
+
+    0.9 replaced it with the hourly forecast of config entries.
+    """
+    options = {
+        key: value
+        for key, value in entry.options.items()
+        if key != CONF_SOLAR_FORECAST_SENSOR
+    }
+    hass.config_entries.async_update_entry(
+        entry, options=options, minor_version=CONFIG_ENTRY_MINOR_VERSION
+    )
+    _LOGGER.info("Migrated TankWise entry %s to version 2.3", entry.title)
 
 
 def _async_migrate_v2_1(hass: HomeAssistant, entry: TankWiseConfigEntry) -> None:
@@ -145,9 +163,7 @@ def _async_migrate_v2_1(hass: HomeAssistant, entry: TankWiseConfigEntry) -> None
         options[CONF_CUTOFF_TEMPERATURE] = DEFAULT_CUTOFF_TEMPERATURE
     if options.get(CONF_RATED_POWER) == _V1_DEFAULT_RATED_POWER:
         options[CONF_RATED_POWER] = DEFAULT_RATED_POWER
-    hass.config_entries.async_update_entry(
-        entry, options=options, minor_version=CONFIG_ENTRY_MINOR_VERSION
-    )
+    hass.config_entries.async_update_entry(entry, options=options, minor_version=2)
     _LOGGER.info("Migrated TankWise entry %s to version 2.2", entry.title)
 
 

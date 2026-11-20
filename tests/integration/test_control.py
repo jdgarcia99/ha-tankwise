@@ -9,6 +9,7 @@ from typing import Any
 from freezegun.api import FrozenDateTimeFactory
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers import issue_registry as ir
+from homeassistant.setup import async_setup_component
 import pytest
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
@@ -341,3 +342,59 @@ async def test_full_plan_from_the_service_and_compact_attributes(
             "unrecorded_attributes"
         ]
     )
+
+
+async def test_conflicting_automations_are_reported(
+    hass: HomeAssistant,
+    mock_entry: MockConfigEntry,
+    freezer: FrozenDateTimeFactory,
+    switch_calls: list,
+) -> None:
+    """Enabled automations that switch the regulator fight the controller."""
+    freezer.move_to("2026-11-18 10:00:00+01:00")
+    assert await async_setup_component(
+        hass,
+        "automation",
+        {
+            "automation": [
+                {
+                    "id": "old_boost",
+                    "alias": "Old regulator boost",
+                    "triggers": [{"trigger": "event", "event_type": "old"}],
+                    "actions": [
+                        {"action": "switch.turn_on", "target": {"entity_id": MANUAL}}
+                    ],
+                },
+                {
+                    "id": "unrelated",
+                    "alias": "Unrelated",
+                    "triggers": [{"trigger": "event", "event_type": "other"}],
+                    "actions": [
+                        {
+                            "action": "switch.turn_on",
+                            "target": {"entity_id": "switch.lamp"},
+                        }
+                    ],
+                },
+            ]
+        },
+    )
+    await hass.async_block_till_done()
+    await _setup(hass, mock_entry, switch_calls, mode=Mode.SHADOW)
+    issue = f"conflicting_automations_{mock_entry.entry_id}"
+    registry = ir.async_get(hass)
+    assert registry.async_get_issue(DOMAIN, issue) is None  # shadow: no conflict
+
+    await mock_entry.runtime_data.async_set_mode(Mode.AUTO)
+    await hass.async_block_till_done()
+    found = registry.async_get_issue(DOMAIN, issue)
+    assert found is not None
+    assert (
+        "automation.old_regulator_boost"
+        in found.translation_placeholders["automations"]
+    )
+    assert "unrelated" not in found.translation_placeholders["automations"]
+
+    hass.states.async_set("automation.old_regulator_boost", "off")
+    await _minute(hass, mock_entry, freezer, 6)
+    assert registry.async_get_issue(DOMAIN, issue) is None

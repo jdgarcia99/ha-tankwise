@@ -17,12 +17,11 @@ PVPC de compra más el valor del excedente solar).
 
 ## Estado del proyecto
 
-> **En desarrollo (0.9.0, fase 6 de 7).** TankWise aprende el depósito y el
-> uso de la casa, calcula el plan de calentamiento y, en los modos Auto, Eco,
-> Confort y Vacaciones, **controla el regulador** con sus seguridades. Sigue
-> empezando en modo Sombra (publica el plan sin actuar): compara el coste
-> planificado con el real, pasa luego a Auto y desactiva las automatizaciones
-> que también cambian el modo manual del regulador, o se pelearán.
+> **0.10.0: las siete fases hechas.** TankWise aprende el depósito y el uso
+> de la casa, calcula el plan de calentamiento y, en los modos Auto, Eco,
+> Confort y Vacaciones, **controla el regulador** con sus seguridades. Empieza
+> en modo Sombra (publica el plan sin actuar): sigue la
+> [guía de migración](docs/migration.md) para dejar tus automatizaciones.
 
 | Fase | Contenido | Estado |
 |------|-----------|--------|
@@ -32,7 +31,7 @@ PVPC de compra más el valor del excedente solar).
 | 4 | Controlador, seguridades y modo degradado; modo Auto | ✅ Hecha |
 | 5 | Boost con blueprint para pulsadores externos | ✅ Hecha |
 | 6 | Previsión solar, coordinación con SolarSplit y antilegionela | ✅ Hecha |
-| 7 | Migración desde las automatizaciones y documentación completa | Prevista |
+| 7 | Migración desde las automatizaciones y documentación completa | ✅ Hecha |
 
 ## Instalación
 
@@ -212,6 +211,7 @@ aplicando.
 | Sonda no disponible o sin actualizar durante 10 minutos | Vuelta a automático, modo degradado, sin calentar de red |
 | Regulador no disponible más allá de un margen (2 minutos, opción avanzada) mientras TankWise lo tiene en manual, o mientras la resistencia calienta fuera del plan | Se abre el interruptor del termo como último recurso; cuando el regulador vuelve se pone en automático y se cierra de nuevo el interruptor. Aparece un aviso de reparación si pasa tres veces en una semana |
 | Interruptor del termo apagado (no por TankWise) | No se actúa; aviso de reparación |
+| Otras automatizaciones activas cambian el modo manual del regulador, su salida o el interruptor del termo | Aviso de reparación con la lista (se pelearían con el controlador) |
 | Cambio a modo Sombra o Desactivado | Se devuelve el regulador en automático si TankWise lo tenía en manual |
 
 **Modo degradado** (sensor binario): sin plan (sin precios, o con el modelo
@@ -363,6 +363,13 @@ de sol), no se calienta nada de más.
   sensores del depósito quedan no disponibles; no se inventa nada. Tras una
   interrupción de más de 30 minutos el estado es incierto hasta el siguiente
   llenado.
+
+## Documentación
+
+- [Migración desde las automatizaciones](docs/migration.md) (en inglés): modo
+  Sombra, comparación, paso a Auto y limpieza.
+- [Arquitectura](docs/architecture.md) (en inglés): cómo funcionan el modelo
+  del depósito, la previsión de demanda, el optimizador y el controlador.
 
 ## Desarrollo
 
