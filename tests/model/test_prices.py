@@ -6,7 +6,7 @@ from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import pytest
-from tankwise_model.prices import parse_hourly_prices, slot_prices
+from tankwise_model.prices import SlotPrices, parse_hourly_prices, slot_prices
 
 TZ = ZoneInfo("Europe/Madrid")
 TODAY = date(2026, 11, 20)
@@ -54,8 +54,8 @@ def test_slots_without_tomorrow_repeat_today() -> None:
     assert result.buy[0] == pytest.approx(0.30)  # 20:00 today
     assert result.buy[4 * 10] == pytest.approx(0.16)  # 06:00 tomorrow -> today 06:00
     assert set(result.surplus) == {0.05}
-    # Night median used as terminal value.
-    assert result.terminal_value() == pytest.approx(0.125, abs=0.01)
+    # Night median (0.125) capped by the cheapest price of the last day.
+    assert result.terminal_value() == pytest.approx(0.10)
 
 
 def test_tomorrow_prices_and_injection() -> None:
@@ -114,3 +114,11 @@ def test_no_prices() -> None:
     )
     assert fallback is not None and set(fallback.buy) == {0.2}
     assert start + timedelta(hours=1) > start
+
+
+def test_terminal_value_never_above_the_last_day() -> None:
+    """0.10.0: expensive Saturday nights made Sunday 10:00 worth buying."""
+    start = datetime(2026, 11, 20, 23, 0, tzinfo=TZ)
+    buy = [0.19] * 28 + [0.15] * 20 + [0.14] * 96  # nights dearer than the end
+    prices = SlotPrices(start, tuple(buy), (0.0,) * len(buy), True)
+    assert prices.terminal_value() == pytest.approx(0.14)

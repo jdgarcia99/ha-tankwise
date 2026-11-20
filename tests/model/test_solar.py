@@ -9,6 +9,7 @@ import pytest
 from tankwise_model.solar import (
     DEFAULT_BASE_LOAD_KWH,
     SolarModel,
+    extend_forecast,
     slot_surplus,
     sum_forecasts,
 )
@@ -118,3 +119,20 @@ def test_slot_surplus_spreads_and_caps() -> None:
     )
     assert slots == pytest.approx([0.1, 0.1, 0.375, 0.375])
     assert start + timedelta(minutes=30) == _at(12)
+
+
+def test_missing_days_repeat_the_last_forecast_day() -> None:
+    """Forecast.Solar covers today and tomorrow; the plan reaches further."""
+    friday = datetime(2026, 11, 20, 0, 0, tzinfo=TZ)
+    forecast = {
+        friday + timedelta(days=day, hours=hour): 0.5 + day
+        for day in (0, 1)
+        for hour in range(8, 17)
+    }
+    until = datetime(2026, 11, 22, 11, 0, tzinfo=TZ)
+    extended = extend_forecast(forecast, until)
+    sunday = friday + timedelta(days=2)
+    assert extended[sunday + timedelta(hours=10)] == 1.5  # Saturday repeated
+    assert extended[sunday + timedelta(hours=16)] == 1.5  # whole day, not cut
+    assert friday + timedelta(days=3, hours=10) not in extended
+    assert extend_forecast({}, until) == {}

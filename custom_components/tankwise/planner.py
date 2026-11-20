@@ -40,7 +40,7 @@ from .model.legionella import LegionellaTracker, choose_time, target_temperature
 from .model.optimizer import Plan, PlanInput, PlanSlot, optimise
 from .model.planning import HORIZON_SLOTS, Mode, build_plan_input
 from .model.prices import DayPrices, SlotPrices, parse_hourly_prices, slot_prices
-from .model.solar import SolarModel, slot_surplus
+from .model.solar import SolarModel, extend_forecast, slot_surplus
 from .solar_forecast import async_hourly_forecast
 
 if TYPE_CHECKING:
@@ -344,8 +344,11 @@ class Planner:
         """Expected solar surplus (kWh) per plan slot from ``start``."""
         if self.solar_forecast is None:
             return [0.0] * HORIZON_SLOTS
+        forecast = extend_forecast(
+            self.solar_forecast, start + timedelta(minutes=15 * HORIZON_SLOTS)
+        )
         return slot_surplus(
-            self.solar.surplus(self.solar_forecast),
+            self.solar.surplus(forecast),
             start,
             HORIZON_SLOTS,
             slot_minutes=15,

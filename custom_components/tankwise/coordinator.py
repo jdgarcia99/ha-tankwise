@@ -28,6 +28,7 @@ from homeassistant.core import (
     callback,
 )
 from homeassistant.helpers.event import async_track_state_change_event
+from homeassistant.helpers.start import async_at_started
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 
@@ -336,10 +337,17 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
             return False
         if not self.hass.is_running:
             started = self.hass.loop.create_future()
-            self.hass.async_at_started(
-                lambda _hass: started.done() or started.set_result(None)
-            )
-            await started
+
+            @callback
+            def _started(_hass: HomeAssistant) -> None:
+                if not started.done():
+                    started.set_result(None)
+
+            cancel_started = async_at_started(self.hass, _started)
+            try:
+                await started
+            finally:
+                cancel_started()
         ready = asyncio.Event()
 
         @callback
@@ -357,13 +365,16 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
             _check,
         )
         try:
-            async with asyncio.timeout(BOOTSTRAP_INPUT_WAIT.total_seconds()):
+            try:
+                async with asyncio.timeout(BOOTSTRAP_INPUT_WAIT.total_seconds()):
+                    await ready.wait()
+            except TimeoutError:
+                # Keep waiting: the import must not be lost until the next
+                # restart because a sensor came back late.
+                _LOGGER.warning(
+                    "History import waiting: the probe or the power is not available"
+                )
                 await ready.wait()
-        except TimeoutError:
-            _LOGGER.warning(
-                "History import postponed: the probe or the power is not available"
-            )
-            return False
         finally:
             unsubscribe()
         return True

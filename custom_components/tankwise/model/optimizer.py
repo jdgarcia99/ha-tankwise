@@ -15,7 +15,10 @@ night heating costs when the injection price is high.
   empty the tank at the end of the horizon.
 * Comfort (useful energy ``k_use · (E - E_comfort)``):
   - outside appointment blocks, at the start of each slot with demand the
-    useful energy must cover that demand plus the reserve;
+    useful energy must cover that demand plus the reserve, unless the demand
+    expected until a cheaper slot (or one with surplus) is below the reserve:
+    a stray small draw does not justify heating at an expensive hour, the
+    tank may stay below comfort until the next cheap heating;
   - at the start of an appointment block it must cover the larger of the
     appointment minimum and the demand quantile of the whole block (never
     a sum of hourly quantiles); if that is above a full tank, the target is
@@ -57,6 +60,9 @@ SELL_MARGIN = 0.03  # € per kWh of surplus let go
 MAX_RUN_SLOTS = 8
 MAX_SPLIT_ROUNDS = 16
 GRID_FRACTIONS = (0.0, 0.5, 1.0)
+# A slot is "cheaper" than another when it is at least this much cheaper
+# (€/kWh), or when it has an expected surplus of half a slot of heating.
+CHEAPER_MARGIN = 0.005
 
 
 @dataclass(frozen=True, slots=True)
@@ -159,6 +165,17 @@ class BlockResult:
 
 
 @dataclass(frozen=True, slots=True)
+class Risk:
+    """A run of slots where the plan cannot keep the comfort limits."""
+
+    start: datetime
+    end: datetime
+    kind: str  # "appointment" (inside a block) or "demand" (outside)
+    block: str | None  # block name for an appointment
+    shortfall_kwh: float  # useful energy missing
+
+
+@dataclass(frozen=True, slots=True)
 class Heating:
     """A run of consecutive slots heating from the grid."""
 
@@ -207,6 +224,43 @@ class Plan:
     def at_risk(self) -> bool:
         """Return True if comfort cannot be guaranteed somewhere."""
         return self.shortfall_kwh > RISK_TOLERANCE_KWH
+
+    def risks(self) -> list[Risk]:
+        """Return why the plan is at risk: each run of slots with shortfall.
+
+        A run outside appointment blocks is a "demand" risk (the forecast
+        draws of the profile); one inside a block is an "appointment" risk.
+        """
+        names = {block.id: block.name for block in self.blocks}
+        risks: list[Risk] = []
+        current: list[PlanSlot] = []
+
+        def close() -> None:
+            total = sum(item.shortfall_kwh for item in current)
+            if total > RISK_TOLERANCE_KWH:
+                step = timedelta(minutes=15)
+                if len(self.slots) > 1:
+                    step = self.slots[1].start - self.slots[0].start
+                block = current[0].block
+                risks.append(
+                    Risk(
+                        start=current[0].start,
+                        end=current[-1].start + step,
+                        kind="appointment" if block else "demand",
+                        block=names.get(block, block) if block else None,
+                        shortfall_kwh=total,
+                    )
+                )
+            current.clear()
+
+        for slot in self.slots:
+            if current and (slot.shortfall_kwh <= 0 or slot.block != current[0].block):
+                close()
+            if slot.shortfall_kwh > 0:
+                current.append(slot)
+        if current:
+            close()
+        return risks
 
     def heatings(self) -> list[Heating]:
         """Return the grid heating runs of the plan."""
@@ -284,11 +338,44 @@ class _Model:
                 self.block_of[index] = block
             if block.first >= 0:
                 self.block_start[block.first] = block
+        self.enforced = self._enforced_demand()
         self.terminal_price = (
             data.terminal_price
             if data.terminal_price is not None
             else (sorted(data.buy)[len(data.buy) // 2] if data.buy else 0.0)
         )
+
+    def _enforced_demand(self) -> list[bool]:
+        """Return, per slot, whether its demand must be covered (outside blocks).
+
+        The demand of a slot (plus the reserve) is required only when the
+        demand expected from it until a cheaper slot reaches the reserve:
+        otherwise it is a stray small draw (e.g. a late tap at night) that
+        does not justify heating at an expensive hour.
+        """
+        data = self.data
+        slots = data.slots
+        reserve = data.reserve_kwh
+        if reserve <= 0:
+            return [True] * slots
+        half_slot = self.grid_slot_kwh / 2
+        enforced = [True] * slots
+        for slot in range(slots):
+            if self.demand[slot] <= 0 or self.block_of[slot] is not None:
+                continue
+            price = data.buy[slot]
+            total = 0.0
+            for later in range(slot, slots):
+                if later > slot and (
+                    data.buy[later] <= price - CHEAPER_MARGIN
+                    or self.solar[later] >= half_slot
+                ):
+                    break
+                total += self.demand[later]
+                if total >= reserve:
+                    break
+            enforced[slot] = total >= reserve
+        return enforced
 
     def energy(self, index: int) -> float:
         return self.e_floor + index * ENERGY_STEP_KWH
@@ -375,7 +462,7 @@ class _Model:
         if block is not None:
             # Inside a block (rescue counts): never below the comfort level.
             shortfall += max(0.0, self.e_comfort - nxt) * self.k_use
-        elif demand > 0:
+        elif demand > 0 and self.enforced[slot]:
             required = self.e_comfort + (demand + data.reserve_kwh) / self.k_use
             shortfall += max(0.0, required - energy) * self.k_use
         cost += SHORTFALL_PENALTY * shortfall

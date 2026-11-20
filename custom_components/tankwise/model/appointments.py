@@ -24,6 +24,7 @@ import unicodedata
 
 from .demand import (
     SLOT_MINUTES,
+    SLOTS_PER_DAY,
     WEEKDAY_NAMES,
     DemandModel,
     DemandParams,
@@ -202,9 +203,16 @@ def appointment_usage(
     ]
     if not days:
         return AppointmentUsage(None, None, 0)
+    # The same shortage uplift as the plan, so both agree on the litres.
+    factors = demand.slot_factors(now)
     liters = [
         liters_from_energy(
-            obs.window(first, last), shower_temperature, mains_temperature
+            sum(
+                obs.slots[index] * factors[index]
+                for index in range(max(0, first), min(SLOTS_PER_DAY, last))
+            ),
+            shower_temperature,
+            mains_temperature,
         )
         for obs in days
     ]

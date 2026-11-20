@@ -114,8 +114,8 @@ Cada cita tiene entidades para ajustarla desde un panel (los cambios se
 guardan en las opciones): `time.<nombre>_<cita>_time`,
 `number.<nombre>_<cita>_liters` y `switch.<nombre>_<cita>_enabled`. El sensor
 `sensor.<nombre>_<cita>_suggested_liters` muestra los litros que realmente se
-usan durante el bloque (P90 de las últimas cuatro semanas) para
-ayudar a elegir el mínimo, y `sensor.<nombre>_<cita>_required_temperature` la
+usan durante el bloque (P90 de las últimas cuatro semanas, aumentado como en
+el plan tras faltas recientes) para ayudar a elegir el mínimo, y `sensor.<nombre>_<cita>_required_temperature` la
 temperatura que necesita el depósito al empezar el bloque. Si supera el corte
 aprendido del termostato, `binary_sensor.tankwise_plan_at_risk` se enciende:
 ni el depósito lleno cubre el bloque. Desde la fase 3 el planificador trata
@@ -157,8 +157,12 @@ calentamiento más barato para las próximas 36 horas: cuánta energía de red
 meter en cada franja y si aprovechar el excedente solar o dejarlo ir a la red
 (cuando la inyección se paga más de lo que cuesta calentar de noche). Cada
 cita debe empezar con litros útiles suficientes para todo su bloque; el resto
-de la demanda se cubre franja a franja más una reserva. Las rachas de
-calentamiento de red duran como mucho dos horas.
+de la demanda se cubre franja a franja más una reserva. Una extracción suelta
+pequeña (menos que la reserva antes de una hora más barata, como un grifo
+tarde por la noche) no hace calentar en una hora cara. Las rachas de
+calentamiento de red duran como mucho dos horas. Cuando el plan está en
+riesgo, el atributo `risks` de `sensor.tankwise_plan` indica dónde (inicio,
+fin), por qué (`appointment` o `demand`) y cuántos litros faltan.
 
 **Recarga de rescate** (opción, activada por defecto): si el bloque de una
 cita necesita más que el depósito lleno, se llena antes del bloque y, dentro

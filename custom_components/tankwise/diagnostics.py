@@ -10,8 +10,36 @@ from homeassistant.core import HomeAssistant
 
 from .const import CONF_AMBIENT_TEMPERATURE
 from .coordinator import TankWiseConfigEntry
+from .model.tank import WATER_HEAT_CAPACITY_KWH_PER_L_K
 
 DIAGNOSTIC_CONSUMPTIONS = 50
+
+
+def risk_report(coordinator: Any, plan: Any) -> list[dict[str, Any]]:
+    """Return why the plan is at risk: where, which kind and how much is missing.
+
+    ``kind`` is "appointment" (a block cannot be covered, even with the
+    rescue recharge) or "demand" (forecast draws outside the blocks).
+    """
+    params = coordinator.tank_params
+    tank = coordinator.data.tank if coordinator.data else None
+    mains = tank.mains_temperature if tank is not None else params.mains_temperature
+    span = params.shower_temperature - mains
+    return [
+        {
+            "start": risk.start.isoformat(),
+            "end": risk.end.isoformat(),
+            "kind": risk.kind,
+            "appointment": risk.block,
+            "missing_kwh": round(risk.shortfall_kwh, 3),
+            "missing_liters": round(
+                risk.shortfall_kwh / (WATER_HEAT_CAPACITY_KWH_PER_L_K * span)
+            )
+            if span > 0
+            else None,
+        }
+        for risk in plan.risks()
+    ]
 
 
 def plan_report(coordinator: Any) -> dict[str, Any]:
@@ -33,6 +61,7 @@ def plan_report(coordinator: Any) -> dict[str, Any]:
         "rescue_kwh": plan.rescue_kwh,
         "rescue_cost": plan.rescue_cost,
         "at_risk": plan.at_risk,
+        "risks": risk_report(coordinator, plan),
         "next_heating": (
             {
                 "start": heating.start.isoformat(),

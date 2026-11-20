@@ -444,7 +444,7 @@ class DemandModel:
     ) -> _DayCurves:
         """Weighted, shortage-adjusted observations for a day of the forecast."""
         candidates = self.similar_days(day, params, workday)
-        factors = self._slot_factors(now)
+        factors = self.slot_factors(now)
         rows = [
             [value * factor for value, factor in zip(obs.slots, factors, strict=True)]
             for obs in candidates
@@ -466,7 +466,13 @@ class DemandModel:
                 )
         return curves
 
-    def _slot_factors(self, now: datetime) -> list[float]:
+    def slot_factors(self, now: datetime) -> list[float]:
+        """Return the shortage uplift of each slot of the day.
+
+        Marks do not compound: several shortages around the same time raise
+        the slot once, by the largest (most recent) uplift, never above
+        ``SHORTAGE_FACTOR``.
+        """
         factors = [1.0] * SLOTS_PER_DAY
         for mark in self._marks:
             age = now - mark.start
@@ -478,7 +484,8 @@ class DemandModel:
             first = _slot_index(start) - SHORTAGE_SPREAD_SLOTS
             last = _slot_index(end) + SHORTAGE_SPREAD_SLOTS
             for index in range(first, last + 1):
-                factors[index % SLOTS_PER_DAY] *= uplift
+                slot = index % SLOTS_PER_DAY
+                factors[slot] = max(factors[slot], uplift)
         return factors
 
     def forecast(
