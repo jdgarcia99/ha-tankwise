@@ -127,7 +127,7 @@ def _store(
         "version": 1,
         "minor_version": 1,
         "key": f"{DOMAIN}.{entry.entry_id}",
-        "data": {"bootstrap": {"status": "done"}, **data},
+        "data": {"bootstrap": {"status": "done", "version": 2}, **data},
     }
 
 

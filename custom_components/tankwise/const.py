@@ -141,6 +141,9 @@ STORAGE_VERSION: Final = 1
 STORAGE_SAVE_DELAY: Final = 300  # s
 
 BOOTSTRAP_DAYS: Final = 10
+# Raised when the models change enough for the history to be imported again
+# (2: demand profile, energy reconciliation and stricter cut-off detection).
+BOOTSTRAP_VERSION: Final = 2
 SHORTAGE_WINDOW: Final = timedelta(days=7)
 
 ISSUE_MISSING_INPUTS: Final = "missing_required_inputs"

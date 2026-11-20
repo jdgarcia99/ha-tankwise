@@ -76,6 +76,8 @@ class BootstrapInfo:
     calibrations: int = 0
     days: int = 0
     error: str | None = None
+    # Version of the models the history was imported with (1: TankWise 0.3).
+    version: int = 1
 
     def as_dict(self) -> dict[str, Any]:
         """Return a JSON-serialisable representation."""
@@ -88,6 +90,7 @@ class BootstrapInfo:
             "draws": self.draws,
             "calibrations": self.calibrations,
             "days": self.days,
+            "version": self.version,
             "error": self.error,
         }
 
@@ -103,6 +106,7 @@ class BootstrapInfo:
             draws=int(data.get("draws", 0)),
             calibrations=int(data.get("calibrations", 0)),
             days=int(data.get("days", 0)),
+            version=int(data.get("version", 1)),
             error=data.get("error"),
         )
 

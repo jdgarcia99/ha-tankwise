@@ -17,7 +17,7 @@ purchase price plus the value of the solar surplus).
 
 ## Project status
 
-> **Development (0.4.0, phase 2 of 7).** TankWise learns how the tank
+> **Development (0.4.1, phase 2 of 7).** TankWise learns how the tank
 > behaves, detects every hot water draw and forecasts the demand, but **it
 > does not control any device yet**. Keep your current automations until
 > phase 4.
