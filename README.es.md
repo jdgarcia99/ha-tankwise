@@ -17,7 +17,7 @@ PVPC de compra más el valor del excedente solar).
 
 ## Estado del proyecto
 
-> **En desarrollo (0.4.0, fase 2 de 7).** TankWise aprende cómo se comporta
+> **En desarrollo (0.4.1, fase 2 de 7).** TankWise aprende cómo se comporta
 > el depósito, detecta cada extracción de agua caliente y prevé la demanda,
 > pero **todavía no actúa sobre ningún dispositivo**. Mantén tus
 > automatizaciones hasta la fase 4.

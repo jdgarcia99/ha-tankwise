@@ -33,6 +33,7 @@ from homeassistant.util import dt as dt_util
 from .bootstrap import BootstrapInfo, BootstrapStatus, async_bootstrap
 from .const import (
     BOOTSTRAP_DAYS,
+    BOOTSTRAP_VERSION,
     CONF_AMBIENT_SENSOR,
     CONF_AMBIENT_TEMPERATURE,
     CONF_APPOINTMENTS,
@@ -231,10 +232,16 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
 
     @property
     def needs_bootstrap(self) -> bool:
-        """Return True if the history has not been imported yet."""
-        return self.bootstrap.status in (
-            BootstrapStatus.PENDING,
-            BootstrapStatus.RUNNING,
+        """Return True if the history must be imported (again).
+
+        It is imported again when the last import was made with older models
+        (e.g. TankWise 0.3 had no demand profile nor energy reconciliation).
+        """
+        if self.bootstrap.status in (BootstrapStatus.PENDING, BootstrapStatus.RUNNING):
+            return True
+        return (
+            self.bootstrap.status is not BootstrapStatus.NO_RECORDER
+            and self.bootstrap.version < BOOTSTRAP_VERSION
         )
 
     async def async_run_bootstrap(self) -> None:
@@ -259,7 +266,7 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
             days=BOOTSTRAP_DAYS,
             tz=self.demand.tz,
         )
-        self.bootstrap = info
+        self.bootstrap = replace(info, version=BOOTSTRAP_VERSION)
         if result is not None and result.samples:
             self.model = result.model
             if demand is not None:

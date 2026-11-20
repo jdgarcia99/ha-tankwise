@@ -98,7 +98,7 @@ async def test_settings_are_restored(
         "key": f"{DOMAIN}.{mock_entry.entry_id}",
         "data": {
             "settings": {"shower_temperature": 42.0, "unknown_setting": 1},
-            "bootstrap": {"status": "done"},
+            "bootstrap": {"status": "done", "version": 2},
         },
     }
     await _setup(hass, mock_entry)
