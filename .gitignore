@@ -1,7 +1,3 @@
-# Local project notes and tooling (never versioned)
-CLAUDE.md
-.claude/
-
 # Python
 __pycache__/
 *.py[cod]
