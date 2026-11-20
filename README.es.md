@@ -17,17 +17,19 @@ PVPC de compra más el valor del excedente solar).
 
 ## Estado del proyecto
 
-> **En desarrollo (0.6.0, fase 3 de 7).** TankWise aprende el depósito y el
-> uso de la casa y publica el plan de calentamiento, pero **todavía no actúa
-> sobre ningún dispositivo** (modo Sombra). Mantén tus automatizaciones hasta
-> la fase 4 y compara el coste planificado con el real.
+> **En desarrollo (0.7.0, fase 4 de 7).** TankWise aprende el depósito y el
+> uso de la casa, calcula el plan de calentamiento y, en los modos Auto, Eco,
+> Confort y Vacaciones, **controla el regulador** con sus seguridades. Sigue
+> empezando en modo Sombra (publica el plan sin actuar): compara el coste
+> planificado con el real, pasa luego a Auto y desactiva las automatizaciones
+> que también cambian el modo manual del regulador, o se pelearán.
 
 | Fase | Contenido | Estado |
 |------|-----------|--------|
 | 1 | Modelo térmico, detección de extracciones, importación del histórico, sensores (sin actuar) | ✅ Hecha |
 | 2 | Perfil de demanda y previsión, citas de agua caliente | ✅ Hecha |
 | 3 | Precios, valor del excedente y optimizador; modo Sombra con el plan | ✅ Hecha |
-| 4 | Controlador, seguridades y modo degradado; modo Auto | Prevista |
+| 4 | Controlador, seguridades y modo degradado; modo Auto | ✅ Hecha |
 | 5 | Boost con blueprint para pulsadores externos | Prevista |
 | 6 | Previsión solar, coordinación con SolarSplit y antilegionela | Prevista |
 | 7 | Migración desde las automatizaciones y documentación completa | Prevista |
@@ -129,7 +131,7 @@ nombres visibles están traducidos.
 | Energía útil | kWh almacenados por encima de la temperatura mínima de confort |
 | Carga | Energía útil en porcentaje de un depósito lleno |
 | Agua caliente disponible | Litros útiles a la temperatura de ducha antes de que el agua baje de la temperatura de confort (litros teóricos como atributo) |
-| Plan en riesgo (binario) | Encendido cuando una cita activa necesita más de lo que da el depósito lleno |
+| Plan en riesgo (binario) | Encendido cuando no se puede garantizar el agua caliente: una cita necesita más de lo que da el depósito lleno, la demanda habitual no se cubre, o el regulador o la sonda no están disponibles antes de una cita (atributo `reasons`) |
 | Temperatura modelada | Temperatura equivalente del depósito según el modelo |
 | Estado del modelo | `calibrated`, `learning` o `uncertain` |
 | Última extracción | Inicio de la última extracción, con su energía, temperatura mínima y si hubo falta de agua |
@@ -146,7 +148,7 @@ El diagnóstico incluye los parámetros aprendidos, el resultado de la
 importación del histórico, los días observados del perfil de uso y las
 últimas 50 extracciones.
 
-## Plan de calentamiento (modo Sombra)
+## Plan de calentamiento
 
 Cada 15 minutos, y cuando cambia algo relevante, TankWise calcula el plan de
 calentamiento más barato para las próximas 36 horas: cuánta energía de red
@@ -171,15 +173,15 @@ dentro de un bloque.
 | Confort | P90 más un 20 % |
 | Vacaciones | Sin calentar de red, solo excedente solar |
 | Sombra (por defecto) | Publica el plan sin actuar |
-| Desactivado | Sin plan |
+| Desactivado | Sin plan y sin actuar |
 
-Hasta la fase 4 todos los modos solo publican el plan. Compara el **Coste
-planificado** con el **Coste del termo** (real) y mira el logbook: allí se
-registran las órdenes externas sobre el modo manual que contradicen el plan.
+En modo Sombra compara el **Coste planificado** con el **Coste del termo**
+(real) y mira el logbook: allí se registran las órdenes externas sobre el modo
+manual que contradicen el plan.
 
 | Entidad | Descripción |
 |---------|-------------|
-| Plan de calentamiento | Coste del plan para las próximas 36 horas; las franjas van como atributo |
+| Plan de calentamiento | Coste del plan para las próximas 36 horas, con sus calentamientos de red y los bloques de las citas como atributos. El plan franja a franja es demasiado grande para un atributo: está en el diagnóstico y en el servicio `tankwise.get_plan` |
 | Próximo calentamiento | Inicio del próximo calentamiento de red, con duración, energía y coste |
 | `<cita>` temperatura prevista | Temperatura que el plan prevé al empezar el bloque |
 | Coste del termo hoy / este mes | Coste real: red al precio de compra, excedente a su valor |
@@ -189,11 +191,46 @@ registran las órdenes externas sobre el modo manual que contradicen el plan.
 | Calentamiento de red planificado (binario) | La franja actual del plan calienta de red |
 | Modo (select), reserva y valor del excedente (números), tope de compensación (interruptor), replanificar (botón) | Ajustes |
 
+## Control y seguridades
+
+En los modos Auto, Eco, Confort y Vacaciones, TankWise pone el regulador en
+manual (plena potencia de red) durante los minutos planificados de cada
+franja y lo devuelve a automático (solo excedente) después. Cada orden se
+registra en el logbook con su motivo. Las órdenes se envían cuando el plan
+cambia de decisión (y se repiten si no surten efecto), así que una orden
+externa se respeta hasta el siguiente cambio; las seguridades se le siguen
+aplicando.
+
+| Situación | Acción |
+|-----------|--------|
+| Depósito por encima de la temperatura máxima de seguridad (número, 72 °C) durante 1 minuto en manual | Vuelta a automático; sin calentar de red hasta que se enfríe 3 °C |
+| Sin potencia durante 3 minutos en manual | Corte del termostato: vuelta a automático, misma pausa |
+| Más de 2 horas seguidas en manual | Vuelta a automático durante 15 minutos |
+| Sonda no disponible o sin actualizar durante 10 minutos | Vuelta a automático, modo degradado, sin calentar de red |
+| Regulador no disponible más allá de un margen (2 minutos, opción avanzada) mientras TankWise lo tiene en manual, o mientras la resistencia calienta fuera del plan | Se abre el interruptor del termo como último recurso; cuando el regulador vuelve se pone en automático y se cierra de nuevo el interruptor. Aparece un aviso de reparación si pasa tres veces en una semana |
+| Interruptor del termo apagado (no por TankWise) | No se actúa; aviso de reparación |
+| Cambio a modo Sombra o Desactivado | Se devuelve el regulador en automático si TankWise lo tenía en manual |
+
+**Modo degradado** (sensor binario): sin plan (sin precios, o con el modelo
+del depósito sin preparar) TankWise sigue una regla simple. Antes de cada
+cita activa calienta hasta la temperatura que necesita (limitada al corte
+aprendido del termostato), empezando con la antelación que requiere la
+potencia aprendida. Solo si no hay citas activas usa dos ventanas fijas:
+hasta 50 °C de 04:00 a 06:15 y hasta el corte del termostato de 15:00 a
+16:00. Las seguridades son las mismas.
+
+Cuando el plan pasa a estar en riesgo por un motivo nuevo, TankWise lanza el
+evento `tankwise_plan_at_risk` (`reasons`, `new_reasons`, `appointments`),
+por ejemplo para enviar una notificación cuando el regulador no está
+disponible antes de una cita que depende de un calentamiento planificado.
+
 ## Servicios
 
 | Servicio | Descripción |
 |----------|-------------|
 | `tankwise.replan` | Calcula ahora el plan de calentamiento. `config_entry_id` opcional. |
+| `tankwise.get_plan` | Devuelve el plan de calentamiento completo, franja a franja (solo respuesta). `config_entry_id` opcional. |
+| `tankwise.reimport_history` | Vuelve a importar el histórico del recorder de los últimos días y lo combina con lo aprendido (también el botón "Importar de nuevo el histórico"). `config_entry_id` opcional. |
 | `tankwise.reset_learning` | Olvida las pérdidas de calor (`part: losses`), el perfil de uso (`part: demand`) o todo (`part: all`, por defecto). `config_entry_id` opcional. |
 
 ## Cómo funciona el modelo del depósito

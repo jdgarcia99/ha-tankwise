@@ -646,6 +646,52 @@ class TankModel:
         self._consumptions.clear()
         self._episode = None
 
+    def learned_samples(self) -> int:
+        """Return how much the model has learned (0: nothing at all)."""
+        return (
+            self._loss_windows
+            + len(self._capacity_samples)
+            + len(self._usable_samples)
+            + self._heater_power_samples
+            + len(self._cutoff_samples)
+            + len(self._consumptions)
+        )
+
+    def merge_learning(self, other: TankModel) -> None:
+        """Keep, parameter by parameter, what is better learned in ``other``.
+
+        Used after a history import: the imported model keeps its state, and
+        every learned parameter with more evidence in the model that was
+        already running is taken from it, so an import never loses learning.
+        Draws are joined (the imported ones win where both overlap).
+        """
+        if other._loss_windows > self._loss_windows:
+            self._ua = other._ua
+            self._ua_covariance = other._ua_covariance
+            self._loss_windows = other._loss_windows
+        if len(other._capacity_samples) > len(self._capacity_samples):
+            self._capacity_samples = list(other._capacity_samples)
+        if len(other._usable_samples) > len(self._usable_samples):
+            self._usable_samples = list(other._usable_samples)
+        if other._heater_power_samples > self._heater_power_samples:
+            self._heater_power_w = other._heater_power_w
+            self._heater_power_samples = other._heater_power_samples
+        if len(other._cutoff_samples) > len(self._cutoff_samples):
+            self._cutoff_samples = list(other._cutoff_samples)
+        # Draws of the running model that the import did not see (or that
+        # are older than the imported period) are kept; overlapping ones are
+        # the same draw, recomputed by the import with the current models.
+        imported = list(self._consumptions)
+        kept = [
+            event
+            for event in other._consumptions
+            if not any(
+                event.start < item.end and item.start < event.end for item in imported
+            )
+        ]
+        result = sorted([*imported, *kept], key=lambda event: event.start)
+        self._consumptions = deque(result, maxlen=MAX_CONSUMPTIONS)
+
     def as_dict(self) -> dict[str, Any]:
         """Return the persistent part of the model."""
         return {

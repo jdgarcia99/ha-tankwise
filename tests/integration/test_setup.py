@@ -450,12 +450,13 @@ async def test_long_restart_makes_state_uncertain(
     assert 45.0 < equivalent < 50.0
 
 
-async def test_corrupt_storage_is_discarded(
+async def test_unreadable_storage_is_kept_aside(
     hass: HomeAssistant,
     mock_entry: MockConfigEntry,
     hass_storage: dict[str, Any],
     caplog: pytest.LogCaptureFixture,
 ) -> None:
+    """An unreadable model is not used, but never overwritten either."""
     _store(
         hass_storage,
         mock_entry,
@@ -463,9 +464,12 @@ async def test_corrupt_storage_is_discarded(
     )
     set_input_states(hass)
     await _setup(hass, mock_entry)
-    assert "Discarding stored tank state" in caplog.text
+    assert "Stored tank state not readable, kept aside" in caplog.text
     assert "Discarding stored bootstrap status" in caplog.text
     assert hass.states.get(STATUS).state == "uncertain"
+    assert await hass.config_entries.async_unload(mock_entry.entry_id)
+    stored = hass_storage[f"{DOMAIN}.{mock_entry.entry_id}"]["data"]
+    assert stored["unreadable"] == {"tank": {"format": 99}}
 
 
 async def test_unload_saves_and_remove_deletes_storage(

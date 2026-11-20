@@ -1,0 +1,75 @@
+{
+  "version": 1,
+  "minor_version": 1,
+  "key": "tankwise.ENTRY",
+  "data": {
+    "tank": {
+      "format": 2,
+      "equivalent_temperature": 55.0,
+      "ua": 0.94,
+      "ua_covariance": 0.01,
+      "loss_windows": 12,
+      "capacity_samples": [
+        0.86,
+        0.88,
+        0.9,
+        0.87,
+        0.89
+      ],
+      "usable_samples": [
+        0.85,
+        0.89,
+        0.92,
+        0.88,
+        0.9,
+        0.86,
+        0.93,
+        0.89
+      ],
+      "heater_power_w": 1505.0,
+      "heater_power_samples": 900,
+      "cutoff_samples": [
+        68.5,
+        69.1,
+        68.8,
+        68.2
+      ],
+      "uncertain": false,
+      "calibration_count": 4,
+      "last_calibration": "2026-11-18T10:59:00+00:00",
+      "last_valid_time": "2026-11-19T20:00:00+00:00",
+      "last_energy": 900.0,
+      "consumptions": [
+        {
+          "start": "2026-11-19T05:30:00+00:00",
+          "end": "2026-11-19T05:45:00+00:00",
+          "energy_kwh": 0.9,
+          "start_temperature": 60.0,
+          "min_temperature": 52.0,
+          "while_heating": false,
+          "shortage": false,
+          "slow": false,
+          "reconciled": null
+        }
+      ]
+    },
+    "settings": {
+      "shower_temperature": 40.0,
+      "comfort_min_temperature": 38.0,
+      "mains_water_temperature": 0.0,
+      "reserve_liters": 10.0
+    },
+    "bootstrap": {
+      "status": "done",
+      "finished": "2026-11-18T09:00:00+00:00",
+      "start": "2026-11-08T09:00:00+00:00",
+      "end": "2026-11-18T09:00:00+00:00",
+      "samples": 14000,
+      "draws": 30,
+      "calibrations": 3,
+      "days": 8,
+      "version": 2,
+      "error": null
+    }
+  }
+}

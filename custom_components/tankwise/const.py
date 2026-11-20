@@ -76,6 +76,8 @@ CONF_PROFILE_MODE: Final = "profile_mode"
 CONF_PROFILE_DAYS: Final = "profile_days"
 # Rescue recharge inside appointment blocks (off: strict mode).
 CONF_RESCUE: Final = "rescue"
+# Minutes the regulator may be unavailable before the heater switch is opened.
+CONF_REGULATOR_MARGIN: Final = "regulator_margin"
 
 # Options flow section with the parameters most users never change.
 SECTION_ADVANCED: Final = "advanced"
@@ -86,6 +88,7 @@ ADVANCED_PARAMETERS: Final = (
     "cutoff_power_threshold",
     "profile_mode",
     "profile_days",
+    "regulator_margin",
 )
 
 # Hot water appointments (list of dicts in the options).
@@ -101,6 +104,7 @@ DEFAULT_CUTOFF_POWER_THRESHOLD: Final = 50  # W
 DEFAULT_PROFILE_MODE: Final = "workday_weekend"
 DEFAULT_PROFILE_DAYS: Final = 16
 DEFAULT_RESCUE: Final = True
+DEFAULT_REGULATOR_MARGIN: Final = 2  # min
 
 DEFAULT_PARAMETERS: Final = {
     CONF_VOLUME: DEFAULT_VOLUME,
@@ -112,12 +116,14 @@ DEFAULT_PARAMETERS: Final = {
     CONF_PROFILE_MODE: DEFAULT_PROFILE_MODE,
     CONF_PROFILE_DAYS: DEFAULT_PROFILE_DAYS,
     CONF_RESCUE: DEFAULT_RESCUE,
+    CONF_REGULATOR_MARGIN: DEFAULT_REGULATOR_MARGIN,
 }
 INTEGER_PARAMETERS: Final = (
     CONF_VOLUME,
     CONF_RATED_POWER,
     CONF_CUTOFF_POWER_THRESHOLD,
     CONF_PROFILE_DAYS,
+    CONF_REGULATOR_MARGIN,
 )
 
 # ---------------------------------------------------------------------------
@@ -128,6 +134,7 @@ SETTING_COMFORT_MIN_TEMPERATURE: Final = "comfort_min_temperature"
 SETTING_MAINS_WATER_TEMPERATURE: Final = "mains_water_temperature"
 SETTING_RESERVE_LITERS: Final = "reserve_liters"
 SETTING_SURPLUS_VALUE: Final = "surplus_value"
+SETTING_MAX_TEMPERATURE: Final = "max_temperature"
 
 MAINS_AUTOMATIC: Final = 0.0  # mains water number value meaning "use the table"
 
@@ -139,6 +146,10 @@ DEFAULT_SETTINGS: Final[dict[str, float]] = {
     SETTING_RESERVE_LITERS: 10.0,
     # €/kWh of the surplus when there is no injection price sensor.
     SETTING_SURPLUS_VALUE: 0.0,
+    # Safety: the manual mode ends above this for one minute. Above the
+    # thermostat cut-off (68-70 °C on the reference tank, the probe reads up
+    # to ~70 °C then), so the thermostat stays the normal stop.
+    SETTING_MAX_TEMPERATURE: 72.0,
 }
 
 # Control state (select and switch entities, persisted in the store)
@@ -155,11 +166,19 @@ STORAGE_SAVE_DELAY: Final = 300  # s
 
 BOOTSTRAP_DAYS: Final = 10
 # Raised when the models change enough for the history to be imported again
-# (2: demand profile, energy reconciliation and stricter cut-off detection).
-BOOTSTRAP_VERSION: Final = 2
+# (2: demand profile, energy reconciliation and stricter cut-off detection;
+# 3: imports of 0.6 that ran before the inputs existed learned nothing).
+BOOTSTRAP_VERSION: Final = 3
+# The import waits this long for the probe and the power after a start.
+BOOTSTRAP_INPUT_WAIT: Final = timedelta(minutes=30)
 SHORTAGE_WINDOW: Final = timedelta(days=7)
 
 ISSUE_MISSING_INPUTS: Final = "missing_required_inputs"
+ISSUE_HEATER_SWITCH_OFF: Final = "heater_switch_off"
+ISSUE_REGULATOR_LOST: Final = "regulator_lost"
+
+# Events
+EVENT_PLAN_AT_RISK: Final = "tankwise_plan_at_risk"
 
 # Services
 SERVICE_RESET_LEARNING: Final = "reset_learning"
@@ -171,6 +190,8 @@ PART_ALL: Final = "all"
 RESET_PARTS: Final = (PART_LOSSES, PART_DEMAND, PART_ALL)
 
 SERVICE_REPLAN: Final = "replan"
+SERVICE_GET_PLAN: Final = "get_plan"
+SERVICE_REIMPORT_HISTORY: Final = "reimport_history"
 
 # Forecast horizon
 FORECAST_HOURS: Final = 36

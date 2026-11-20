@@ -389,6 +389,17 @@ class DemandModel:
             mark for mark in self._marks if now - mark.start < SHORTAGE_DECAY
         ]
 
+    def merge(self, other: DemandModel) -> None:
+        """Add the days and marks of ``other`` that this profile lacks.
+
+        Used after a history import, so that days observed before the
+        imported period are not lost.
+        """
+        for day, observation in other._observations.items():
+            self._observations.setdefault(day, observation)
+        for mark in other._marks:
+            self.add_mark(mark)
+
     def reset(self) -> None:
         """Forget the learned profile."""
         self._observations.clear()

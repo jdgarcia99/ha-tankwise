@@ -77,6 +77,7 @@ from .const import (
     CONF_PROFILE_DAYS,
     CONF_PROFILE_MODE,
     CONF_RATED_POWER,
+    CONF_REGULATOR_MARGIN,
     CONF_REGULATOR_SENSOR,
     CONF_RESCUE,
     CONF_SOLAR_FORECAST_SENSOR,
@@ -229,6 +230,9 @@ PARAMETERS_SCHEMA = vol.Schema(
                         )
                     ),
                     vol.Required(CONF_PROFILE_DAYS): _number_selector(4, 60, 1, "d"),
+                    vol.Required(CONF_REGULATOR_MARGIN): _number_selector(
+                        1, 30, 1, UnitOfTime.MINUTES
+                    ),
                 }
             ),
             {"collapsed": True},

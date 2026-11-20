@@ -17,17 +17,20 @@ purchase price plus the value of the solar surplus).
 
 ## Project status
 
-> **Development (0.6.0, phase 3 of 7).** TankWise learns the tank and the
-> household's usage and publishes the heating plan, but **it does not
-> control any device yet** (shadow mode). Keep your current automations
-> until phase 4 and compare the planned cost with the real one.
+> **Development (0.7.0, phase 4 of 7).** TankWise learns the tank and the
+> household's usage, computes the heating plan and, in the auto, eco, comfort
+> and holiday modes, **controls the regulator** with its safeties. It still
+> starts in shadow mode (publishes the plan without acting): compare the
+> planned cost with the real one, then switch to auto and disable the
+> automations that also switch the regulator manual mode, or they will fight
+> each other.
 
 | Phase | Content | Status |
 |-------|---------|--------|
 | 1 | Thermal model, draw detection, history import, sensors (no control) | ✅ Done |
 | 2 | Demand profile and forecast, hot water appointments | ✅ Done |
 | 3 | Prices, surplus value and optimiser; shadow mode with the plan | ✅ Done |
-| 4 | Controller, safeties and degraded mode; automatic mode | Planned |
+| 4 | Controller, safeties and degraded mode; automatic mode | ✅ Done |
 | 5 | Boost with a blueprint for external push buttons | Planned |
 | 6 | Solar forecast, SolarSplit coordination and anti-legionella cycle | Planned |
 | 7 | Migration from automations and full documentation | Planned |
@@ -129,7 +132,7 @@ are translated.
 | Useful energy | kWh stored above the minimum comfort temperature |
 | Charge | Useful energy as a percentage of a full tank |
 | Hot water available | Useful litres at the shower temperature before the water runs below the comfort temperature (theoretical litres as an attribute) |
-| Plan at risk (binary) | On when an active appointment needs more than a full tank gives |
+| Plan at risk (binary) | On when hot water cannot be guaranteed: an appointment needs more than a full tank gives, the usual demand is not covered, or the regulator or the probe is unavailable before an appointment (`reasons` attribute) |
 | Modelled temperature | Equivalent tank temperature tracked by the model |
 | Model status | `calibrated`, `learning` or `uncertain` |
 | Last draw | Start of the last hot water draw, with its energy, minimum temperature and whether there was a shortage |
@@ -145,7 +148,7 @@ are translated.
 The diagnostics include the learned parameters, the history import result,
 the observed days of the usage profile and the last 50 draws.
 
-## Heating plan (shadow mode)
+## Heating plan
 
 Every 15 minutes, and whenever something relevant changes, TankWise computes
 the cheapest heating plan for the next 36 hours: how much grid energy to put
@@ -170,15 +173,15 @@ a block.
 | Comfort | P90 plus 20 % |
 | Holiday | No grid heating, solar surplus only |
 | Shadow (default) | Publishes the plan without acting |
-| Off | No plan |
+| Off | No plan, no action |
 
-Until phase 4 every mode only publishes the plan. Compare **Planned cost** with
-**Water heater cost** (real) and look at the logbook: external orders on the
-regulator manual mode that contradict the plan are logged there.
+In shadow mode compare **Planned cost** with **Water heater cost** (real) and
+look at the logbook: external orders on the regulator manual mode that
+contradict the plan are logged there.
 
 | Entity | Description |
 |--------|-------------|
-| Heating plan | Cost of the plan for the next 36 hours; the slots are an attribute |
+| Heating plan | Cost of the plan for the next 36 hours, with its grid heatings and appointment blocks as attributes. The slot by slot plan is too big for a state attribute: it is in the diagnostics and the `tankwise.get_plan` service |
 | Next heating | Start of the next grid heating, with its duration, energy and cost |
 | `<appointment>` predicted temperature | Temperature the plan expects when the block starts |
 | Water heater cost today / this month | Real cost: grid at the purchase price, surplus at its value |
@@ -188,11 +191,45 @@ regulator manual mode that contradict the plan are logged there.
 | Planned grid heating (binary) | The current slot of the plan heats from the grid |
 | Mode (select), hot water reserve and surplus value (numbers), compensation cap reached (switch), replan (button) | Settings |
 
+## Control and safeties
+
+In the auto, eco, comfort and holiday modes TankWise puts the regulator in
+manual mode (full power from the grid) during the planned minutes of each
+slot and back to automatic (surplus only) afterwards. Every order is written
+to the logbook with its reason. Orders are sent when the plan changes its
+mind (and repeated if they do not take effect), so an external order is
+respected until the next change; the safeties still apply to it.
+
+| Situation | Action |
+|-----------|--------|
+| Tank above the safety maximum (number, 72 °C) for 1 minute in manual mode | Back to automatic; no grid heating until the tank cools 3 °C |
+| No power for 3 minutes in manual mode | Thermostat cut-off: back to automatic, same pause |
+| More than 2 hours in a row in manual mode | Back to automatic for 15 minutes |
+| Probe unavailable or not updated for 10 minutes | Back to automatic, degraded mode, no grid heating |
+| Regulator unavailable beyond a margin (2 minutes, advanced option) while TankWise has it in manual mode, or while the element heats outside the plan | The heater switch is opened as a last resort; when the regulator returns it is set to automatic and the heater switch is closed again. A repair issue appears if this happens three times in a week |
+| Heater switch off (not by TankWise) | No action; repair issue |
+| Mode changed to shadow or off | The regulator is given back in automatic if TankWise had it in manual mode |
+
+**Degraded mode** (binary sensor): without a plan (no prices, or the tank
+model is not ready) TankWise follows a simple rule. Before each active
+appointment it heats up to the temperature the appointment needs (limited to
+the learned thermostat cut-off), starting as early as the learned power
+requires. Only when there are no active appointments it uses two fixed
+windows: up to 50 °C between 04:00 and 06:15 and up to the thermostat
+cut-off between 15:00 and 16:00. The safeties are the same.
+
+When the plan turns at risk for a new reason TankWise fires the
+`tankwise_plan_at_risk` event (`reasons`, `new_reasons`, `appointments`), for
+example to send a notification when the regulator is unavailable before an
+appointment that depends on a planned heating.
+
 ## Services
 
 | Service | Description |
 |---------|-------------|
 | `tankwise.replan` | Computes the heating plan now. Optional `config_entry_id`. |
+| `tankwise.get_plan` | Returns the whole heating plan, slot by slot (response only). Optional `config_entry_id`. |
+| `tankwise.reimport_history` | Imports the recorder history of the last days again and merges it with what was learned (also the "Import history again" button). Optional `config_entry_id`. |
 | `tankwise.reset_learning` | Forgets the heat losses (`part: losses`), the usage profile (`part: demand`) or everything (`part: all`, default). Optional `config_entry_id`. |
 
 ## How the tank model works

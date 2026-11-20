@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+from datetime import datetime
 from typing import Any
 
 from homeassistant.core import HomeAssistant
@@ -13,7 +14,8 @@ from .coordinator import TankWiseConfigEntry
 DIAGNOSTIC_CONSUMPTIONS = 50
 
 
-def _plan(coordinator: Any) -> dict[str, Any] | None:
+def plan_report(coordinator: Any) -> dict[str, Any]:
+    """Return the whole plan, slot by slot (diagnostics and get_plan)."""
     planner = coordinator.planner
     plan = planner.plan
     if plan is None:
@@ -44,14 +46,61 @@ def _plan(coordinator: Any) -> dict[str, Any] | None:
         "blocks": [
             {
                 "id": block.id,
+                "name": block.name,
+                "start": block.start.isoformat(),
                 "required_temperature": block.required_temperature,
                 "predicted_temperature": block.predicted_temperature,
+                "predicted_liters": block.predicted_liters,
                 "rescue_kwh": block.rescue_kwh,
                 "at_risk": block.at_risk,
             }
             for block in plan.blocks
         ],
-        "ledger": planner.ledger.as_dict(),
+        "slots": [
+            {
+                "start": slot.start.isoformat(),
+                "grid_kwh": round(slot.grid_kwh, 3),
+                "solar_kwh": round(slot.solar_kwh, 3),
+                "solar_allowed": slot.solar_allowed,
+                "demand_kwh": round(slot.demand_kwh, 3),
+                "temperature": round(slot.temperature, 1),
+                "liters": round(slot.useful_liters),
+                "cost": round(slot.cost, 4),
+                "rescue": slot.rescue,
+                "block": slot.block,
+                "shortfall_kwh": round(slot.shortfall_kwh, 3),
+            }
+            for slot in plan.slots
+        ],
+    }
+
+
+def _iso(value: datetime | None) -> str | None:
+    return value.isoformat() if value is not None else None
+
+
+def _controller(coordinator: Any) -> dict[str, Any]:
+    controller = coordinator.controller
+    state = controller.state
+    degraded = controller.degraded
+    return {
+        **state.as_dict(),
+        "active": controller.active,
+        "desired_heating": state.desired,
+        "degraded_reason": controller.degraded_reason,
+        "degraded": (
+            {
+                key: _iso(value) if isinstance(value, datetime) else value
+                for key, value in asdict(degraded).items()
+            }
+            if degraded is not None
+            else None
+        ),
+        "regulator_lost_since": _iso(state.lost_since),
+        "manual_since": _iso(state.manual_since),
+        "full_latch": state.full_latch,
+        "pause_until": _iso(state.pause_until),
+        "risk_reasons": list(coordinator.data.risk_reasons),
     }
 
 
@@ -91,7 +140,9 @@ async def async_get_config_entry_diagnostics(
         "model": model,
         "consumptions": consumptions[-DIAGNOSTIC_CONSUMPTIONS:],
         "shortages_7d": data.shortages_7d,
-        "plan": _plan(coordinator),
+        "plan": plan_report(coordinator),
+        "ledger": coordinator.planner.ledger.as_dict(),
+        "controller": _controller(coordinator),
         "reconciliations": [
             item.as_dict() for item in coordinator.model.reconciliations
         ],

@@ -3,7 +3,13 @@
 from __future__ import annotations
 
 from homeassistant.config_entries import ConfigEntryState
-from homeassistant.core import HomeAssistant, ServiceCall, callback
+from homeassistant.core import (
+    HomeAssistant,
+    ServiceCall,
+    ServiceResponse,
+    SupportsResponse,
+    callback,
+)
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 import voluptuous as vol
@@ -14,10 +20,13 @@ from .const import (
     DOMAIN,
     PART_ALL,
     RESET_PARTS,
+    SERVICE_GET_PLAN,
+    SERVICE_REIMPORT_HISTORY,
     SERVICE_REPLAN,
     SERVICE_RESET_LEARNING,
 )
 from .coordinator import TankWiseConfigEntry
+from .diagnostics import plan_report
 
 RESET_LEARNING_SCHEMA = vol.Schema(
     {
@@ -28,6 +37,7 @@ RESET_LEARNING_SCHEMA = vol.Schema(
 
 
 REPLAN_SCHEMA = vol.Schema({vol.Optional(ATTR_CONFIG_ENTRY_ID): cv.string})
+GET_PLAN_SCHEMA = REPLAN_SCHEMA
 
 
 def _loaded_entries(
@@ -67,3 +77,31 @@ def async_setup_services(hass: HomeAssistant) -> None:
             await entry.runtime_data.async_replan("service")
 
     hass.services.async_register(DOMAIN, SERVICE_REPLAN, _replan, REPLAN_SCHEMA)
+
+    async def _get_plan(call: ServiceCall) -> ServiceResponse:
+        return {
+            "plans": [
+                {
+                    "config_entry_id": entry.entry_id,
+                    "name": entry.title,
+                    **plan_report(entry.runtime_data),
+                }
+                for entry in _loaded_entries(hass, call)
+            ]
+        }
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_GET_PLAN,
+        _get_plan,
+        GET_PLAN_SCHEMA,
+        supports_response=SupportsResponse.ONLY,
+    )
+
+    async def _reimport_history(call: ServiceCall) -> None:
+        for entry in _loaded_entries(hass, call):
+            entry.runtime_data.async_start_bootstrap()
+
+    hass.services.async_register(
+        DOMAIN, SERVICE_REIMPORT_HISTORY, _reimport_history, REPLAN_SCHEMA
+    )

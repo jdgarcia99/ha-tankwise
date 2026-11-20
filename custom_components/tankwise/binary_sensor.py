@@ -29,6 +29,7 @@ async def async_setup_entry(
         [
             PlanAtRiskSensor(coordinator, "plan_at_risk"),
             PlannedGridHeatingSensor(coordinator, "planned_grid_heating"),
+            DegradedModeSensor(coordinator, "degraded_mode"),
         ]
     )
 
@@ -39,7 +40,9 @@ class PlanAtRiskSensor(TankWiseEntity, BinarySensorEntity):
     With a plan, an appointment block (or the demand outside blocks) cannot
     be covered even with the rescue recharge, or there is no time left to
     heat. Without a plan (no prices), an appointment needs more than a full
-    tank plus what the rescue recharge can add during its block.
+    tank plus what the rescue recharge can add during its block. Also on
+    when the regulator is unavailable and an appointment depends on a
+    planned heating, or the probe is unavailable before an appointment.
     """
 
     _platform = "binary_sensor"
@@ -48,12 +51,8 @@ class PlanAtRiskSensor(TankWiseEntity, BinarySensorEntity):
 
     @property
     def is_on(self) -> bool:
-        """Return True if an active appointment cannot be covered."""
-        plan = self.coordinator.planner.plan
-        if plan is not None and plan.at_risk and not self.coordinator.data.at_risk:
-            # Demand outside the appointment blocks cannot be covered.
-            return True
-        return bool(self.coordinator.data.at_risk)
+        """Return True if hot water cannot be guaranteed."""
+        return bool(self.coordinator.data.risk_reasons)
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -64,6 +63,7 @@ class PlanAtRiskSensor(TankWiseEntity, BinarySensorEntity):
             for appointment in self.coordinator.appointments
         }
         return {
+            "reasons": list(data.risk_reasons),
             "appointments": [
                 {
                     "name": names.get(appointment_id, appointment_id),
@@ -104,3 +104,31 @@ class PlannedGridHeatingSensor(TankWiseEntity, BinarySensorEntity):
             "solar_allowed": slot.solar_allowed,
             "grid_kwh": round(slot.grid_kwh, 3),
         }
+
+
+class DegradedModeSensor(TankWiseEntity, BinarySensorEntity):
+    """On when TankWise acts without a plan (simple rule) or without probe."""
+
+    _platform = "binary_sensor"
+    _attr_device_class = BinarySensorDeviceClass.PROBLEM
+    _attr_translation_key = "degraded_mode"
+
+    @property
+    def is_on(self) -> bool:
+        """Return True in degraded mode."""
+        return self.coordinator.controller.degraded_reason is not None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return why, and what the simple rule is heating for."""
+        controller = self.coordinator.controller
+        attributes: dict[str, Any] = {"reason": controller.degraded_reason}
+        target = controller.degraded
+        if target is not None and target.target is not None:
+            attributes |= {
+                "target_temperature": round(target.target, 1),
+                "appointment": target.name,
+                "due": target.due.isoformat() if target.due else None,
+                "heating_from": target.start.isoformat() if target.start else None,
+            }
+        return attributes

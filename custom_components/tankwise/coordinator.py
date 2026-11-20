@@ -12,6 +12,7 @@ recorder history (see :mod:`.bootstrap`).
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta
@@ -33,6 +34,7 @@ from homeassistant.util import dt as dt_util
 from .bootstrap import BootstrapInfo, BootstrapStatus, async_bootstrap
 from .const import (
     BOOTSTRAP_DAYS,
+    BOOTSTRAP_INPUT_WAIT,
     BOOTSTRAP_VERSION,
     CONF_AMBIENT_SENSOR,
     CONF_AMBIENT_TEMPERATURE,
@@ -63,6 +65,7 @@ from .const import (
     DEFAULT_PARAMETERS,
     DEFAULT_SETTINGS,
     DOMAIN,
+    EVENT_PLAN_AT_RISK,
     FORECAST_HOURS,
     MAINS_AUTOMATIC,
     MAINS_SOURCE_MANUAL,
@@ -70,12 +73,14 @@ from .const import (
     PART_ALL,
     PART_DEMAND,
     PART_LOSSES,
+    REQUIRED_INPUT_KEYS,
     SETTING_COMFORT_MIN_TEMPERATURE,
     SETTING_MAINS_WATER_TEMPERATURE,
     SETTING_SHOWER_TEMPERATURE,
     SHORTAGE_WINDOW,
     UPDATE_INTERVAL,
 )
+from .controller import TankWiseController
 from .inputs import InputError, parse_bool, parse_measurement, parse_numeric, state_unit
 from .model.appointments import (
     Appointment,
@@ -108,6 +113,9 @@ _LOGGER = logging.getLogger(__name__)
 
 type TankWiseConfigEntry = ConfigEntry[TankWiseCoordinator]
 
+RISK_APPOINTMENTS = "appointments"
+RISK_DEMAND = "demand"
+
 
 @dataclass(frozen=True, slots=True)
 class TankReadings:
@@ -120,6 +128,8 @@ class TankReadings:
     timestamp: datetime
     temperature: float | None
     power: float | None
+    # Last time the probe reported a value (even an unchanged one).
+    temperature_updated: datetime | None = None
     energy: float | None = None
     regulator: float | None = None
     manual_mode: bool | None = None
@@ -159,6 +169,9 @@ class TankWiseData:
     )
     # Active appointments the tank cannot cover even with the rescue.
     at_risk: list[str] = field(default_factory=list)
+    # Why hot water cannot be guaranteed: "appointments", "demand",
+    # "regulator_unavailable", "probe_unavailable" (empty: plan not at risk).
+    risk_reasons: list[str] = field(default_factory=list)
     plan: Plan | None = None
     totals_today: Totals = field(default_factory=Totals)
     totals_month: Totals = field(default_factory=Totals)
@@ -196,6 +209,11 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
         # Workday status of the coming days, from the workday integration.
         self._workdays: dict[date, bool] = {}
         self.planner = Planner(self)
+        self._bootstrap_task: asyncio.Task | None = None
+        # Stored sections that could not be read: kept as they were, never
+        # overwritten, so an upgrade can never erase what was learned.
+        self._unreadable: dict[str, Any] = {}
+        self.controller = TankWiseController(self)
 
     # ------------------------------------------------------------------
     # Persistence
@@ -218,7 +236,8 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
                     stored["tank"], volume_l=float(self.parameters[CONF_VOLUME])
                 )
             except ValueError as err:
-                _LOGGER.warning("Discarding stored tank state: %s", err)
+                _LOGGER.warning("Stored tank state not readable, kept aside: %s", err)
+                self._unreadable["tank"] = stored["tank"]
             else:
                 if removed := self.model.purge_cutoffs(self.tank_params):
                     _LOGGER.info(
@@ -228,8 +247,13 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
             try:
                 self.demand = DemandModel.from_dict(stored["demand"], self.demand.tz)
             except ValueError as err:
-                _LOGGER.warning("Discarding stored demand profile: %s", err)
+                _LOGGER.warning(
+                    "Stored demand profile not readable, kept aside: %s", err
+                )
+                self._unreadable["demand"] = stored["demand"]
+        self._unreadable |= stored.get("unreadable") or {}
         self.planner.restore(stored.get("control") or {})
+        self.controller.restore(stored.get("controller") or {})
 
     def _stored_data(self) -> dict[str, Any]:
         return {
@@ -238,6 +262,8 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
             "settings": dict(self.settings),
             "bootstrap": self.bootstrap.as_dict(),
             "control": self.planner.as_dict(),
+            "controller": self.controller.as_dict(),
+            **({"unreadable": self._unreadable} if self._unreadable else {}),
         }
 
     async def async_save_now(self) -> None:
@@ -253,17 +279,95 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
         """Return True if the history must be imported (again).
 
         It is imported again when the last import was made with older models
-        (e.g. TankWise 0.3 had no demand profile nor energy reconciliation).
+        (e.g. TankWise 0.3 had no demand profile nor energy reconciliation),
+        or when it did not learn anything.
         """
-        if self.bootstrap.status in (BootstrapStatus.PENDING, BootstrapStatus.RUNNING):
+        if self.bootstrap.status in (
+            BootstrapStatus.PENDING,
+            BootstrapStatus.RUNNING,
+            BootstrapStatus.EMPTY,
+        ):
             return True
         return (
             self.bootstrap.status is not BootstrapStatus.NO_RECORDER
             and self.bootstrap.version < BOOTSTRAP_VERSION
         )
 
+    @callback
+    def async_start_bootstrap(self) -> bool:
+        """Import the history in the background; False if already running."""
+        if self._bootstrap_task is not None and not self._bootstrap_task.done():
+            return False
+        self._bootstrap_task = self.config_entry.async_create_background_task(
+            self.hass, self.async_run_bootstrap(), f"{DOMAIN} history import"
+        )
+        return True
+
+    def _inputs_ready(self) -> bool:
+        """Return True when the probe and the power have a usable value."""
+        data = self.config_entry.data
+        for key, kind in (
+            (CONF_TEMPERATURE_SENSOR, "temperature"),
+            (CONF_POWER_SENSOR, "power"),
+        ):
+            state = self.hass.states.get(data.get(key) or "")
+            if state is None:
+                return False
+            try:
+                parse_measurement(state.state, state_unit(state), kind)
+            except InputError:
+                return False
+        return True
+
+    async def _async_wait_for_inputs(self) -> bool:
+        """Wait until the entry is complete and the inputs report values.
+
+        Right after Home Assistant starts, the sensors of other integrations
+        may not exist yet: their units would be unknown and the import would
+        learn nothing.
+        """
+        if any(not self.config_entry.data.get(key) for key in REQUIRED_INPUT_KEYS):
+            _LOGGER.info("History import postponed: the entry is not complete")
+            return False
+        if not self.hass.is_running:
+            started = self.hass.loop.create_future()
+            self.hass.async_at_started(
+                lambda _hass: started.done() or started.set_result(None)
+            )
+            await started
+        ready = asyncio.Event()
+
+        @callback
+        def _check(_event: Event[EventStateChangedData] | None = None) -> None:
+            if self._inputs_ready():
+                ready.set()
+
+        _check()
+        if ready.is_set():
+            return True
+        data = self.config_entry.data
+        unsubscribe = async_track_state_change_event(
+            self.hass,
+            [data[CONF_TEMPERATURE_SENSOR], data[CONF_POWER_SENSOR]],
+            _check,
+        )
+        try:
+            async with asyncio.timeout(BOOTSTRAP_INPUT_WAIT.total_seconds()):
+                await ready.wait()
+        except TimeoutError:
+            _LOGGER.warning(
+                "History import postponed: the probe or the power is not available"
+            )
+            return False
+        finally:
+            unsubscribe()
+        return True
+
     async def async_run_bootstrap(self) -> None:
-        """Rebuild the model from the recorder history and adopt it."""
+        """Import the recorder history and merge it with what was learned."""
+        if not await self._async_wait_for_inputs():
+            return
+        previous = self.bootstrap
         self.bootstrap = BootstrapInfo(BootstrapStatus.RUNNING)
         data = self.config_entry.data
         options = self.config_entry.options
@@ -284,15 +388,33 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
             days=BOOTSTRAP_DAYS,
             tz=self.demand.tz,
         )
-        self.bootstrap = replace(info, version=BOOTSTRAP_VERSION)
-        if result is not None and result.samples:
+        if info.status is BootstrapStatus.DONE and result is not None:
+            # Never lose learning: keep the better learned of each parameter.
+            result.model.merge_learning(self.model)
             self.model = result.model
             if demand is not None:
+                demand.merge(self.demand)
                 self.demand = demand
+            self.bootstrap = replace(info, version=BOOTSTRAP_VERSION)
             await self.async_save_now()
             await self.async_request_refresh()
+            return
+        if info.status is BootstrapStatus.EMPTY:
+            # Nothing adopted; imported again at the next start.
+            _LOGGER.warning(
+                "The history import learned nothing from %d samples; "
+                "keeping the current model",
+                info.samples,
+            )
+            self.bootstrap = info
+        elif previous.status is BootstrapStatus.DONE and info.status in (
+            BootstrapStatus.NO_HISTORY,
+            BootstrapStatus.FAILED,
+        ):
+            self.bootstrap = previous  # a failed re-import changes nothing
         else:
-            self._store.async_schedule_save(self._stored_data)
+            self.bootstrap = replace(info, version=BOOTSTRAP_VERSION)
+        self._store.async_schedule_save(self._stored_data)
 
     # ------------------------------------------------------------------
     # Event listeners
@@ -326,7 +448,14 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
                 detector.update_manual(new_state.last_changed, _boolean(new_state))
                 old_state = event.data["old_state"]
                 old, new = _boolean(old_state), _boolean(new_state)
-                if old is not None and new is not None and old != new:
+                if (
+                    old is not None
+                    and new is not None
+                    and old != new
+                    and not self.controller.on_manual_change(
+                        new_state.last_changed, new
+                    )
+                ):
                     self.planner.on_manual_mode(new_state.last_changed, new)
             elif entity_id == occupancy:
                 self.async_request_replan("occupancy")
@@ -521,12 +650,14 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
                 today, now, params, workdays.get(today)
             )
         await self.planner.async_update(now, readings, tank, forecast, workdays)
-        self._store.async_schedule_save(self._stored_data)
         _mains, source = self.mains_water_temperature_at(now)
         usage = self._appointment_usage()
         requirements, at_risk = self._appointment_requirements(
             usage, tank, readings.occupancy
         )
+        await self.controller.async_update(now, readings, tank, requirements, workdays)
+        self._store.async_schedule_save(self._stored_data)
+        risk_reasons = self._risk_reasons(at_risk)
         totals_today, totals_month = self.planner.ledger.current(now)
         return TankWiseData(
             plan=self.planner.plan,
@@ -545,7 +676,34 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
             appointment_usage=usage,
             appointment_requirements=requirements,
             at_risk=at_risk,
+            risk_reasons=risk_reasons,
         )
+
+    def _risk_reasons(self, at_risk: list[str]) -> list[str]:
+        """Collect why the plan is at risk; fire an event on new reasons."""
+        reasons: list[str] = []
+        plan = self.planner.plan
+        if at_risk:
+            reasons.append(RISK_APPOINTMENTS)
+        elif plan is not None and plan.at_risk:
+            reasons.append(RISK_DEMAND)
+        reasons += self.controller.risk_reasons
+        announced = self.controller.announced_risks
+        new = [reason for reason in reasons if reason not in announced]
+        self.controller.announced_risks = list(reasons)
+        if new:
+            names = {item.id: item.name for item in self.appointments}
+            self.hass.bus.async_fire(
+                EVENT_PLAN_AT_RISK,
+                {
+                    "entry_id": self.config_entry.entry_id,
+                    "name": self.config_entry.title,
+                    "reasons": reasons,
+                    "new_reasons": new,
+                    "appointments": [names.get(item, item) for item in at_risk],
+                },
+            )
+        return reasons
 
     def _appointment_requirements(
         self,
@@ -672,6 +830,7 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
             temperature=self._read_measurement(
                 data.get(CONF_TEMPERATURE_SENSOR), "temperature"
             ),
+            temperature_updated=self._last_reported(data.get(CONF_TEMPERATURE_SENSOR)),
             power=self._read_measurement(data.get(CONF_POWER_SENSOR), "power"),
             energy=self._read_measurement(options.get(CONF_ENERGY_SENSOR), "energy"),
             regulator=self._read_float(options.get(CONF_REGULATOR_SENSOR)),
@@ -712,6 +871,12 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
             return None
         self._mark_usable(entity_id)
         return value
+
+    def _last_reported(self, entity_id: str | None) -> datetime | None:
+        """Return the last time an entity reported its state."""
+        if not entity_id or (state := self.hass.states.get(entity_id)) is None:
+            return None
+        return state.last_reported
 
     def _read_measurement(self, entity_id: str | None, kind: str) -> float | None:
         return self._read(

@@ -7,6 +7,83 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-20
+
+Fourth phase: TankWise controls the regulator in the auto, eco, comfort and
+holiday modes. Shadow stays the default mode.
+
+### Added
+
+- Controller: the regulator goes to manual mode during the planned minutes
+  of each slot (a whole slot or its first half) and back to automatic
+  afterwards. Orders are sent when the desired state changes and repeated if
+  they do not take effect; external orders are respected until the next
+  change. Every order is logged in the logbook with its reason.
+- Safeties, whoever switched the manual mode on: safety maximum temperature
+  for one minute (number entity, 72 °C), thermostat cut-off (no power for
+  three minutes), more than two hours in manual mode (15-minute pause), probe
+  unavailable or not updated for ten minutes. After a cut-off or the safety
+  maximum there is no grid heating until the tank cools 3 °C.
+- Regulator lost: if it stays unavailable beyond a margin (advanced option,
+  2 minutes) while TankWise has it in manual mode, or while the element heats
+  outside the plan, the heater switch is opened as a last resort. When the
+  regulator returns it is set to automatic and the heater switch is closed
+  again (also after a restart). Repair issue after three cuts in a week.
+- Heater switch off (not by TankWise): no action and a repair issue.
+- Degraded mode (binary sensor) when there is no plan or no probe. Without a
+  plan, before each active appointment the tank is heated to the temperature
+  the appointment needs (limited to the learned cut-off), starting as early
+  as the learned power requires; only without active appointments, fixed
+  windows (50 °C 04:00-06:15, thermostat cut-off 15:00-16:00). Not entered
+  in the first five minutes after a start, while prices load.
+- Plan at risk also when the regulator is unavailable and an appointment
+  depends on a planned heating, or the probe is unavailable before an
+  appointment (`reasons` attribute), and the `tankwise_plan_at_risk` event
+  when it turns at risk for a new reason (announced once, also across
+  restarts).
+- `tankwise.get_plan` service: the whole plan, slot by slot.
+- `tankwise.reimport_history` service and "Import history again" button
+  (diagnostic): import the recorder history again, merged with what was
+  learned.
+
+### Fixed
+
+- Upgrading to 0.6.0 could erase everything learned. The history import
+  (run again after an upgrade) replaced the running model with the imported
+  one, and right after Home Assistant starts the input sensors may not exist
+  yet: their units were unknown, every sample was read as missing and an
+  import of thousands of empty samples was marked as done. Now:
+  - the import is merged with what was learned: each parameter (heat
+    losses, heater power, capacity and usable factors, thermostat cut-offs)
+    keeps the source with more evidence, and draws and observed days are
+    joined;
+  - it waits until the entry is complete (no missing required inputs) and
+    the probe and the power report values (up to 30 minutes after a start);
+  - an import that learns nothing is not adopted (`empty` status) and runs
+    again at the next start;
+  - stored sections that cannot be read are kept aside instead of being
+    overwritten.
+- The history is imported again automatically when upgrading to this
+  version, merged with what is stored.
+
+### Changed
+
+- The heating plan sensor publishes a compact summary (grid heatings and
+  appointment blocks); the slot by slot plan moved to the diagnostics and
+  the `tankwise.get_plan` service. Its attributes exceeded the 16 KiB the
+  recorder stores, and the attributes meant to be excluded from the recorder
+  (forecast and plan slots) were not, because they were set per entity
+  instead of per class.
+- The plan never aims above the safety maximum temperature.
+- Logbook messages live in one module shared by the planner and the
+  controller.
+
+### Development
+
+- Tests: the SQLAlchemy engine logger is set to WARNING (the test plugin
+  sets it to INFO and printed every recorder query); regression test for the
+  PWM swinging 0-100 % near the thermostat cut-off (a single cut-off).
+
 ## [0.6.0] - 2026-11-20
 
 Third phase: TankWise computes and publishes the heating plan (shadow mode).
@@ -305,7 +382,8 @@ and the heating plan will follow.
 - The output contract entities (energy needed, deadline, grid allowed,
   requested power and urgency) arrive in a later release.
 
-[Unreleased]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.4.0...v0.4.1
