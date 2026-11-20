@@ -1,4 +1,4 @@
-"""Sensors for the TankWise tank state."""
+"""Sensors for the TankWise tank state and learned parameters."""
 
 from __future__ import annotations
 
@@ -12,28 +12,78 @@ from homeassistant.components.sensor import (
     SensorEntityDescription,
     SensorStateClass,
 )
-from homeassistant.const import PERCENTAGE, UnitOfEnergy
+from homeassistant.const import (
+    PERCENTAGE,
+    EntityCategory,
+    UnitOfEnergy,
+    UnitOfPower,
+    UnitOfTemperature,
+    UnitOfVolume,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.typing import StateType
 
-from .const import CONF_SHOWER_ENERGY
-from .coordinator import TankWiseConfigEntry, TankWiseCoordinator
+from .const import CONF_AMBIENT_TEMPERATURE
+from .coordinator import TankWiseConfigEntry, TankWiseCoordinator, TankWiseData
 from .entity import TankWiseEntity
-from .model.tank import ModelStatus, TankState
+from .model.tank import ModelStatus
 
 PARALLEL_UPDATES = 0
+
+UNIT_W_PER_K = "W/K"
 
 
 @dataclass(frozen=True, kw_only=True)
 class TankWiseSensorDescription(SensorEntityDescription):
-    """Describe a TankWise tank sensor."""
+    """Describe a TankWise sensor."""
 
-    value_fn: Callable[[TankState], StateType]
+    value_fn: Callable[[TankWiseData], StateType | Any]
     attributes_fn: Callable[[TankWiseCoordinator], dict[str, Any]] | None = None
+    # Unavailable while the tank model is frozen (safe mode).
+    requires_tank: bool = True
+
+
+def _last_draw_attributes(coordinator: TankWiseCoordinator) -> dict[str, Any]:
+    event = coordinator.data.tank.last_consumption
+    if event is None:
+        return {}
+    return {
+        "end": event.end.isoformat(),
+        "energy_kwh": round(event.energy_kwh, 3),
+        "start_temperature": round(event.start_temperature, 1),
+        "min_temperature": round(event.min_temperature, 1),
+        "shortage": event.shortage,
+        "while_heating": event.while_heating,
+    }
+
+
+def _ambient(coordinator: TankWiseCoordinator) -> float:
+    reading = coordinator.data.readings.ambient_temperature
+    if reading is not None:
+        return reading
+    return float(coordinator.parameters[CONF_AMBIENT_TEMPERATURE])
+
+
+def _loss_attributes(coordinator: TankWiseCoordinator) -> dict[str, Any]:
+    tank = coordinator.data.tank
+    loss = tank.loss_power_w(_ambient(coordinator))
+    return {
+        "learning_windows": tank.loss_windows,
+        "loss_power_w": round(loss, 1) if loss is not None else None,
+    }
 
 
 SENSORS: tuple[TankWiseSensorDescription, ...] = (
+    TankWiseSensorDescription(
+        key="stored_energy",
+        translation_key="stored_energy",
+        device_class=SensorDeviceClass.ENERGY_STORAGE,
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=2,
+        value_fn=lambda data: data.tank.stored_energy_kwh,
+    ),
     TankWiseSensorDescription(
         key="useful_energy",
         translation_key="useful_energy",
@@ -41,7 +91,7 @@ SENSORS: tuple[TankWiseSensorDescription, ...] = (
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=2,
-        value_fn=lambda tank: tank.useful_energy_kwh,
+        value_fn=lambda data: data.tank.useful_energy_kwh,
     ),
     TankWiseSensorDescription(
         key="charge",
@@ -49,27 +99,117 @@ SENSORS: tuple[TankWiseSensorDescription, ...] = (
         native_unit_of_measurement=PERCENTAGE,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=0,
-        value_fn=lambda tank: tank.charge_percent,
+        value_fn=lambda data: data.tank.charge_percent,
     ),
     TankWiseSensorDescription(
-        key="showers_available",
-        # No unit on purpose: Home Assistant takes custom units from the English
-        # translations in every language, and adding one would also raise a
-        # statistics repair for the history recorded without a unit.
-        translation_key="showers_available",
+        key="available_liters",
+        translation_key="available_liters",
+        device_class=SensorDeviceClass.VOLUME_STORAGE,
+        native_unit_of_measurement=UnitOfVolume.LITERS,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=0,
+        value_fn=lambda data: data.tank.liters_available,
+        attributes_fn=lambda coordinator: {
+            "shower_temperature": coordinator.tank_params.shower_temperature,
+            "mains_water_temperature": round(
+                coordinator.data.tank.mains_temperature, 1
+            ),
+        },
+    ),
+    TankWiseSensorDescription(
+        key="tank_temperature",
+        translation_key="tank_temperature",
+        device_class=SensorDeviceClass.TEMPERATURE,
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=1,
-        value_fn=lambda tank: tank.showers_available,
-        attributes_fn=lambda coordinator: {
-            "energy_per_shower_kwh": float(coordinator.parameters[CONF_SHOWER_ENERGY])
-        },
+        value_fn=lambda data: data.tank.equivalent_temperature,
     ),
     TankWiseSensorDescription(
         key="model_status",
         translation_key="model_status",
         device_class=SensorDeviceClass.ENUM,
         options=[status.value for status in ModelStatus],
-        value_fn=lambda tank: tank.status.value,
+        value_fn=lambda data: data.tank.status.value,
+    ),
+    TankWiseSensorDescription(
+        key="last_draw",
+        translation_key="last_draw",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        value_fn=lambda data: (
+            data.tank.last_consumption.start if data.tank.last_consumption else None
+        ),
+        attributes_fn=_last_draw_attributes,
+        requires_tank=False,
+    ),
+    TankWiseSensorDescription(
+        key="water_shortages_7d",
+        translation_key="water_shortages_7d",
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda data: data.shortages_7d,
+        requires_tank=False,
+    ),
+    TankWiseSensorDescription(
+        key="heat_loss_coefficient",
+        translation_key="heat_loss_coefficient",
+        native_unit_of_measurement=UNIT_W_PER_K,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=2,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: data.tank.ua_w_per_k,
+        attributes_fn=_loss_attributes,
+        requires_tank=False,
+    ),
+    TankWiseSensorDescription(
+        key="heater_power",
+        translation_key="heater_power",
+        device_class=SensorDeviceClass.POWER,
+        native_unit_of_measurement=UnitOfPower.WATT,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=0,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: data.tank.heater_power_w,
+        requires_tank=False,
+    ),
+    TankWiseSensorDescription(
+        key="cutoff_temperature",
+        translation_key="cutoff_temperature",
+        device_class=SensorDeviceClass.TEMPERATURE,
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=1,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: data.tank.cutoff_temperature,
+        attributes_fn=lambda coordinator: {
+            "samples": [
+                round(value, 1) for value in coordinator.data.tank.cutoff_samples
+            ]
+        },
+        requires_tank=False,
+    ),
+    TankWiseSensorDescription(
+        key="capacity_factor",
+        translation_key="capacity_factor",
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=2,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: data.tank.capacity_factor,
+        attributes_fn=lambda coordinator: {
+            "samples": coordinator.data.tank.capacity_samples
+        },
+        requires_tank=False,
+    ),
+    TankWiseSensorDescription(
+        key="mains_water_temperature",
+        translation_key="mains_water_temperature",
+        device_class=SensorDeviceClass.TEMPERATURE,
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=1,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: data.tank.mains_temperature,
+        attributes_fn=lambda coordinator: {"source": coordinator.data.mains_source},
+        requires_tank=False,
     ),
 )
 
@@ -87,7 +227,7 @@ async def async_setup_entry(
 
 
 class TankWiseSensor(TankWiseEntity, SensorEntity):
-    """A sensor derived from the tank model state."""
+    """A sensor derived from the coordinator data."""
 
     entity_description: TankWiseSensorDescription
 
@@ -102,13 +242,17 @@ class TankWiseSensor(TankWiseEntity, SensorEntity):
 
     @property
     def available(self) -> bool:
-        """Unavailable while the model is frozen (safe mode)."""
-        return super().available and self.coordinator.data.tank.available
+        """Tank values are unavailable while the model is frozen (safe mode)."""
+        if not super().available:
+            return False
+        return not self.entity_description.requires_tank or (
+            self.coordinator.data.tank.available
+        )
 
     @property
-    def native_value(self) -> StateType:
+    def native_value(self) -> StateType | Any:
         """Return the sensor value."""
-        return self.entity_description.value_fn(self.coordinator.data.tank)
+        return self.entity_description.value_fn(self.coordinator.data)
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:

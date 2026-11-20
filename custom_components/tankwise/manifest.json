@@ -1,6 +1,7 @@
 {
   "domain": "tankwise",
   "name": "TankWise",
+  "after_dependencies": ["recorder"],
   "codeowners": ["@jdgarcia99"],
   "config_flow": true,
   "documentation": "https://github.com/jdgarcia99/ha-tankwise",
@@ -8,5 +9,5 @@
   "iot_class": "calculated",
   "issue_tracker": "https://github.com/jdgarcia99/ha-tankwise/issues",
   "requirements": [],
-  "version": "0.2.3"
+  "version": "0.3.0"
 }

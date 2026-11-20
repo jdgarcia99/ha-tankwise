@@ -8,8 +8,8 @@ import math
 import random
 
 from tankwise_model.tank import (
-    AMBIENT_TEMPERATURE,
-    DEFAULT_LOSS_COEFFICIENT,
+    DEFAULT_AMBIENT_TEMPERATURE as AMBIENT_TEMPERATURE,
+    DEFAULT_UA,
     WATER_HEAT_CAPACITY_KWH_PER_L_K,
     TankModel,
     TankParams,
@@ -18,22 +18,37 @@ from tankwise_model.tank import (
 )
 
 START = datetime(2026, 11, 2, 0, 0, tzinfo=UTC)
-PARAMS = TankParams(mains_temperature=15.0)
+PARAMS = TankParams(
+    mains_temperature=15.0,
+    rated_power_w=1450.0,
+    cutoff_temperature=47.0,
+    comfort_min_temperature=32.0,
+    capacity_factor=1.0,
+)
 
 
 @dataclass
 class TankSimulator:
-    """Fully mixed tank with a thermostat, a PWM regulator and a noisy probe."""
+    """Fully mixed tank with a thermostat, a PWM regulator and a noisy probe.
+
+    ``heating_efficiency`` is the fraction of the electric energy that shows
+    up at the probe (the apparent efficiency the model learns as k_cap).
+    ``report_manual`` reports the regulator as a manual mode switch (on at
+    100 %) instead of a PWM output.
+    """
 
     temperature: float = 46.0
     volume_l: float = 100.0
     rated_power_w: float = 1450.0
     cutoff: float = 47.0
     hysteresis: float = 5.0
-    loss_coefficient: float = DEFAULT_LOSS_COEFFICIENT
+    ua: float = DEFAULT_UA
+    heating_efficiency: float = 1.0
     noise: float = 1.0
     seed: int = 1
     report_regulator: bool = True
+    report_manual: bool = False
+    report_energy: bool = True
     time: datetime = START
     energy_kwh: float = 250.0
     thermostat_closed: bool = field(init=False)
@@ -57,18 +72,24 @@ class TankSimulator:
         power = self.rated_power_w * regulator / 100 if self.thermostat_closed else 0.0
         heat = power / 1000 * hours
         self.energy_kwh += heat
-        self.temperature += (heat - draw_kw * hours) / self.capacity
+        self.temperature += (
+            heat * self.heating_efficiency - draw_kw * hours
+        ) / self.capacity
+        rate = self.ua / (self.capacity * 1000)
         self.temperature = AMBIENT_TEMPERATURE + (
             self.temperature - AMBIENT_TEMPERATURE
-        ) * math.exp(-self.loss_coefficient * hours)
+        ) * math.exp(-rate * hours)
         self.time += timedelta(minutes=1)
         probe = self.temperature + self._rng.uniform(-self.noise, self.noise)
         return TankSample(
             timestamp=self.time,
             temperature=round(probe, 1),
             power=round(power, 1),
-            energy=round(self.energy_kwh, 4),
-            regulator=regulator if self.report_regulator else None,
+            energy=round(self.energy_kwh, 4) if self.report_energy else None,
+            regulator=(
+                regulator if self.report_regulator and not self.report_manual else None
+            ),
+            manual_mode=regulator >= 100 if self.report_manual else None,
         )
 
     def run(

@@ -9,30 +9,27 @@
 
 *[Read in English](README.md)*
 
-TankWise es una integración de Home Assistant que modela de forma continua un
-termo eléctrico de acumulación y el uso de agua caliente de la casa. Publica
-**cuánta energía necesita el termo y para cuándo**, para que siempre haya agua
-caliente cuando se va a usar, con el mínimo coste de red.
-
-**TankWise no actúa sobre ningún dispositivo.** No enciende relés ni cambia el
-modo de un derivador de excedentes. Solo publica la demanda; otra integración
-o tus propias automatizaciones deciden cómo cubrirla.
+TankWise es una integración de Home Assistant que toma el control completo de
+un termo eléctrico de acumulación gobernado por un regulador de potencia (por
+ejemplo un FreeDS con PWM). Decide **cuándo y cuánto calentar** para que
+siempre haya agua caliente cuando la casa la necesita, al mínimo coste (precio
+PVPC de compra más el valor del excedente solar).
 
 ## Estado del proyecto
 
-> **Desarrollo inicial (0.2.3, fase 2).** TankWise modela el depósito y
-> publica su estado de carga. El aprendizaje del uso y el plan de
-> calentamiento (la salida para otras integraciones) todavía no están
-> disponibles.
+> **En desarrollo (0.3.0, fase 1 de 7).** TankWise aprende cómo se comporta
+> el depósito y detecta cada extracción de agua caliente, pero **todavía no
+> actúa sobre ningún dispositivo**. Mantén tus automatizaciones hasta la fase 4.
 
 | Fase | Contenido | Estado |
 |------|-----------|--------|
-| 1 | Esqueleto, config flow, lectura de sensores | ✅ Hecha |
-| 2 | Modelo del depósito (estado de carga, recalibración, aprendizaje de pérdidas) | ✅ Hecha |
-| 3 | Detección de consumos y perfil aprendido | Pendiente |
-| 4 | Planificador y contrato de salida | Pendiente |
-| 5 | Botón de refuerzo, selector de confort, modo vacaciones, diagnósticos | Pendiente |
-| 6 | Documentación completa y primera versión estable | Pendiente |
+| 1 | Modelo térmico, detección de extracciones, importación del histórico, sensores (sin actuar) | ✅ Hecha |
+| 2 | Perfil de demanda y previsión | Prevista |
+| 3 | Precios, valor del excedente y optimizador; modo Sombra con el plan | Prevista |
+| 4 | Controlador, seguridades y modo degradado; modo Auto | Prevista |
+| 5 | Boost con blueprint para pulsadores externos | Prevista |
+| 6 | Previsión solar, coordinación con SolarSplit y antilegionela | Prevista |
+| 7 | Migración desde las automatizaciones y documentación completa | Prevista |
 
 ## Instalación
 
@@ -43,126 +40,133 @@ o tus propias automatizaciones deciden cómo cubrirla.
 
 ## Configuración
 
-Todo se configura desde la interfaz; no hay nada en `configuration.yaml`.
+Todo se configura desde la interfaz; no hay nada en `configuration.yaml` y
+ningún `entity_id` está fijado en el código.
 
-**Sensores obligatorios**
+**Entradas obligatorias**
 
-- Temperatura del termo (°C o °F).
-- Potencia de la resistencia (W o kW).
-- Energía de la resistencia (kWh o Wh, con clase de estado `total_increasing` o `total`).
+- Temperatura del depósito: sonda en la parte alta (°C o °F).
+- Potencia del termo (W o kW).
+- Interruptor de alimentación del termo (debe estar siempre encendido).
+- Modo manual del regulador: interruptor que hace que caliente a plena
+  potencia (p. ej. el modo manual de FreeDS).
+- Precio de compra de la electricidad (p. ej. PVPC).
 
-**Entradas opcionales**
+**Entradas recomendadas y opcionales**
 
-- Previsión solar (Forecast.Solar o Solcast). En esta versión solo se guarda
-  la selección: la curva horaria de previsión (horizonte de 36 h) se leerá
-  cuando se implemente el planificador (fase 4).
-- Potencia de excedente solar actual.
-- Precio de la electricidad (por ejemplo, PVPC).
-- Interruptor de presencia o «casa activada»: si está apagado, TankWise pasa a
-  modo vacaciones.
-- Sonda de temperatura de la parte baja del termo.
-- Salida del regulador (%): salida del regulador que gobierna la resistencia,
-  por ejemplo la salida PWM de un derivador de excedentes. Si existe, es el
-  criterio principal para detectar el depósito lleno (el regulador pide
-  potencia y la resistencia no consume: el termostato está abierto).
+- Energía del termo (kWh o Wh, `total_increasing` o `total`). Recomendada;
+  sin ella se integra la potencia.
+- Salida del regulador (%), p. ej. la salida PWM de FreeDS.
+- Entidad que indica si el regulador es maestro del termo.
+- Casa ocupada.
+- Precio de inyección, energía importada y exportada, potencia exportada ahora.
+- Previsión solar (Forecast.Solar o Solcast).
+- Temperatura ambiente donde está el termo.
 
-**Opciones (parámetros del termo)**
+**Opciones (parámetros de la instalación)**
 
 | Parámetro | Valor por defecto |
 |-----------|-------------------|
 | Volumen | 100 L |
-| Potencia nominal | 1450 W |
-| Zona del agua de red | Islas Baleares |
-| Temperatura del agua de red | Valor mensual de la zona (se puede fijar a mano) |
-| Temperatura mínima útil (medida en la sonda) | 32 °C |
+| Potencia de calentamiento (valor inicial, después se aprende) | 1500 W |
+| Región del agua de red | Islas Baleares |
+| Temperatura ambiente sin sensor | 20 °C |
+| Temperatura de corte del termostato (valor inicial, después se aprende) | 68 °C |
 | Umbral de potencia de corte del termostato | 50 W |
-| Temperatura de corte del termostato (valor inicial, después se aprende) | 47 °C |
-| Energía por ducha | 1,8 kWh |
-| Nivel de confort | P90 |
 
-Las tablas de temperatura del agua de red (Islas Baleares, Península genérica
-e Islas Canarias) son medias mensuales aproximadas a partir de las tablas de
-referencia españolas para el dimensionado de agua caliente sanitaria.
+**Ajustes (entidades number)**
+
+| Entidad | Valor por defecto |
+|---------|-------------------|
+| Temperatura de ducha | 40 °C |
+| Temperatura mínima de confort | 38 °C |
+| Temperatura del agua de red | 0 = automática (tabla mensual de la región, interpolada día a día) |
+
+Las instalaciones que vienen de la 0.2 se migran solas y conservan lo
+aprendido. Un aviso de reparación pide completar las nuevas entradas
+obligatorias con **Reconfigurar**.
 
 ## Entidades
 
+Los `entity_id` se generan en inglés a partir del nombre de la instancia (por
+ejemplo `sensor.<nombre>_available_liters`) sea cual sea el idioma; los
+nombres visibles están traducidos.
+
 | Entidad | Descripción |
 |---------|-------------|
-| Energía útil | kWh almacenados por encima de la temperatura mínima útil |
-| Carga | Energía útil en porcentaje del depósito lleno |
-| Duchas disponibles | Energía útil dividida entre la energía por ducha (sin unidad; el atributo `energy_per_shower_kwh` muestra la energía por ducha usada) |
-| Estado del modelo | `calibrated` (calibrado), `learning` (aún aprendiendo las pérdidas) o `uncertain` (incierto: sin recalibrar desde el arranque o tras una interrupción larga) |
+| Energía almacenada | kWh almacenados por encima de la temperatura del agua de red |
+| Energía útil | kWh almacenados por encima de la temperatura mínima de confort |
+| Carga | Energía útil en porcentaje de un depósito lleno |
+| Agua caliente disponible | Litros disponibles a la temperatura de ducha |
+| Temperatura modelada | Temperatura equivalente del depósito según el modelo |
+| Estado del modelo | `calibrated`, `learning` o `uncertain` |
+| Última extracción | Inicio de la última extracción, con su energía, temperatura mínima y si hubo falta de agua |
+| Faltas de agua caliente (7 días) | Extracciones que dejaron el agua por debajo de la temperatura mínima de confort |
+| Coeficiente de pérdidas (diagnóstico) | UA aprendido, en W/K |
+| Potencia de calentamiento aprendida (diagnóstico) | Potencia media de la resistencia a plena potencia |
+| Temperatura de corte del termostato (diagnóstico) | Mediana de los últimos 20 cortes |
+| Factor de capacidad efectiva (diagnóstico) | Parte de la energía de calentamiento que ve la sonda |
+| Temperatura del agua de red (diagnóstico) | Valor en uso y su origen |
 
-El coeficiente de pérdidas aprendido, la temperatura de corte aprendida y los
-últimos consumos detectados están en los diagnósticos de la integración.
-
-Si un sensor obligatorio deja de estar disponible, el modelo se congela y las
-entidades pasan a no disponibles hasta que se recupere; no se inventan
-consumos.
-
-## Contrato de salida
-
-Estas son las entidades que deben usar otras integraciones (por ejemplo,
-SolarSplit) y las automatizaciones para cubrir la demanda del termo. Se crean
-en la fase 4 y forman un contrato estable y documentado: su significado y sus
-unidades no cambiarán sin una versión mayor.
-
-| Entidad | Tipo | Significado |
-|---------|------|-------------|
-| Energía necesaria | `sensor`, kWh | Energía que debe entrar en el termo antes del plazo |
-| Plazo | `sensor`, marca de tiempo | Plazo del siguiente objetivo |
-| Red permitida | `binary_sensor` | Si en este momento se permite calentar con red según el plan |
-| Potencia pedida | `sensor`, W | Potencia pedida ahora (`0` = solo excedente) |
-| Urgencia | `sensor`, enum | `none`, `planned` o `urgent` |
-
-TankWise dispara además un evento `tankwise_plan_updated` con el plan completo
-cada vez que cambia.
-
-Los `entity_id` **no** son fijos: salen del nombre que le des a la instancia
-de TankWise (por ejemplo, `sensor.<nombre>_energy_needed`) y se pueden
-renombrar en Home Assistant. Quien los use debe dejar que el usuario elija
-estas entidades (como hace SolarSplit en su config flow) en lugar de escribir
-los `entity_id` a mano.
+El diagnóstico incluye los parámetros aprendidos, el resultado de la
+importación del histórico y las últimas 50 extracciones.
 
 ## Cómo funciona el modelo del depósito
 
-- La sonda se filtra (mediana + media móvil) para que su oscilación de ±1 °C
-  no parezca ni un consumo ni un calentamiento. El calentamiento solo se toma
-  del contador de energía de la resistencia, nunca de la sonda.
-- El estado de carga sigue un balance de energía: entra la energía de la
-  resistencia y salen las pérdidas en reposo (que se aprenden despacio en los
-  periodos tranquilos, empezando en 0,25 °C/h) y los consumos detectados.
-- Un consumo es una caída sostenida de la sonda filtrada, también mientras
-  calienta.
-- El depósito se recalibra a «lleno» cuando corta el termostato: con sensor de
-  regulador, cuando el regulador pedía potencia (más del 10 %) en el instante
-  en que la resistencia dejó de consumir tras calentar de verdad, y la potencia
-  sigue baja 3 minutos, aunque el regulador se apague después. Ese instante se
-  toma de los cambios de estado, no solo de las lecturas cada 60 segundos; si
-  el regulador bajó justo antes de que cayera la potencia, no es un lleno. Sin
-  sensor de regulador, el calentamiento debe pararse cerca de la temperatura
-  de corte.
-- El estado se guarda y se restaura tras los reinicios. El calor que entró con
-  Home Assistant parado se toma del contador de energía; tras una interrupción
-  de más de 30 minutos el estado se marca como incierto hasta el siguiente
+- **Energía y litros.** `C = V · 0,001163` kWh/K. Energía almacenada
+  `E = C · (T − T_red)` y litros a la temperatura de ducha
+  `L = V · (T − T_red) / (T_ducha − T_red)`.
+- **Pérdidas.** `P = UA · (T − T_ambiente)`. UA se aprende por mínimos
+  cuadrados recursivos con la pendiente de la sonda en ventanas de reposo de
+  al menos dos horas (sin calentar ni extracciones), entre 0,3 y 3 W/K.
+- **Capacidad efectiva.** La sonda está arriba y no ve toda la energía. El
+  factor `k_cap` (0,9 al principio) se aprende comparando la energía de
+  calentamiento con la subida de la sonda en calentamientos sin extracciones.
+- **Potencia y termostato.** La potencia real de la resistencia se aprende del
+  sensor de potencia. Un corte del termostato se detecta cuando el regulador
+  pide potencia (modo manual encendido o PWM por encima del 10 %) y la
+  potencia se queda por debajo de 50 W durante 3 minutos; ese instante se toma
+  de los cambios de estado, así que una automatización que apague el modo
+  manual después no lo oculta.
+- **Extracciones.** Cada minuto se compara el cambio observado de la sonda
+  filtrada con el previsto. Una extracción empieza cuando el residuo acumulado
+  en 10 minutos baja de −1 °C y termina cuando se mantiene cerca de cero
+  durante 5 minutos. Su energía es `C · ΔT_residual / k_cap`.
+- **Importación del histórico.** En el primer arranque se reproducen los
+  últimos 10 días del recorder a través del modelo, así que pérdidas, cortes y
+  extracciones se conocen desde el primer día.
+- **Modo seguro.** Sin sonda o sin potencia el modelo se congela y los
+  sensores del depósito quedan no disponibles; no se inventa nada. Tras una
+  interrupción de más de 30 minutos el estado es incierto hasta el siguiente
   llenado.
 
 ## Desarrollo
 
 ```bash
-pip install -r requirements_test.txt
-pytest
+uv venv --python 3.14 .venv
+uv pip install --python .venv/bin/python -r requirements_test.txt
+.venv/bin/pytest
 ```
 
 Los modelos de `custom_components/tankwise/model/` son Python puro y no
-importan Home Assistant. El entorno de pruebas de Home Assistant no funciona en
-Windows, así que en Windows ejecuta solo los tests del modelo:
+importan Home Assistant.
+
+### Exportar el histórico para el banco de simulación
+
+`tools/export_history.py` descarga el histórico de las entradas mediante la
+API REST de Home Assistant a `tests/fixtures/` (excluido de git). La URL y un
+token de acceso de larga duración se leen de las variables de entorno
+`HA_URL` y `HA_TOKEN` o de un fichero `.env` (también excluido de git):
 
 ```bash
-pytest tests/model -p no:homeassistant
+export HA_URL=http://homeassistant.local:8123
+export HA_TOKEN=...
+python tools/export_history.py --start 2026-11-07 --end 2026-11-20 \
+  --entity temperature=sensor.mi_termo_temperatura \
+  --entity power=sensor.mi_termo_potencia
 ```
 
-La batería completa se ejecuta en GitHub Actions.
+`python tools/export_history.py --help` muestra todos los roles.
 
 ## Licencia
 

@@ -7,8 +7,10 @@ from typing import Any
 
 from homeassistant.core import HomeAssistant
 
+from .const import CONF_AMBIENT_TEMPERATURE
 from .coordinator import TankWiseConfigEntry
-from .model.tank import AMBIENT_TEMPERATURE, WATER_HEAT_CAPACITY_KWH_PER_L_K
+
+DIAGNOSTIC_CONSUMPTIONS = 50
 
 
 async def async_get_config_entry_diagnostics(
@@ -19,26 +21,32 @@ async def async_get_config_entry_diagnostics(
     data = coordinator.data
     tank = data.tank
     params = coordinator.tank_params
-    loss_power_w = None
-    if tank.equivalent_temperature is not None:
-        loss_power_w = (
-            tank.loss_coefficient
-            * params.volume_l
-            * WATER_HEAT_CAPACITY_KWH_PER_L_K
-            * 1000
-            * (tank.equivalent_temperature - AMBIENT_TEMPERATURE)
-        )
+    ambient = data.readings.ambient_temperature
+    if ambient is None:
+        ambient = float(coordinator.parameters[CONF_AMBIENT_TEMPERATURE])
+    model = coordinator.model.as_dict()
+    consumptions = model.pop("consumptions")
+    tank_state = asdict(tank)
+    tank_state.pop("last_consumption")
     return {
         "entry": {"data": dict(entry.data), "options": dict(entry.options)},
         "parameters": asdict(params),
+        "settings": dict(coordinator.settings),
         "readings": asdict(data.readings),
-        "tank": asdict(tank),
-        "losses": {
-            "coefficient_per_hour": tank.loss_coefficient,
-            "rate_c_per_hour_at_46c": tank.loss_rate,
-            "power_w_now": loss_power_w,
-            "learning_windows": tank.loss_windows,
-            "ambient_temperature": AMBIENT_TEMPERATURE,
+        "tank": tank_state,
+        "learned": {
+            "ua_w_per_k": tank.ua_w_per_k,
+            "loss_power_w_now": tank.loss_power_w(ambient),
+            "loss_windows": tank.loss_windows,
+            "capacity_factor": tank.capacity_factor,
+            "capacity_samples": tank.capacity_samples,
+            "heater_power_w": tank.heater_power_w,
+            "cutoff_temperature": tank.cutoff_temperature,
+            "cutoff_samples": list(tank.cutoff_samples),
+            "mains_source": data.mains_source,
         },
-        "model": coordinator.model.as_dict(),
+        "bootstrap": coordinator.bootstrap.as_dict(),
+        "model": model,
+        "consumptions": consumptions[-DIAGNOSTIC_CONSUMPTIONS:],
+        "shortages_7d": data.shortages_7d,
     }

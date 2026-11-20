@@ -1,14 +1,20 @@
 {
   "entity": {
     "sensor": {
+      "stored_energy": {
+        "default": "mdi:water-boiler"
+      },
       "useful_energy": {
         "default": "mdi:water-boiler"
       },
       "charge": {
         "default": "mdi:water-percent"
       },
-      "showers_available": {
+      "available_liters": {
         "default": "mdi:shower-head"
+      },
+      "tank_temperature": {
+        "default": "mdi:thermometer-water"
       },
       "model_status": {
         "default": "mdi:check-circle-outline",
@@ -16,6 +22,38 @@
           "uncertain": "mdi:help-circle-outline",
           "learning": "mdi:school-outline"
         }
+      },
+      "last_draw": {
+        "default": "mdi:water-pump"
+      },
+      "water_shortages_7d": {
+        "default": "mdi:water-alert"
+      },
+      "heat_loss_coefficient": {
+        "default": "mdi:thermometer-minus"
+      },
+      "heater_power": {
+        "default": "mdi:heating-coil"
+      },
+      "cutoff_temperature": {
+        "default": "mdi:thermostat"
+      },
+      "capacity_factor": {
+        "default": "mdi:gauge"
+      },
+      "mains_water_temperature": {
+        "default": "mdi:water-thermometer"
+      }
+    },
+    "number": {
+      "shower_temperature": {
+        "default": "mdi:shower"
+      },
+      "comfort_min_temperature": {
+        "default": "mdi:thermometer-low"
+      },
+      "mains_water_temperature": {
+        "default": "mdi:water-thermometer-outline"
       }
     }
   }

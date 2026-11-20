@@ -9,29 +9,27 @@
 
 *[Leer en español](README.es.md)*
 
-TankWise is a Home Assistant integration that continuously models an electric
-storage water heater and the household's hot water usage. It publishes **how
-much energy the tank needs and by when**, so there is always hot water when it
-is going to be used, at the lowest grid cost.
-
-**TankWise never controls any device.** It does not switch relays or change
-the mode of a solar diverter. It only publishes the demand; another
-integration or your own automations decide how to fulfil it.
+TankWise is a Home Assistant integration that takes full control of an
+electric storage water heater driven by a power regulator (for example a
+FreeDS PWM diverter). It decides **when and how much to heat** so there is
+always hot water when the household needs it, at the lowest cost (PVPC
+purchase price plus the value of the solar surplus).
 
 ## Project status
 
-> **Early development (0.2.3, phase 2).** TankWise models the tank and
-> publishes its state of charge. Usage learning and the heating plan (the
-> output for other integrations) are not available yet.
+> **Development (0.3.0, phase 1 of 7).** TankWise learns how the tank
+> behaves and detects every hot water draw, but **it does not control any
+> device yet**. Keep your current automations until phase 4.
 
 | Phase | Content | Status |
 |-------|---------|--------|
-| 1 | Skeleton, config flow, sensor reading | ✅ Done |
-| 2 | Tank model (state of charge, recalibration, loss learning) | ✅ Done |
-| 3 | Usage detection and learned profile | Planned |
-| 4 | Planner and output contract | Planned |
-| 5 | Boost button, comfort selector, holiday mode, diagnostics | Planned |
-| 6 | Full documentation and first stable release | Planned |
+| 1 | Thermal model, draw detection, history import, sensors (no control) | ✅ Done |
+| 2 | Demand profile and forecast | Planned |
+| 3 | Prices, surplus value and optimiser; shadow mode with the plan | Planned |
+| 4 | Controller, safeties and degraded mode; automatic mode | Planned |
+| 5 | Boost with a blueprint for external push buttons | Planned |
+| 6 | Solar forecast, SolarSplit coordination and anti-legionella cycle | Planned |
+| 7 | Migration from automations and full documentation | Planned |
 
 ## Installation
 
@@ -42,121 +40,131 @@ integration or your own automations decide how to fulfil it.
 
 ## Configuration
 
-Everything is configured from the UI; nothing goes into `configuration.yaml`.
+Everything is configured from the UI; nothing goes into `configuration.yaml`
+and no entity ID is fixed in the code.
 
-**Required sensors**
+**Required inputs**
 
-- Tank temperature (°C or °F).
-- Heating element power (W or kW).
-- Heating element energy (kWh or Wh, state class `total_increasing` or `total`).
+- Tank temperature: probe in the upper part of the tank (°C or °F).
+- Water heater power (W or kW).
+- Water heater power switch (it must always stay on).
+- Regulator manual mode: switch that makes the regulator heat at full power
+  (e.g. the FreeDS manual mode).
+- Electricity purchase price (e.g. PVPC).
 
-**Optional inputs**
+**Recommended and optional inputs**
 
-- Solar forecast (Forecast.Solar or Solcast). In this version the selection
-  is only stored: the hourly forecast curve (36 h horizon) will be read when
-  the planner is implemented (phase 4).
-- Current solar surplus power.
-- Electricity price (e.g. PVPC).
-- Presence / "home active" switch: when off, TankWise enters holiday mode.
-- Bottom tank temperature probe.
-- Regulator output (%): output of the regulator that drives the heating
-  element, e.g. the PWM output of a solar diverter. When available, it is the
-  main criterion to detect a full tank (the regulator asks for power, the
-  element draws none: the thermostat is open).
+- Water heater energy (kWh or Wh, `total_increasing` or `total`).
+  Recommended; without it the power is integrated.
+- Regulator output (%), e.g. the FreeDS PWM output.
+- Entity that tells whether the regulator is master of the water heater.
+- Home occupied.
+- Grid injection price, grid import and export energy, current export power.
+- Solar forecast (Forecast.Solar or Solcast).
+- Ambient temperature where the tank is.
 
-**Options (tank parameters)**
+**Options (installation parameters)**
 
 | Parameter | Default |
 |-----------|---------|
 | Volume | 100 L |
-| Rated heating power | 1450 W |
+| Heating power (initial value, then learned) | 1500 W |
 | Mains water region | Balearic Islands |
-| Mains water temperature | Monthly value of the region (optional override) |
-| Minimum useful temperature (measured at the probe) | 32 °C |
+| Ambient temperature without sensor | 20 °C |
+| Thermostat cut-off temperature (initial value, then learned) | 68 °C |
 | Thermostat cut-off power threshold | 50 W |
-| Thermostat cut-off temperature (initial value, then learned) | 47 °C |
-| Energy per shower | 1.8 kWh |
-| Comfort level | P90 |
 
-The mains water temperature tables (Balearic Islands, generic mainland Spain,
-Canary Islands) are monthly averages approximated from the Spanish reference
-tables for domestic hot water sizing.
+**Settings (number entities)**
+
+| Entity | Default |
+|--------|---------|
+| Shower temperature | 40 °C |
+| Minimum comfort temperature | 38 °C |
+| Mains water temperature | 0 = automatic (monthly table of the region, interpolated day by day) |
+
+Entities that come from a 0.2 installation are migrated automatically and
+keep what was learned. A repair issue asks you to complete the new required
+inputs with **Reconfigure**.
 
 ## Entities
 
+Entity IDs are generated in English from the name of the instance (for
+example `sensor.<name>_available_liters`) whatever the language; visible names
+are translated.
+
 | Entity | Description |
 |--------|-------------|
-| Useful energy | kWh stored above the minimum useful temperature |
+| Stored energy | kWh stored above the mains water temperature |
+| Useful energy | kWh stored above the minimum comfort temperature |
 | Charge | Useful energy as a percentage of a full tank |
-| Showers available | Useful energy divided by the energy per shower (no unit; attribute `energy_per_shower_kwh` shows the energy per shower used) |
-| Model status | `calibrated`, `learning` (heat losses still being learned) or `uncertain` (not recalibrated since start-up or since a long outage) |
+| Hot water available | Litres available at the shower temperature |
+| Modelled temperature | Equivalent tank temperature tracked by the model |
+| Model status | `calibrated`, `learning` or `uncertain` |
+| Last draw | Start of the last hot water draw, with its energy, minimum temperature and whether there was a shortage |
+| Hot water shortages (7 days) | Draws that left the water below the minimum comfort temperature |
+| Heat loss coefficient (diagnostic) | Learned UA, in W/K |
+| Learned heating power (diagnostic) | Mean power of the heating element at full output |
+| Thermostat cut-off temperature (diagnostic) | Median of the last 20 cut-offs |
+| Effective capacity factor (diagnostic) | Share of the heating energy seen by the probe |
+| Mains water temperature (diagnostic) | Value in use and its source |
 
-The learned heat loss coefficient, the learned cut-off temperature and the
-recent hot water draws are available in the integration diagnostics.
-
-If a required sensor becomes unavailable, the model freezes and the entities
-become unavailable until it recovers; no draws are invented.
-
-## Output contract
-
-These are the entities other integrations (for example SolarSplit) and
-automations should use to fulfil the tank's demand. They are created in
-phase 4 and form a stable, documented contract: their meaning and units will
-not change without a major version.
-
-| Entity | Type | Meaning |
-|--------|------|---------|
-| Energy needed | `sensor`, kWh | Energy that must enter the tank before the deadline |
-| Deadline | `sensor`, timestamp | Deadline of the next target |
-| Grid allowed | `binary_sensor` | Whether heating from the grid is allowed right now according to the plan |
-| Requested power | `sensor`, W | Power requested now (`0` = surplus only) |
-| Urgency | `sensor`, enum | `none`, `planned` or `urgent` |
-
-TankWise also fires a `tankwise_plan_updated` event with the full plan every
-time it changes.
-
-Entity IDs are **not** fixed: they derive from the name you give the
-TankWise instance (for example `sensor.<name>_energy_needed`) and can be
-renamed in Home Assistant. Consumers must let the user pick these entities
-(as SolarSplit does in its config flow) instead of hard-coding entity IDs.
+The diagnostics include the learned parameters, the history import result
+and the last 50 draws.
 
 ## How the tank model works
 
-- The probe is filtered (median + moving average) so its ±1 °C jitter looks
-  neither like a draw nor like heating. Heating is only taken from the heating
-  element energy meter, never from the probe.
-- The state of charge follows an energy balance: heater energy in, standing
-  losses (learned slowly during quiet periods, starting at 0.25 °C/h) and
-  detected draws out.
-- A draw is a sustained drop of the filtered probe, also while heating.
-- The tank is recalibrated to "full" when the thermostat cuts off: with a
-  regulator sensor, when the regulator was asking for power (> 10 %) at the
-  instant the element stopped drawing it after real heating, and the power
-  stays low for 3 minutes, even if the regulator is switched off afterwards.
-  That instant is taken from state changes, not only from the 60-second
-  samples; if the regulator was lowered just before the power fell, it is not
-  a full tank. Without a regulator sensor, heating must stop close to the
-  cut-off temperature.
-- The state is saved and restored across restarts. Heat added while Home
-  Assistant was down is taken from the energy meter; after an outage longer
-  than 30 minutes the state is marked uncertain until the next full tank.
+- **Energy and litres.** `C = V · 0.001163` kWh/K. Stored energy
+  `E = C · (T − T_mains)` and litres at the shower temperature
+  `L = V · (T − T_mains) / (T_shower − T_mains)`.
+- **Losses.** `P = UA · (T − T_ambient)`. UA is learned by recursive least
+  squares from the slope of the probe over rest windows of at least two hours
+  (no heating, no draws), within 0.3–3 W/K.
+- **Effective capacity.** The probe is at the top of the tank, so it does not
+  see all the energy. The factor `k_cap` (initially 0.9) is learned by
+  comparing the heating energy with the probe rise in heatings without draws.
+- **Heating power and thermostat.** The full heater power is learned from the
+  power sensor. A thermostat cut-off is detected when the regulator asks for
+  power (manual mode on, or PWM output above 10 %) and the power stays below
+  50 W for 3 minutes; that instant is captured from state changes, so an
+  automation that switches the manual mode off afterwards does not hide it.
+- **Draws.** Every minute the observed change of the filtered probe is
+  compared with the predicted one. A draw starts when the residual
+  accumulated over 10 minutes falls below −1 °C and ends when it stays close to
+  zero for 5 minutes. Its energy is `C · ΔT_residual / k_cap`.
+- **History import.** On the first start the last 10 days of the recorder are
+  replayed through the model, so losses, cut-offs and draws are known from
+  day one.
+- **Safe mode.** Without the probe or the power, the model freezes and the
+  tank sensors become unavailable; nothing is invented. After an outage longer
+  than 30 minutes the state is uncertain until the next full tank.
 
 ## Development
 
 ```bash
-pip install -r requirements_test.txt
-pytest
+uv venv --python 3.14 .venv
+uv pip install --python .venv/bin/python -r requirements_test.txt
+.venv/bin/pytest
 ```
 
 The models in `custom_components/tankwise/model/` are pure Python and do not
-import Home Assistant. Home Assistant's test harness does not run on Windows,
-so on Windows run only the model tests:
+import Home Assistant.
+
+### Exporting history for the simulation bench
+
+`tools/export_history.py` downloads the history of the inputs through the Home
+Assistant REST API into `tests/fixtures/` (ignored by git). The URL and a
+long-lived access token are read from the `HA_URL` and `HA_TOKEN` environment
+variables or from a `.env` file (also ignored by git):
 
 ```bash
-pytest tests/model -p no:homeassistant
+export HA_URL=http://homeassistant.local:8123
+export HA_TOKEN=...
+python tools/export_history.py --start 2026-11-07 --end 2026-11-20 \
+  --entity temperature=sensor.my_tank_temperature \
+  --entity power=sensor.my_tank_power
 ```
 
-The full suite runs in GitHub Actions.
+Run `python tools/export_history.py --help` for all the roles.
 
 ## License
 
