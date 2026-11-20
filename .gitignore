@@ -34,3 +34,9 @@ coverage.xml
 *.swp
 .DS_Store
 Thumbs.db
+
+# Home Assistant credentials and exported history (personal data)
+.env
+.env.*
+tests/fixtures/history_*/
+tests/fixtures/*.csv
