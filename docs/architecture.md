@@ -83,7 +83,8 @@ non-working days) the last N days are kept with a three-week half-life.
 Quantiles are taken on the **cumulative curve** of each day, never slot by
 slot: the P90 of a window is the P90 of the energy drawn in that window across
 the past days. A per-slot P90 would put a shower in every slot where there ever
-was one. Shortages raise the forecast around their time for two weeks.
+was one. Shortages raise the forecast around their time by up to 20 %, fading
+out over two weeks; several shortages at the same time do not compound.
 
 **Appointments** are hard constraints: at the start of the block, the useful
 litres must cover the larger of the appointment minimum and the P90 of the
@@ -98,7 +99,9 @@ litres used in the whole block, without reheating inside it.
 - **Expected surplus** = production forecast − house consumption of each hour.
   The latter is learned per hour of the day as
   `forecast − (exported + heater energy from the surplus)`, which also absorbs
-  the bias of the forecast. Several forecasts are summed.
+  the bias of the forecast. Several forecasts are summed. Forecasts usually
+  cover today and tomorrow: later days of the horizon repeat the last
+  forecast day until the real forecast arrives.
 
 ## Optimiser
 
@@ -110,14 +113,18 @@ Dynamic programming over 144 slots of 15 minutes:
   power) and whether to take the expected surplus or let it go to the grid.
 - **Transition**: `E' = E + k_cap · (grid + solar − demand) − losses(E)`.
 - **Cost**: `grid · purchase price + solar · surplus value`, plus the energy
-  left at the end valued at the median night price, so the plan does not
-  empty the tank at the end of the horizon. Letting the surplus go costs a
+  left at the end valued at the median night price (never above the cheapest
+  price of the last 24 hours), so the plan neither empties the tank at the
+  end of the horizon nor buys energy only to leave it there. Letting the surplus go costs a
   small risk margin per kWh: selling must clearly pay.
 - **Comfort** (soft, large penalty per kWh missing): outside blocks each slot
-  with demand must be covered plus a reserve; at the start of a block, its
+  with demand must be covered plus a reserve, unless the demand until a
+  cheaper slot (or one with surplus) is below the reserve: a stray small draw
+  does not justify an expensive heating; at the start of a block, its
   requirement; inside a block only the rescue recharge (the energy missing
   for the demand left in the block) may heat, never after it. Any shortfall
-  flags the plan at risk.
+  flags the plan at risk; each run of slots with shortfall is reported with
+  its kind (`appointment` or `demand`).
 - **Anti-legionella**: optionally a target temperature at one slot, chosen
   after the cheapest hour to heat (surplus first) before the weekly deadline.
 - **Runs**: grid heating runs of more than two hours (counting the heating

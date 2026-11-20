@@ -63,6 +63,10 @@ def parse_hourly_prices(attributes: Mapping[str, Any], today: date) -> DayPrices
     return DayPrices({day: tuple(hours) for day, hours in days.items()})
 
 
+# The terminal value is capped by the cheapest price of the last 24 hours.
+TERMINAL_WINDOW_SLOTS = 96
+
+
 @dataclass(frozen=True, slots=True)
 class SlotPrices:
     """Purchase price and surplus value of each slot of a horizon."""
@@ -73,13 +77,21 @@ class SlotPrices:
     tomorrow_known: bool
 
     def terminal_value(self) -> float:
-        """Value of the energy left at the end: median night purchase price."""
+        """Value of the energy left at the end of the horizon.
+
+        The median night purchase price, but never more than the cheapest
+        price of the last day of the horizon: otherwise the plan would buy
+        energy near the end only to leave it in the tank (the energy can be
+        bought at that price after the horizon too).
+        """
         night = [
             price
             for index, price in enumerate(self.buy)
             if (self.start + timedelta(minutes=15 * index)).hour < 6
         ]
-        return median(night) if night else median(self.buy)
+        value = median(night) if night else median(self.buy)
+        last_day = self.buy[-TERMINAL_WINDOW_SLOTS:]
+        return min(value, min(last_day)) if last_day else value
 
 
 def slot_prices(

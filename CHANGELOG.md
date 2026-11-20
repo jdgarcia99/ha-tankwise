@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-11-20
+
+### Fixed
+
+- The history import after an upgrade did not start: while Home Assistant
+  was starting it failed (`async_at_started` called on the wrong object).
+  It also gave up after 30 minutes waiting for the probe and the power; it
+  now keeps waiting until they report values.
+- Shortage uplifts compounded: several shortages around the same hour
+  multiplied the forecast by 1.2 each (×1.5 and more for a usual evening),
+  so an appointment block could ask for 83 °C. The uplift is now at most
+  ×1.2 per slot, and `required_temperature` / `suggested_liters` of an
+  appointment use it too, so they agree with the plan.
+- A stray small draw (e.g. a 5 L tap at 23:30 at P90) plus the reserve made
+  the plan heat at an expensive hour with the tank below comfort. The demand
+  of a slot and the reserve are now required only when the demand expected
+  until a cheaper slot (or one with surplus) reaches the reserve.
+- The plan bought energy at the end of the horizon to leave it in the tank:
+  the energy left at the end was valued above the prices of the last day.
+  It is now valued at most at the cheapest price of the last 24 hours.
+- The day after tomorrow had no sun at all (forecasts cover two days), so the
+  plan heated from the grid at the end of the horizon on sunny days. Days
+  beyond the forecast now repeat its last day until the real one arrives.
+
+### Added
+
+- `risks` attribute of the plan sensor (also in `tankwise.get_plan` and the
+  diagnostics): each run of slots where the plan cannot keep the comfort
+  limits, with its start and end, kind (`appointment` or `demand`), the
+  appointment and the litres missing. A plan at risk with all its blocks
+  fine is explained by a `demand` risk.
+
 ## [0.10.0] - 2026-11-20
 
 Seventh phase: migration from automations and full documentation.
@@ -490,7 +522,8 @@ and the heating plan will follow.
 - The output contract entities (energy needed, deadline, grid allowed,
   requested power and urgency) arrive in a later release.
 
-[Unreleased]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.10.1...HEAD
+[0.10.1]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.7.0...v0.8.0

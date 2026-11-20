@@ -113,8 +113,8 @@ Each appointment gets entities to adjust it from a dashboard (changes are
 saved in the options): `time.<name>_<appointment>_time`,
 `number.<name>_<appointment>_liters` and `switch.<name>_<appointment>_enabled`.
 The sensor `sensor.<name>_<appointment>_suggested_liters` shows the litres
-actually used during the block (P90 of the last four weeks)
-to help choosing the minimum, and `sensor.<name>_<appointment>_required_temperature`
+actually used during the block (P90 of the last four weeks, raised like the
+plan after recent shortages) to help choosing the minimum, and `sensor.<name>_<appointment>_required_temperature`
 the tank temperature needed when the block starts. If that temperature is
 above the learned thermostat cut-off, `binary_sensor.tankwise_plan_at_risk`
 turns on: even a full tank does not cover the block. From phase 3 the planner
@@ -155,8 +155,12 @@ the cheapest heating plan for the next 36 hours: how much grid energy to put
 in each slot and whether to take the solar surplus or let it go to the grid
 (when the injection price pays more than heating at night costs). Every
 appointment must start with enough useful litres for its whole block; the
-rest of the demand is covered slot by slot plus a reserve. Grid heating runs
-last two hours at most.
+rest of the demand is covered slot by slot plus a reserve. A small stray draw
+(less than the reserve before a cheaper hour, such as a late tap at night)
+does not make the plan heat at an expensive hour. Grid heating runs last two
+hours at most. When the plan is at risk, the `risks` attribute of
+`sensor.tankwise_plan` says where (start, end), why (`appointment` or
+`demand`) and how many litres are missing.
 
 **Rescue recharge** (option, on by default): if an appointment block needs
 more than a full tank, the tank is filled before the block and, inside the

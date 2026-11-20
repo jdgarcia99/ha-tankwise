@@ -13,6 +13,7 @@ from tankwise_model.demand import (
     DemandModel,
     DemandParams,
     DemandStatus,
+    ShortageMark,
     day_type,
     spread_draws,
     weighted_quantile,
@@ -235,8 +236,26 @@ def test_shortage_raises_the_forecast_and_fades_out() -> None:
 
     later = now + timedelta(days=15)
     faded = model.forecast(later, PARAMS, hours=24)
-    assert model._slot_factors(later) == [1.0] * SLOTS_PER_DAY
+    assert model.slot_factors(later) == [1.0] * SLOTS_PER_DAY
     assert faded.total() >= 0
+
+
+def test_shortages_at_the_same_time_do_not_compound() -> None:
+    """0.10.0: 12 shortages around 18:00 raised the evening block by 1.5x."""
+    model, now = _trained(days=14)
+    day = (now + timedelta(days=1)).date()
+    before = model.forecast(_at(day, 0), PARAMS, hours=24).window(
+        _at(day, 6), _at(day, 7), 0.5
+    )
+    for days_ago in range(4):
+        moment = _at(now.date() - timedelta(days=days_ago), 6, 30 + 5 * days_ago)
+        model.add_mark(ShortageMark(moment, moment + timedelta(minutes=15)))
+    factors = model.slot_factors(now)
+    assert max(factors) <= 1.2
+    after = model.forecast(_at(day, 0), PARAMS, hours=24).window(
+        _at(day, 6), _at(day, 7), 0.5
+    )
+    assert after <= before * 1.2 + 1e-9
 
 
 def test_day_types_with_workday_sensor() -> None:

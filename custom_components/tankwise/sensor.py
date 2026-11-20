@@ -27,6 +27,7 @@ from homeassistant.util import dt as dt_util
 
 from .const import CONF_AMBIENT_TEMPERATURE
 from .coordinator import TankWiseConfigEntry, TankWiseCoordinator, TankWiseData
+from .diagnostics import risk_report
 from .entity import AppointmentEntity, TankWiseEntity
 from .model.demand import day_type
 from .model.tank import ModelStatus
@@ -132,6 +133,7 @@ def _plan_attributes(coordinator: TankWiseCoordinator) -> dict[str, Any]:
         "rescue_kwh": round(plan.rescue_kwh, 3),
         "rescue_cost": round(plan.rescue_cost, 3),
         "at_risk": plan.at_risk,
+        "risks": risk_report(coordinator, plan),
         # Compact summary; the slot by slot plan is in the diagnostics and
         # the tankwise.get_plan service (too big for a state attribute).
         "end": plan.slots[-1].start.isoformat() if plan.slots else None,
@@ -466,7 +468,7 @@ class TankWiseSensor(TankWiseEntity, SensorEntity):
     _platform = "sensor"
     # Home Assistant reads this at class creation: it cannot be per instance.
     # The demand forecast lists its slots; the recorder keeps the totals.
-    _unrecorded_attributes = frozenset({"slots", "heatings", "blocks"})
+    _unrecorded_attributes = frozenset({"slots", "heatings", "blocks", "risks"})
 
     entity_description: TankWiseSensorDescription
 

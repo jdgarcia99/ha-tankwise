@@ -10,7 +10,8 @@ from typing import Any
 from unittest.mock import patch
 
 from freezegun.api import FrozenDateTimeFactory
-from homeassistant.core import HomeAssistant
+from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
+from homeassistant.core import CoreState, HomeAssistant
 from homeassistant.util import dt as dt_util
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -301,6 +302,38 @@ async def test_import_waits_for_inputs_that_appear_late(
     assert coordinator.bootstrap.status is BootstrapStatus.DONE
     assert coordinator.bootstrap.version == BOOTSTRAP_VERSION
     assert coordinator.bootstrap.calibrations == 1
+    _assert_learning_kept(coordinator)
+
+
+async def test_import_waits_for_home_assistant_to_start(
+    hass: HomeAssistant,
+    mock_entry: MockConfigEntry,
+    freezer: FrozenDateTimeFactory,
+    hass_storage: dict[str, Any],
+) -> None:
+    """0.10.0 bug: the upgrade import failed while Home Assistant was starting."""
+    await _record_history(hass, freezer)
+    hass_storage[f"{DOMAIN}.{mock_entry.entry_id}"] = _store_0_5(mock_entry)
+    for entity_id in (TEMPERATURE, POWER, ENERGY):
+        hass.states.async_remove(entity_id)
+    hass.set_state(CoreState.not_running)
+    mock_entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(mock_entry.entry_id)
+    await hass.async_block_till_done()
+
+    coordinator = mock_entry.runtime_data
+    assert coordinator.bootstrap.version == 2  # waiting for the start
+    hass.set_state(CoreState.running)
+    hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)
+    await hass.async_block_till_done()
+    assert coordinator.bootstrap.version == 2  # waiting for the inputs
+
+    freezer.tick(timedelta(minutes=45))  # past the warning: still waiting
+    await asyncio.sleep(0)
+    set_input_states(hass, temperature="50.0")
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert coordinator.bootstrap.status is BootstrapStatus.DONE
+    assert coordinator.bootstrap.version == BOOTSTRAP_VERSION
     _assert_learning_kept(coordinator)
 
 

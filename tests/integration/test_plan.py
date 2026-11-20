@@ -107,6 +107,7 @@ async def test_plan_in_shadow_mode(
         dt_util.parse_datetime(plan.attributes["heatings"][0]["start"])
     ).hour in (14, 15)
     assert plan.attributes["at_risk"] is False
+    assert plan.attributes["risks"] == []
 
     next_heating = hass.states.get(NEXT)
     start = dt_util.parse_datetime(next_heating.state)
@@ -223,12 +224,12 @@ async def test_real_cost_from_grid_and_surplus(
 async def test_planned_cost_is_committed_slot_by_slot(
     hass: HomeAssistant, mock_entry: MockConfigEntry, freezer: FrozenDateTimeFactory
 ) -> None:
-    """At 14:00 the plan heats: its slot cost becomes the planned cost."""
-    freezer.move_to("2026-11-18 13:58:00+01:00")
+    """At 14:30 the plan heats: its slot cost becomes the planned cost."""
+    freezer.move_to("2026-11-18 14:28:00+01:00")
     await _setup(hass, mock_entry, temperature="40.0")
     for _ in range(4):
         await _tick(hass, freezer)
-    # The coordinator jitters its refreshes: make sure one ran after 14:00.
+    # The coordinator jitters its refreshes: make sure one ran after 14:30.
     await mock_entry.runtime_data.async_refresh()
     await hass.async_block_till_done()
     slot = mock_entry.runtime_data.planner.current_slot(dt_util.utcnow())

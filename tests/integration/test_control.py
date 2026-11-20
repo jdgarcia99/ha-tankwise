@@ -147,8 +147,11 @@ async def test_auto_mode_heats_in_the_planned_slot(
     switch_calls: list,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Cheap at 14:00, appointment at 17:00: the regulator goes to manual."""
-    freezer.move_to("2026-11-18 14:01:00+01:00")
+    """Cheap 14:00-16:00, appointment at 17:00: the regulator goes to manual.
+
+    The plan heats as late as the cheap hours allow (less losses): 14:30.
+    """
+    freezer.move_to("2026-11-18 14:31:00+01:00")
     await _setup(hass, mock_entry, switch_calls)
     assert _orders(switch_calls) == [(MANUAL, "turn_on")]
     assert "Heating from the grid until" in caplog.text
@@ -174,7 +177,7 @@ async def test_shadow_mode_does_not_act(
     freezer: FrozenDateTimeFactory,
     switch_calls: list,
 ) -> None:
-    freezer.move_to("2026-11-18 14:01:00+01:00")
+    freezer.move_to("2026-11-18 14:31:00+01:00")
     await _setup(hass, mock_entry, switch_calls, mode=Mode.SHADOW)
     await _minute(hass, mock_entry, freezer)
     assert hass.states.get("binary_sensor.tankwise_planned_grid_heating").state == "on"
@@ -262,7 +265,7 @@ async def test_regulator_lost_while_heating(
     switch_calls: list,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    freezer.move_to("2026-11-18 14:01:00+01:00")
+    freezer.move_to("2026-11-18 14:31:00+01:00")
     await _setup(hass, mock_entry, switch_calls)
     assert _orders(switch_calls) == [(MANUAL, "turn_on")]
     events = async_capture_events(hass, EVENT_PLAN_AT_RISK)

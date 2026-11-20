@@ -304,3 +304,82 @@ def test_heating_already_done_counts_for_the_two_hour_limit() -> None:
             break
         run += 1
     assert run <= 2
+
+
+# ---------------------------------------------------------------------------
+# 0.10.1: stray small draws and the reasons of a risk
+# ---------------------------------------------------------------------------
+
+RESERVE_KWH = 0.3  # about 10 litres
+
+
+def test_stray_small_draw_does_not_heat_at_an_expensive_hour() -> None:
+    """23:15 at 37 °C, 5 L of P90 demand at 23:30, cheaper from 00:00."""
+    start = datetime(2026, 11, 20, 23, 15, tzinfo=TZ)
+    demand = [0.0] * SLOTS
+    demand[1], demand[2] = 0.136, 0.022  # 23:30, 23:45
+    buy = [0.26] * 3 + [0.12] * (SLOTS - 3)
+    plan = optimise(
+        _input(
+            start=start,
+            initial_temperature=37.3,
+            buy=buy,
+            demand_kwh=demand,
+            reserve_kwh=RESERVE_KWH,
+        )
+    )
+    assert _grid_between(plan, 0, 3) == 0  # nothing at 0.26 €/kWh
+    assert not plan.at_risk
+    assert plan.risks() == []
+
+
+def test_real_draw_before_the_cheap_hours_keeps_the_reserve() -> None:
+    """The same expensive hour, but a shower (1.2 kWh) before it gets cheaper."""
+    start = datetime(2026, 11, 20, 23, 15, tzinfo=TZ)
+    demand = [0.0] * SLOTS
+    demand[2], demand[3] = 0.6, 0.6  # 23:45, 00:00
+    buy = [0.26] * 6 + [0.12] * (SLOTS - 6)
+    plan = optimise(
+        _input(
+            start=start,
+            initial_temperature=37.3,
+            buy=buy,
+            demand_kwh=demand,
+            reserve_kwh=RESERVE_KWH,
+        )
+    )
+    assert _grid_between(plan, 0, 2) > 0
+
+
+def test_risk_outside_a_block_is_explained() -> None:
+    """Plan at risk with its blocks fine: the reason says where and why."""
+    demand = [0.0] * SLOTS
+    demand[_slot(0, 15)] = 1.5  # a big draw right away: impossible to cover
+    plan = optimise(
+        _input(
+            initial_temperature=38.0,
+            demand_kwh=demand,
+            blocks=[Block("b", "Tarde", _slot(17), _slot(20), 0.5, 1.0)],
+        )
+    )
+    assert plan.at_risk
+    assert not any(block.at_risk for block in plan.blocks)
+    risks = plan.risks()
+    assert [risk.kind for risk in risks] == ["demand"]
+    assert risks[0].start == plan.slots[_slot(0, 15)].start
+    assert risks[0].block is None
+    assert risks[0].shortfall_kwh > 0.05
+
+
+def test_risk_inside_a_block_names_the_appointment() -> None:
+    plan = optimise(
+        _input(
+            demand_kwh=[0.0] * SLOTS,
+            blocks=[Block("b", "Tarde", _slot(18), _slot(21), 9.0, 9.0)],
+            rescue=False,
+        )
+    )
+    risks = plan.risks()
+    assert plan.at_risk and risks
+    assert {risk.kind for risk in risks} == {"appointment"}
+    assert risks[0].block == "Tarde"

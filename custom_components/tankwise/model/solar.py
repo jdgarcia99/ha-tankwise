@@ -206,6 +206,35 @@ def sum_forecasts(
     return total
 
 
+def extend_forecast(
+    forecast: Mapping[datetime, float], until: datetime
+) -> dict[datetime, float]:
+    """Repeat the last forecast day for the later days until ``until``.
+
+    Forecasts usually cover today and tomorrow while the plan looks 36 hours
+    ahead: without this, the day after tomorrow would have no sun at all and
+    the plan would heat from the grid at its end. Like missing prices, a
+    missing day repeats the last known one; the plan is computed again when
+    the real forecast arrives.
+    """
+    result = dict(forecast)
+    if not forecast:
+        return result
+    tz = until.tzinfo
+    local = {moment.astimezone(tz): kwh for moment, kwh in forecast.items()}
+    last_day = max(moment.date() for moment in local)
+    pattern = {
+        moment.hour: kwh for moment, kwh in local.items() if moment.date() == last_day
+    }
+    day = last_day + timedelta(days=1)
+    while datetime.combine(day, datetime.min.time(), tz) < until:
+        for hour, kwh in pattern.items():
+            moment = datetime.combine(day, datetime.min.time(), tz).replace(hour=hour)
+            result.setdefault(moment, kwh)
+        day += timedelta(days=1)
+    return result
+
+
 def slot_surplus(
     surplus: Mapping[datetime, float],
     start: datetime,
