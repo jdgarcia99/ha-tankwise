@@ -2,110 +2,129 @@
   "config": {
     "step": {
       "user": {
-        "title": "Hot water tank sensors",
-        "description": "Select the sensors of your electric water heater. TankWise only reads them; it never controls any device.",
+        "title": "Water heater",
+        "description": "Select the main entities of your electric water heater and its regulator. TankWise will learn how the tank behaves and how hot water is used.",
         "data": {
           "name": "Name",
           "temperature_sensor": "Tank temperature",
-          "power_sensor": "Heating element power",
-          "energy_sensor": "Heating element energy"
+          "power_sensor": "Water heater power",
+          "heater_switch": "Water heater power switch",
+          "manual_mode_switch": "Regulator manual mode",
+          "price_sensor": "Electricity purchase price"
         },
         "data_description": {
-          "temperature_sensor": "Temperature probe of the tank (upper part).",
-          "power_sensor": "Power currently drawn by the heating element.",
-          "energy_sensor": "Cumulative energy of the heating element (total or total increasing)."
+          "temperature_sensor": "Temperature probe in the upper part of the tank.",
+          "power_sensor": "Power currently drawn by the water heater.",
+          "heater_switch": "Switch that feeds the water heater (it must always stay on).",
+          "manual_mode_switch": "Switch that makes the regulator heat at full power (e.g. FreeDS manual mode).",
+          "price_sensor": "Purchase price sensor, e.g. PVPC with the hourly prices of today and tomorrow as attributes."
+        }
+      },
+      "inputs": {
+        "title": "Recommended and optional inputs",
+        "description": "These inputs improve the learning and the plan. All of them can be changed later in the options.",
+        "data": {
+          "energy_sensor": "Water heater energy",
+          "regulator_sensor": "Regulator output (%)",
+          "master_entity": "Regulator is master of the water heater",
+          "occupancy_entity": "Home occupied",
+          "injection_price_sensor": "Grid injection price",
+          "grid_import_sensor": "Grid import energy",
+          "grid_export_sensor": "Grid export energy",
+          "export_power_sensor": "Current grid export power",
+          "solar_forecast_sensor": "Solar forecast",
+          "ambient_sensor": "Ambient temperature around the tank"
+        },
+        "data_description": {
+          "energy_sensor": "Recommended. Cumulative energy of the water heater (total or total increasing). Without it, the power is integrated.",
+          "regulator_sensor": "PWM output of the regulator (e.g. FreeDS). Helps to tell a thermostat cut-off from a regulator stop.",
+          "master_entity": "Entity that is on when the regulator controls the water heater.",
+          "occupancy_entity": "When off, no demand is expected and those days are not learned.",
+          "injection_price_sensor": "Recommended. Price paid for the energy exported to the grid.",
+          "grid_import_sensor": "Recommended. Total energy imported from the grid.",
+          "grid_export_sensor": "Recommended. Total energy exported to the grid.",
+          "export_power_sensor": "Recommended. Power being exported to the grid right now.",
+          "solar_forecast_sensor": "Forecast.Solar or Solcast hourly forecast.",
+          "ambient_sensor": "Temperature of the room where the tank is. Without it, the fixed value of the options is used."
         }
       },
       "reconfigure": {
-        "title": "Change tank sensors",
-        "description": "Select the required sensors of the water heater. The learned data is kept.",
+        "title": "Change the main entities",
+        "description": "Select the main entities of the water heater. The learned data is kept.",
         "data": {
           "temperature_sensor": "Tank temperature",
-          "power_sensor": "Heating element power",
-          "energy_sensor": "Heating element energy"
+          "power_sensor": "Water heater power",
+          "heater_switch": "Water heater power switch",
+          "manual_mode_switch": "Regulator manual mode",
+          "price_sensor": "Electricity purchase price"
         },
         "data_description": {
-          "temperature_sensor": "Temperature probe of the tank (upper part).",
-          "power_sensor": "Power currently drawn by the heating element.",
-          "energy_sensor": "Cumulative energy of the heating element (total or total increasing)."
-        }
-      },
-      "optional": {
-        "title": "Optional inputs",
-        "description": "These inputs improve the plan. All of them can be changed later in the options.",
-        "data": {
-          "solar_forecast_sensor": "Solar forecast",
-          "surplus_sensor": "Current solar surplus",
-          "price_sensor": "Electricity price",
-          "presence_entity": "Home active / presence",
-          "bottom_temperature_sensor": "Tank bottom temperature",
-          "regulator_sensor": "Regulator output (%)"
-        },
-        "data_description": {
-          "solar_forecast_sensor": "Forecast.Solar or Solcast energy forecast sensor. The hourly curve will be used by the planner in a later version.",
-          "surplus_sensor": "Power available as surplus right now.",
-          "price_sensor": "Electricity price sensor (e.g. PVPC).",
-          "presence_entity": "When off, TankWise switches to holiday mode (no grid heating).",
-          "bottom_temperature_sensor": "Second probe in the lower part of the tank, if available.",
-          "regulator_sensor": "Output of the power regulator that drives the heating element (e.g. the PWM output of a solar diverter). It is the main criterion to detect a full tank."
+          "temperature_sensor": "Temperature probe in the upper part of the tank.",
+          "power_sensor": "Power currently drawn by the water heater.",
+          "heater_switch": "Switch that feeds the water heater (it must always stay on).",
+          "manual_mode_switch": "Switch that makes the regulator heat at full power (e.g. FreeDS manual mode).",
+          "price_sensor": "Purchase price sensor, e.g. PVPC with the hourly prices of today and tomorrow as attributes."
         }
       }
     },
     "error": {
       "entity_not_found": "Entity not found.",
       "invalid_unit": "The entity has an unsupported unit of measurement.",
-      "invalid_state_class": "The energy sensor must have state class 'total' or 'total_increasing'."
+      "invalid_state_class": "The energy sensor must have state class 'total' or 'total_increasing'.",
+      "not_numeric": "The entity state is not a number."
     },
     "abort": {
-      "already_configured": "This tank is already configured.",
-      "reconfigure_successful": "The tank sensors have been updated."
+      "already_configured": "This water heater is already configured.",
+      "reconfigure_successful": "The main entities have been updated."
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "Tank parameters",
+        "title": "Installation parameters",
         "data": {
           "volume": "Tank volume",
-          "rated_power": "Rated heating power",
+          "rated_power": "Heating power (initial value)",
           "water_region": "Mains water region",
-          "mains_water_temperature": "Mains water temperature (override)",
-          "min_useful_temperature": "Minimum useful temperature (measured at the probe)",
-          "cutoff_power_threshold": "Thermostat cut-off power threshold",
+          "ambient_temperature": "Ambient temperature (without sensor)",
           "cutoff_temperature": "Thermostat cut-off temperature (initial value)",
-          "shower_energy": "Energy per shower",
-          "comfort_level": "Comfort level"
+          "cutoff_power_threshold": "Thermostat cut-off power threshold"
         },
         "data_description": {
-          "water_region": "Used to estimate the mains water temperature for each month.",
-          "mains_water_temperature": "Leave empty to use the monthly value for the selected region.",
-          "min_useful_temperature": "Below this probe temperature there is no usable hot water (e.g. no water for a shower). The probe usually reads lower than the outlet.",
-          "cutoff_power_threshold": "Below this power after heating, the thermostat is considered to have cut off (tank full).",
-          "comfort_level": "Percentile of the learned demand the plan must cover.",
-          "cutoff_temperature": "Probe temperature when the thermostat cuts off (tank full). It is then learned from the confirmed cut-offs.",
-          "shower_energy": "Used for 'showers available' until the usage model learns it."
+          "rated_power": "Power of the heating element. It is then learned from the power sensor.",
+          "water_region": "Used to estimate the mains water temperature of each day. It can be fixed by hand with the 'Mains water temperature' number.",
+          "ambient_temperature": "Temperature around the tank used for the losses when there is no ambient sensor.",
+          "cutoff_temperature": "Probe temperature when the thermostat cuts off (tank full). It is then learned from the detected cut-offs.",
+          "cutoff_power_threshold": "With the regulator asking for power, below this power for 3 minutes the thermostat is considered to have cut off."
         }
       },
-      "sensors": {
-        "title": "Optional inputs",
+      "inputs": {
+        "title": "Recommended and optional inputs",
         "data": {
+          "energy_sensor": "Water heater energy",
+          "regulator_sensor": "Regulator output (%)",
+          "master_entity": "Regulator is master of the water heater",
+          "occupancy_entity": "Home occupied",
+          "injection_price_sensor": "Grid injection price",
+          "grid_import_sensor": "Grid import energy",
+          "grid_export_sensor": "Grid export energy",
+          "export_power_sensor": "Current grid export power",
           "solar_forecast_sensor": "Solar forecast",
-          "surplus_sensor": "Current solar surplus",
-          "price_sensor": "Electricity price",
-          "presence_entity": "Home active / presence",
-          "bottom_temperature_sensor": "Tank bottom temperature",
-          "regulator_sensor": "Regulator output (%)"
+          "ambient_sensor": "Ambient temperature around the tank"
         },
         "data_description": {
-          "solar_forecast_sensor": "Forecast.Solar or Solcast energy forecast sensor. The hourly curve will be used by the planner in a later version.",
-          "presence_entity": "When off, TankWise switches to holiday mode (no grid heating).",
-          "regulator_sensor": "Output of the power regulator that drives the heating element (e.g. the PWM output of a solar diverter). It is the main criterion to detect a full tank."
+          "energy_sensor": "Recommended. Cumulative energy of the water heater (total or total increasing). Without it, the power is integrated.",
+          "regulator_sensor": "PWM output of the regulator (e.g. FreeDS). Helps to tell a thermostat cut-off from a regulator stop.",
+          "occupancy_entity": "When off, no demand is expected and those days are not learned.",
+          "ambient_sensor": "Temperature of the room where the tank is. Without it, the fixed value of the parameters is used."
         }
       }
     },
     "error": {
       "entity_not_found": "Entity not found.",
-      "invalid_unit": "The entity has an unsupported unit of measurement."
+      "invalid_unit": "The entity has an unsupported unit of measurement.",
+      "invalid_state_class": "The energy sensor must have state class 'total' or 'total_increasing'.",
+      "not_numeric": "The entity state is not a number."
     }
   },
   "selector": {
@@ -115,25 +134,32 @@
         "mainland": "Mainland Spain (generic)",
         "canary_islands": "Canary Islands"
       }
-    },
-    "comfort_level": {
-      "options": {
-        "p80": "P80 (economical)",
-        "p90": "P90 (balanced)",
-        "p95": "P95 (maximum comfort)"
-      }
     }
   },
   "entity": {
     "sensor": {
+      "stored_energy": {
+        "name": "Stored energy"
+      },
       "useful_energy": {
         "name": "Useful energy"
       },
       "charge": {
         "name": "Charge"
       },
-      "showers_available": {
-        "name": "Showers available"
+      "available_liters": {
+        "name": "Hot water available",
+        "state_attributes": {
+          "shower_temperature": {
+            "name": "Shower temperature"
+          },
+          "mains_water_temperature": {
+            "name": "Mains water temperature"
+          }
+        }
+      },
+      "tank_temperature": {
+        "name": "Modelled temperature"
       },
       "model_status": {
         "name": "Model status",
@@ -142,7 +168,92 @@
           "uncertain": "Uncertain",
           "learning": "Learning"
         }
+      },
+      "last_draw": {
+        "name": "Last draw",
+        "state_attributes": {
+          "end": {
+            "name": "End"
+          },
+          "energy_kwh": {
+            "name": "Energy"
+          },
+          "start_temperature": {
+            "name": "Start temperature"
+          },
+          "min_temperature": {
+            "name": "Minimum temperature"
+          },
+          "shortage": {
+            "name": "Hot water shortage"
+          },
+          "while_heating": {
+            "name": "While heating"
+          }
+        }
+      },
+      "water_shortages_7d": {
+        "name": "Hot water shortages (7 days)"
+      },
+      "heat_loss_coefficient": {
+        "name": "Heat loss coefficient",
+        "state_attributes": {
+          "learning_windows": {
+            "name": "Learning windows"
+          },
+          "loss_power_w": {
+            "name": "Current losses"
+          }
+        }
+      },
+      "heater_power": {
+        "name": "Learned heating power"
+      },
+      "cutoff_temperature": {
+        "name": "Thermostat cut-off temperature",
+        "state_attributes": {
+          "samples": {
+            "name": "Recent cut-offs"
+          }
+        }
+      },
+      "capacity_factor": {
+        "name": "Effective capacity factor",
+        "state_attributes": {
+          "samples": {
+            "name": "Heating episodes"
+          }
+        }
+      },
+      "mains_water_temperature": {
+        "name": "Mains water temperature",
+        "state_attributes": {
+          "source": {
+            "name": "Source",
+            "state": {
+              "table": "Regional table",
+              "manual": "Manual"
+            }
+          }
+        }
       }
+    },
+    "number": {
+      "shower_temperature": {
+        "name": "Shower temperature"
+      },
+      "comfort_min_temperature": {
+        "name": "Minimum comfort temperature"
+      },
+      "mains_water_temperature": {
+        "name": "Mains water temperature (0 = automatic)"
+      }
+    }
+  },
+  "issues": {
+    "missing_required_inputs": {
+      "title": "TankWise needs more information",
+      "description": "The new version of TankWise needs some entities that are not configured yet for {name}: {inputs}.\n\nOpen **Settings → Devices & services → TankWise**, choose **Reconfigure** on {name} and select them."
     }
   }
 }
