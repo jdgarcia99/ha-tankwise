@@ -95,11 +95,13 @@
         "data": {
           "volume": "Tank volume",
           "water_region": "Mains water region",
-          "rescue": "Rescue recharge inside appointment blocks"
+          "rescue": "Rescue recharge inside appointment blocks",
+          "boost_as_shortage": "Count a boost as a hot water shortage"
         },
         "data_description": {
           "water_region": "Used to estimate the mains water temperature of each day. It can be fixed by hand with the 'Mains water temperature' number.",
-          "rescue": "If the useful litres left do not cover the usual demand left in a block, heat only the missing energy inside the block. Off: strict mode, never heat inside a block."
+          "rescue": "If the useful litres left do not cover the usual demand left in a block, heat only the missing energy inside the block. Off: strict mode, never heat inside a block.",
+          "boost_as_shortage": "Off by default: a boost can have any reason and does not change the usage profile. On, the forecast around the time of each boost is raised like after a shortage."
         },
         "sections": {
           "advanced": {
@@ -548,6 +550,12 @@
       },
       "max_temperature": {
         "name": "Safety maximum temperature"
+      },
+      "boost_target": {
+        "name": "Boost target"
+      },
+      "boost_duration": {
+        "name": "Boost maximum duration (0 = no limit)"
       }
     },
     "time": {
@@ -615,6 +623,29 @@
             "name": "Heating from"
           }
         }
+      },
+      "boost_active": {
+        "name": "Boost active",
+        "state_attributes": {
+          "start": {
+            "name": "Start"
+          },
+          "target_temperature": {
+            "name": "Target temperature"
+          },
+          "expected_end": {
+            "name": "Expected end"
+          },
+          "deadline": {
+            "name": "Maximum end"
+          },
+          "energy_kwh": {
+            "name": "Energy"
+          },
+          "cost": {
+            "name": "Cost"
+          }
+        }
       }
     },
     "select": {
@@ -636,6 +667,12 @@
       },
       "reimport_history": {
         "name": "Import history again"
+      },
+      "boost": {
+        "name": "Boost"
+      },
+      "cancel_boost": {
+        "name": "Cancel boost"
       }
     }
   },
@@ -697,11 +734,46 @@
           "description": "TankWise instance. All of them if empty."
         }
       }
+    },
+    "boost": {
+      "name": "Boost",
+      "description": "Heats the water now up to a temperature, or up to the temperature that gives some litres, whatever the plan and the price. The safeties always apply.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Water heater",
+          "description": "TankWise instance. All of them if empty."
+        },
+        "temperature": {
+          "name": "Temperature",
+          "description": "Target temperature. Without it (and without litres) the boost target number is used."
+        },
+        "liters": {
+          "name": "Litres",
+          "description": "Litres at the shower temperature that must be available. Alternative to the temperature."
+        },
+        "duration": {
+          "name": "Duration",
+          "description": "Maximum duration in minutes (0: no limit). Without it the boost duration number is used."
+        }
+      }
+    },
+    "cancel_boost": {
+      "name": "Cancel boost",
+      "description": "Cancels the boost in progress.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Water heater",
+          "description": "TankWise instance. All of them if empty."
+        }
+      }
     }
   },
   "exceptions": {
     "entry_not_loaded": {
       "message": "The TankWise instance {entry_id} is not loaded."
+    },
+    "boost_mode_off": {
+      "message": "A boost cannot start while TankWise is off."
     }
   }
 }

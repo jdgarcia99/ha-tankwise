@@ -108,6 +108,12 @@
       },
       "max_temperature": {
         "default": "mdi:thermometer-alert"
+      },
+      "boost_target": {
+        "default": "mdi:thermometer-chevron-up"
+      },
+      "boost_duration": {
+        "default": "mdi:timer-outline"
       }
     },
     "time": {
@@ -144,6 +150,12 @@
         "state": {
           "on": "mdi:robot-confused-outline"
         }
+      },
+      "boost_active": {
+        "default": "mdi:fire-off",
+        "state": {
+          "on": "mdi:fire"
+        }
       }
     },
     "select": {
@@ -165,6 +177,12 @@
       },
       "reimport_history": {
         "default": "mdi:database-import"
+      },
+      "boost": {
+        "default": "mdi:fire"
+      },
+      "cancel_boost": {
+        "default": "mdi:fire-off"
       }
     }
   },
@@ -180,6 +198,12 @@
     },
     "reimport_history": {
       "service": "mdi:database-import"
+    },
+    "boost": {
+      "service": "mdi:fire"
+    },
+    "cancel_boost": {
+      "service": "mdi:fire-off"
     }
   }
 }

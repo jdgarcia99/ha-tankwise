@@ -302,3 +302,41 @@ def test_fixed_windows_without_appointments() -> None:
     afternoon = _degraded(datetime(2026, 11, 18, 15, 30, tzinfo=TZ), 60.0)
     assert afternoon.heat and afternoon.target == 68.0
     assert not _degraded(datetime(2026, 11, 18, 12, 0, tzinfo=TZ), 30.0).heat
+
+
+# ----------------------------------------------------------------------
+# Boost
+# ----------------------------------------------------------------------
+
+BOOST_ON = [Order(Action.MANUAL_ON, Reason.BOOST)]
+
+
+def test_boost_heats_in_shadow_mode_and_gives_the_regulator_back() -> None:
+    controller = Controller()
+    assert _orders(controller, _input(0, active=False)) == []
+    assert _orders(controller, _input(1, active=False, boost=True)) == BOOST_ON
+    heating = {"active": False, "manual": True, "power": 1500}
+    assert _orders(controller, _input(2, boost=True, **heating)) == []
+    assert _orders(controller, _input(3, **heating)) == [
+        Order(Action.MANUAL_OFF, Reason.BOOST_DONE)
+    ]
+
+
+def test_boost_overrides_the_plan_and_the_latch_but_not_the_safeties() -> None:
+    controller = Controller()
+    controller.full_latch = 66.0
+    controller.start_boost()
+    assert _orders(controller, _input(0, boost=True, temperature=65.0)) == BOOST_ON
+    hot = {"boost": True, "manual": True, "power": 1500, "temperature": 73.0}
+    assert _orders(controller, _input(1, **hot)) == []
+    assert _orders(controller, _input(2, **hot)) == [
+        Order(Action.MANUAL_OFF, Reason.MAX_TEMPERATURE)
+    ]
+
+
+def test_boost_ends_while_the_plan_heats_keeps_heating() -> None:
+    controller = Controller()
+    assert _orders(controller, _input(0, boost=True)) == BOOST_ON
+    heating = {"manual": True, "power": 1500, "plan_heat": True}
+    assert _orders(controller, _input(1, boost=True, **heating)) == []
+    assert _orders(controller, _input(2, **heating)) == []  # the plan goes on

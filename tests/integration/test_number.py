@@ -89,6 +89,8 @@ async def test_settings_update_derived_values_at_once(
         "reserve_liters": 10.0,
         "surplus_value": 0.0,
         "max_temperature": 72.0,
+        "boost_target": 60.0,
+        "boost_duration": 90.0,
     }
 
 

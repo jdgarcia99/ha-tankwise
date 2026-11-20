@@ -61,6 +61,7 @@ from .const import (
     CONF_AMBIENT_SENSOR,
     CONF_AMBIENT_TEMPERATURE,
     CONF_APPOINTMENTS,
+    CONF_BOOST_AS_SHORTAGE,
     CONF_CUTOFF_POWER_THRESHOLD,
     CONF_CUTOFF_TEMPERATURE,
     CONF_ENERGY_SENSOR,
@@ -207,6 +208,7 @@ PARAMETERS_SCHEMA = vol.Schema(
             )
         ),
         vol.Required(CONF_RESCUE): BooleanSelector(),
+        vol.Required(CONF_BOOST_AS_SHORTAGE): BooleanSelector(),
         vol.Required(SECTION_ADVANCED): section(
             vol.Schema(
                 {

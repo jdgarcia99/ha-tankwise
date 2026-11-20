@@ -95,11 +95,13 @@
         "data": {
           "volume": "Volumen del depósito",
           "water_region": "Región del agua de red",
-          "rescue": "Recarga de rescate dentro de los bloques de las citas"
+          "rescue": "Recarga de rescate dentro de los bloques de las citas",
+          "boost_as_shortage": "Contar el Boost como falta de agua"
         },
         "data_description": {
           "water_region": "Se usa para estimar la temperatura del agua de red de cada día. Se puede fijar a mano con el número 'Temperatura del agua de red'.",
-          "rescue": "Si los litros útiles que quedan no cubren la demanda habitual que queda en un bloque, calentar solo la energía que falta dentro del bloque. Desactivada: modo estricto, nunca se calienta dentro de un bloque."
+          "rescue": "Si los litros útiles que quedan no cubren la demanda habitual que queda en un bloque, calentar solo la energía que falta dentro del bloque. Desactivada: modo estricto, nunca se calienta dentro de un bloque.",
+          "boost_as_shortage": "Desactivado por defecto: un Boost puede tener cualquier motivo y no cambia el perfil de uso. Activado, la previsión alrededor de la hora de cada Boost sube como tras una falta de agua."
         },
         "sections": {
           "advanced": {
@@ -548,6 +550,12 @@
       },
       "max_temperature": {
         "name": "Temperatura máxima de seguridad"
+      },
+      "boost_target": {
+        "name": "Objetivo del Boost"
+      },
+      "boost_duration": {
+        "name": "Duración máxima del Boost (0 = sin límite)"
       }
     },
     "time": {
@@ -615,6 +623,29 @@
             "name": "Calentar desde"
           }
         }
+      },
+      "boost_active": {
+        "name": "Boost activo",
+        "state_attributes": {
+          "start": {
+            "name": "Inicio"
+          },
+          "target_temperature": {
+            "name": "Temperatura objetivo"
+          },
+          "expected_end": {
+            "name": "Fin previsto"
+          },
+          "deadline": {
+            "name": "Fin máximo"
+          },
+          "energy_kwh": {
+            "name": "Energía"
+          },
+          "cost": {
+            "name": "Coste"
+          }
+        }
       }
     },
     "select": {
@@ -636,6 +667,12 @@
       },
       "reimport_history": {
         "name": "Importar de nuevo el histórico"
+      },
+      "boost": {
+        "name": "Boost"
+      },
+      "cancel_boost": {
+        "name": "Cancelar Boost"
       }
     }
   },
@@ -697,11 +734,46 @@
           "description": "Instancia de TankWise. Todas si se deja vacío."
         }
       }
+    },
+    "boost": {
+      "name": "Boost",
+      "description": "Calienta el agua ahora hasta una temperatura, o hasta la temperatura que da unos litros, sin mirar el plan ni el precio. Las seguridades se aplican siempre.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Termo",
+          "description": "Instancia de TankWise. Todas si se deja vacío."
+        },
+        "temperature": {
+          "name": "Temperatura",
+          "description": "Temperatura objetivo. Sin ella (y sin litros) se usa el número de objetivo del Boost."
+        },
+        "liters": {
+          "name": "Litros",
+          "description": "Litros a la temperatura de ducha que deben estar disponibles. Alternativa a la temperatura."
+        },
+        "duration": {
+          "name": "Duración",
+          "description": "Duración máxima en minutos (0: sin límite). Sin ella se usa el número de duración del Boost."
+        }
+      }
+    },
+    "cancel_boost": {
+      "name": "Cancelar Boost",
+      "description": "Cancela el Boost en curso.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Termo",
+          "description": "Instancia de TankWise. Todas si se deja vacío."
+        }
+      }
     }
   },
   "exceptions": {
     "entry_not_loaded": {
       "message": "La instancia de TankWise {entry_id} no está cargada."
+    },
+    "boost_mode_off": {
+      "message": "No se puede iniciar un Boost con TankWise desactivado."
     }
   }
 }

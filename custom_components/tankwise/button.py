@@ -1,4 +1,4 @@
-"""Button entities: compute the plan again, import the history again."""
+"""Buttons: boost, cancel boost, replan and import the history again."""
 
 from __future__ import annotations
 
@@ -22,10 +22,34 @@ async def async_setup_entry(
     coordinator = entry.runtime_data
     async_add_entities(
         [
+            BoostButton(coordinator, "boost"),
+            CancelBoostButton(coordinator, "cancel_boost"),
             ReplanButton(coordinator, "replan"),
             ReimportHistoryButton(coordinator, "reimport_history"),
         ]
     )
+
+
+class BoostButton(TankWiseEntity, ButtonEntity):
+    """Heat now; pressed again while the boost runs, cancel it."""
+
+    _platform = "button"
+    _attr_translation_key = "boost"
+
+    async def async_press(self) -> None:
+        """Start or cancel the boost."""
+        await self.coordinator.controller.async_toggle_boost()
+
+
+class CancelBoostButton(TankWiseEntity, ButtonEntity):
+    """Cancel the boost in progress."""
+
+    _platform = "button"
+    _attr_translation_key = "cancel_boost"
+
+    async def async_press(self) -> None:
+        """Cancel the boost."""
+        await self.coordinator.controller.async_cancel_boost()
 
 
 class ReplanButton(TankWiseEntity, ButtonEntity):

@@ -30,6 +30,7 @@ async def async_setup_entry(
             PlanAtRiskSensor(coordinator, "plan_at_risk"),
             PlannedGridHeatingSensor(coordinator, "planned_grid_heating"),
             DegradedModeSensor(coordinator, "degraded_mode"),
+            BoostActiveSensor(coordinator, "boost_active"),
         ]
     )
 
@@ -132,3 +133,33 @@ class DegradedModeSensor(TankWiseEntity, BinarySensorEntity):
                 "heating_from": target.start.isoformat() if target.start else None,
             }
         return attributes
+
+
+class BoostActiveSensor(TankWiseEntity, BinarySensorEntity):
+    """On while a boost is in progress."""
+
+    _platform = "binary_sensor"
+    _attr_device_class = BinarySensorDeviceClass.HEAT
+    _attr_translation_key = "boost_active"
+
+    @property
+    def is_on(self) -> bool:
+        """Return True while boosting."""
+        return self.coordinator.controller.boost is not None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return the start, target, expected end, energy and cost."""
+        controller = self.coordinator.controller
+        boost = controller.boost
+        if boost is None:
+            return {}
+        end = controller.expected_boost_end(dt_util.utcnow())
+        return {
+            "start": boost.start.isoformat(),
+            "target_temperature": round(boost.target, 1),
+            "expected_end": end.isoformat() if end else None,
+            "deadline": boost.deadline.isoformat() if boost.deadline else None,
+            "energy_kwh": round(boost.energy_kwh, 3),
+            "cost": round(boost.cost, 3),
+        }

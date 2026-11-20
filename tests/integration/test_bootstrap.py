@@ -373,3 +373,50 @@ async def test_reimport_history_service(
     assert coordinator.bootstrap.status is BootstrapStatus.DONE
     _assert_learning_kept(coordinator)
     assert hass.states.get("button.tankwise_reimport_history") is not None
+
+
+async def test_upgrade_from_0_6_with_an_empty_import(
+    hass: HomeAssistant,
+    mock_entry: MockConfigEntry,
+    freezer: FrozenDateTimeFactory,
+    hass_storage: dict[str, Any],
+) -> None:
+    """0.6.0 → this version directly: the empty import of 0.6 is redone."""
+    await _record_history(hass, freezer)
+    store = _store_0_5(mock_entry)
+    data = store["data"]
+    # What 0.6.0 left: an import marked done that learned nothing, which
+    # replaced the learned model with an empty one.
+    data["bootstrap"] = {
+        "status": "done",
+        "samples": 14401,
+        "draws": 0,
+        "calibrations": 0,
+        "days": 0,
+        "version": 2,
+    }
+    data["tank"] = {
+        **data["tank"],
+        "ua": 1.0,
+        "loss_windows": 0,
+        "capacity_samples": [],
+        "usable_samples": [],
+        "heater_power_w": None,
+        "heater_power_samples": 0,
+        "cutoff_samples": [],
+        "calibration_count": 0,
+        "consumptions": [],
+    }
+    hass_storage[f"{DOMAIN}.{mock_entry.entry_id}"] = store
+    set_input_states(hass, temperature="50.0")
+    mock_entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(mock_entry.entry_id)
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    coordinator = mock_entry.runtime_data
+    assert coordinator.bootstrap.status is BootstrapStatus.DONE
+    assert coordinator.bootstrap.version == BOOTSTRAP_VERSION
+    assert coordinator.bootstrap.calibrations == 1
+    assert coordinator.bootstrap.draws >= 1
+    assert coordinator.data.tank.cutoff_samples
+    assert coordinator.data.tank.heater_power_w != 1500.0

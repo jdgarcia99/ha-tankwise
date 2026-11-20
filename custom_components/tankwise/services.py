@@ -16,10 +16,15 @@ import voluptuous as vol
 
 from .const import (
     ATTR_CONFIG_ENTRY_ID,
+    ATTR_DURATION,
+    ATTR_LITERS,
     ATTR_PART,
+    ATTR_TEMPERATURE,
     DOMAIN,
     PART_ALL,
     RESET_PARTS,
+    SERVICE_BOOST,
+    SERVICE_CANCEL_BOOST,
     SERVICE_GET_PLAN,
     SERVICE_REIMPORT_HISTORY,
     SERVICE_REPLAN,
@@ -38,6 +43,20 @@ RESET_LEARNING_SCHEMA = vol.Schema(
 
 REPLAN_SCHEMA = vol.Schema({vol.Optional(ATTR_CONFIG_ENTRY_ID): cv.string})
 GET_PLAN_SCHEMA = REPLAN_SCHEMA
+BOOST_SCHEMA = vol.Schema(
+    {
+        vol.Optional(ATTR_CONFIG_ENTRY_ID): cv.string,
+        vol.Exclusive(ATTR_TEMPERATURE, "target"): vol.All(
+            vol.Coerce(float), vol.Range(min=30, max=90)
+        ),
+        vol.Exclusive(ATTR_LITERS, "target"): vol.All(
+            vol.Coerce(float), vol.Range(min=1, max=500)
+        ),
+        vol.Optional(ATTR_DURATION): vol.All(
+            vol.Coerce(float), vol.Range(min=0, max=480)
+        ),
+    }
+)
 
 
 def _loaded_entries(
@@ -104,4 +123,22 @@ def async_setup_services(hass: HomeAssistant) -> None:
 
     hass.services.async_register(
         DOMAIN, SERVICE_REIMPORT_HISTORY, _reimport_history, REPLAN_SCHEMA
+    )
+
+    async def _boost(call: ServiceCall) -> None:
+        for entry in _loaded_entries(hass, call):
+            await entry.runtime_data.controller.async_start_boost(
+                temperature=call.data.get(ATTR_TEMPERATURE),
+                liters=call.data.get(ATTR_LITERS),
+                duration=call.data.get(ATTR_DURATION),
+            )
+
+    hass.services.async_register(DOMAIN, SERVICE_BOOST, _boost, BOOST_SCHEMA)
+
+    async def _cancel_boost(call: ServiceCall) -> None:
+        for entry in _loaded_entries(hass, call):
+            await entry.runtime_data.controller.async_cancel_boost()
+
+    hass.services.async_register(
+        DOMAIN, SERVICE_CANCEL_BOOST, _cancel_boost, REPLAN_SCHEMA
     )
