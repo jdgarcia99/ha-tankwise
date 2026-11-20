@@ -155,9 +155,9 @@ def test_detector_regulator_value_at_drop() -> None:
     detector.update_power(_at(15, "23:08:57"), 1.8)
     assert detector.drop is not None
     assert detector.drop.timestamp == _at(15, "23:08:57")
-    assert detector.drop.regulator_demand
+    assert detector.drop.demand
     detector.update_regulator(_at(15, "23:11:58"), 0)
-    assert detector.drop.regulator_demand  # kept: captured at the drop
+    assert detector.drop.demand  # kept: captured at the drop
 
 
 def test_detector_regulator_lowered_just_before_the_drop() -> None:
@@ -168,7 +168,7 @@ def test_detector_regulator_lowered_just_before_the_drop() -> None:
     detector.update_regulator(_at(15, "16:00:03"), 30)  # still > 10 %
     detector.update_power(_at(15, "16:00:04"), 0.5)
     assert detector.drop is not None
-    assert not detector.drop.regulator_demand
+    assert not detector.drop.demand
 
 
 def test_detector_ignores_first_reading_and_unknown_values() -> None:

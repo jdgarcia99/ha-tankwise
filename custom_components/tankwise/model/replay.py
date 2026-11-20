@@ -1,0 +1,150 @@
+"""Replay recorded state changes through the tank model.
+
+Home Assistant (and the CSV exports used by the simulation bench) store the
+inputs as state changes, not as regular samples. The replay merges the
+changes of every input, feeds the power, regulator and manual mode changes to
+a :class:`PowerDropDetector` in the exact order they happened, and samples the
+latest value of each input on a regular grid (one minute by default), just as
+the coordinator does live.
+
+This module is pure Python and must not import Home Assistant.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable, Iterable, Mapping, Sequence
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+from typing import Final
+
+from .tank import PowerDropDetector, TankModel, TankParams, TankSample, TankState
+
+ROLE_TEMPERATURE: Final = "temperature"
+ROLE_POWER: Final = "power"
+ROLE_ENERGY: Final = "energy"
+ROLE_REGULATOR: Final = "regulator"
+ROLE_MANUAL_MODE: Final = "manual_mode"
+ROLE_AMBIENT: Final = "ambient"
+ROLES: Final = (
+    ROLE_TEMPERATURE,
+    ROLE_POWER,
+    ROLE_ENERGY,
+    ROLE_REGULATOR,
+    ROLE_MANUAL_MODE,
+    ROLE_AMBIENT,
+)
+DEFAULT_STEP: Final = timedelta(minutes=1)
+
+type Value = float | bool | None
+
+
+@dataclass(frozen=True, slots=True)
+class StateChange:
+    """An input took a new value (None: unavailable or unknown)."""
+
+    timestamp: datetime
+    value: Value
+
+
+@dataclass(frozen=True, slots=True)
+class ReplayResult:
+    """Outcome of a replay."""
+
+    model: TankModel
+    samples: int
+    start: datetime | None
+    end: datetime | None
+    last_state: TankState | None
+
+
+def replay(
+    series: Mapping[str, Sequence[StateChange]],
+    params: TankParams | Callable[[datetime], TankParams],
+    *,
+    model: TankModel | None = None,
+    start: datetime | None = None,
+    end: datetime | None = None,
+    step: timedelta = DEFAULT_STEP,
+    on_sample: Callable[[TankSample, TankState], None] | None = None,
+) -> ReplayResult:
+    """Replay the state changes of each role (see ``ROLES``) through a model.
+
+    ``params`` may be a function of the sample time (e.g. the mains water
+    temperature changes with the date). Sampling starts at the first
+    temperature change (or ``start``) and ends at the last change of any
+    input (or ``end``).
+    """
+    unknown = set(series) - set(ROLES)
+    if unknown:
+        raise ValueError(f"unknown roles: {sorted(unknown)}")
+    model = model if model is not None else TankModel()
+    params_at = params if callable(params) else (lambda _moment: params)
+
+    timeline = sorted(
+        (
+            (change.timestamp, role, change.value)
+            for role, changes in series.items()
+            for change in changes
+        ),
+        key=lambda item: item[0],
+    )
+    temperatures = series.get(ROLE_TEMPERATURE, ())
+    if not timeline or not temperatures:
+        return ReplayResult(model, 0, None, None, None)
+
+    first = start if start is not None else min(c.timestamp for c in temperatures)
+    last = end if end is not None else timeline[-1][0]
+    detector = PowerDropDetector(params_at(first).power_threshold_w)
+    current: dict[str, Value] = dict.fromkeys(ROLES)
+
+    index = 0
+    samples = 0
+    moment = first
+    state: TankState | None = None
+    while moment <= last:
+        while index < len(timeline) and timeline[index][0] <= moment:
+            timestamp, role, value = timeline[index]
+            current[role] = value
+            if role == ROLE_POWER:
+                detector.update_power(timestamp, _float(value))
+            elif role == ROLE_REGULATOR:
+                detector.update_regulator(timestamp, _float(value))
+            elif role == ROLE_MANUAL_MODE:
+                detector.update_manual(timestamp, _bool(value))
+            index += 1
+        sample = TankSample(
+            timestamp=moment,
+            temperature=_float(current[ROLE_TEMPERATURE]),
+            power=_float(current[ROLE_POWER]),
+            energy=_float(current[ROLE_ENERGY]),
+            regulator=_float(current[ROLE_REGULATOR]),
+            manual_mode=_bool(current[ROLE_MANUAL_MODE]),
+            ambient_temperature=_float(current[ROLE_AMBIENT]),
+            power_drop=detector.drop,
+        )
+        state = model.update(sample, params_at(moment))
+        if on_sample is not None:
+            on_sample(sample, state)
+        samples += 1
+        moment += step
+    return ReplayResult(model, samples, first, moment - step, state)
+
+
+def changes(points: Iterable[tuple[datetime, Value]]) -> list[StateChange]:
+    """Build a sorted list of state changes from ``(timestamp, value)`` pairs."""
+    return sorted(
+        (StateChange(timestamp, value) for timestamp, value in points),
+        key=lambda change: change.timestamp,
+    )
+
+
+def _float(value: Value) -> float | None:
+    if value is None or isinstance(value, bool):
+        return None
+    return float(value)
+
+
+def _bool(value: Value) -> bool | None:
+    if value is None or isinstance(value, bool):
+        return value
+    return bool(value)

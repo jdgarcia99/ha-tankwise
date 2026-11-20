@@ -8,7 +8,7 @@ import json
 
 import pytest
 from tankwise_model.tank import (
-    DEFAULT_LOSS_COEFFICIENT,
+    DEFAULT_UA,
     HeaterState,
     ModelStatus,
     TankModel,
@@ -110,7 +110,8 @@ def test_strong_shower() -> None:
     event = model.consumptions[0]
     assert event.energy_kwh == pytest.approx(1.8, rel=0.15)
     assert not event.while_heating
-    assert event.end_temperature < PARAMS.min_useful_temperature
+    assert event.min_temperature < PARAMS.comfort_min_temperature
+    assert event.shortage
     assert state.calibration_count == 0
     assert error_kwh(state, sim) < 0.12
     assert state.useful_energy_kwh == pytest.approx(0.0, abs=0.12)
@@ -263,17 +264,16 @@ def test_safe_mode_freezes_the_model() -> None:
     assert error_kwh(state, sim) < 0.15
 
 
-def test_loss_coefficient_is_learned_slowly() -> None:
-    """Quiet periods move the loss coefficient slowly towards the real one."""
-    true_coefficient = DEFAULT_LOSS_COEFFICIENT * 1.4
-    sim = TankSimulator(temperature=46.0, loss_coefficient=true_coefficient)
+def test_ua_is_learned_from_rest_windows() -> None:
+    """Rest windows move UA towards the real value despite ±1 °C noise."""
+    true_ua = 1.6
+    sim = TankSimulator(temperature=66.0, ua=true_ua)
     model = TankModel()
-    state = drive(model, sim, 48 * 60)
+    state = drive(model, sim, 48 * 60, params=replace(PARAMS, cutoff_temperature=68))
 
-    assert state.loss_windows >= 10
-    assert state.loss_coefficient > DEFAULT_LOSS_COEFFICIENT * 1.1
-    assert state.loss_coefficient < true_coefficient * 1.05
-    assert state.loss_rate == pytest.approx(state.loss_coefficient * 26)
+    assert state.loss_windows >= 8
+    assert state.ua_w_per_k == pytest.approx(true_ua, rel=0.15)
+    assert state.ua_w_per_k > DEFAULT_UA
 
 
 def test_no_loss_learning_while_heating_or_drawing() -> None:
