@@ -295,7 +295,13 @@ async def test_options_parameters_with_advanced_section(
     result = await _options_menu(hass, mock_entry, "parameters")
     assert result["step_id"] == "parameters"
     schema_keys = [str(key) for key in result["data_schema"].schema]
-    assert schema_keys == [CONF_VOLUME, CONF_WATER_REGION, "rescue", "advanced"]
+    assert schema_keys == [
+        CONF_VOLUME,
+        CONF_WATER_REGION,
+        "rescue",
+        "boost_as_shortage",
+        "advanced",
+    ]
 
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],
@@ -303,6 +309,7 @@ async def test_options_parameters_with_advanced_section(
             CONF_VOLUME: 150.0,
             CONF_WATER_REGION: "mainland",
             "rescue": False,
+            "boost_as_shortage": True,
             "advanced": {
                 CONF_RATED_POWER: 2000.0,
                 CONF_AMBIENT_TEMPERATURE: 15.0,
@@ -326,6 +333,7 @@ async def test_options_parameters_with_advanced_section(
         CONF_PROFILE_DAYS: 20,
         "regulator_margin": 5,
         "rescue": False,
+        "boost_as_shortage": True,
         CONF_ENERGY_SENSOR: ENERGY,  # inputs are kept
     }
     assert isinstance(mock_entry.options[CONF_PROFILE_DAYS], int)

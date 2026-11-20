@@ -34,3 +34,38 @@ reimport_history:
       selector:
         config_entry:
           integration: tankwise
+
+boost:
+  fields:
+    config_entry_id:
+      selector:
+        config_entry:
+          integration: tankwise
+    temperature:
+      selector:
+        number:
+          min: 30
+          max: 90
+          step: 1
+          unit_of_measurement: "°C"
+    liters:
+      selector:
+        number:
+          min: 1
+          max: 500
+          step: 5
+          unit_of_measurement: L
+    duration:
+      selector:
+        number:
+          min: 0
+          max: 480
+          step: 5
+          unit_of_measurement: min
+
+cancel_boost:
+  fields:
+    config_entry_id:
+      selector:
+        config_entry:
+          integration: tankwise

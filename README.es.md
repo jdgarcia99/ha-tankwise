@@ -17,7 +17,7 @@ PVPC de compra más el valor del excedente solar).
 
 ## Estado del proyecto
 
-> **En desarrollo (0.7.0, fase 4 de 7).** TankWise aprende el depósito y el
+> **En desarrollo (0.8.0, fase 5 de 7).** TankWise aprende el depósito y el
 > uso de la casa, calcula el plan de calentamiento y, en los modos Auto, Eco,
 > Confort y Vacaciones, **controla el regulador** con sus seguridades. Sigue
 > empezando en modo Sombra (publica el plan sin actuar): compara el coste
@@ -30,7 +30,7 @@ PVPC de compra más el valor del excedente solar).
 | 2 | Perfil de demanda y previsión, citas de agua caliente | ✅ Hecha |
 | 3 | Precios, valor del excedente y optimizador; modo Sombra con el plan | ✅ Hecha |
 | 4 | Controlador, seguridades y modo degradado; modo Auto | ✅ Hecha |
-| 5 | Boost con blueprint para pulsadores externos | Prevista |
+| 5 | Boost con blueprint para pulsadores externos | ✅ Hecha |
 | 6 | Previsión solar, coordinación con SolarSplit y antilegionela | Prevista |
 | 7 | Migración desde las automatizaciones y documentación completa | Prevista |
 
@@ -224,12 +224,55 @@ evento `tankwise_plan_at_risk` (`reasons`, `new_reasons`, `appointments`),
 por ejemplo para enviar una notificación cuando el regulador no está
 disponible antes de una cita que depende de un calentamiento planificado.
 
+## Boost
+
+Un Boost significa "quiero agua caliente ahora", sea cual sea el motivo:
+visitas, un baño, un día de mucho uso. El regulador pasa a manual al
+instante, sin mirar el plan ni el precio, en todos los modos menos
+Desactivado (también en Sombra y Vacaciones). Termina al llegar al
+**objetivo del Boost** (número, 60 °C), al corte del termostato, tras la
+**duración máxima** opcional (número, 90 minutos, 0 sin límite), cuando una
+seguridad corta el calentamiento o al cancelarlo. Las seguridades no se
+saltan nunca. Después se vuelve a calcular el plan con la energía ya
+almacenada. Si el agua ya está por encima del objetivo no hace nada y lo
+indica en el logbook.
+
+| Entidad / servicio | Descripción |
+|--------------------|-------------|
+| Boost (botón) | Inicia un Boost; pulsado mientras está activo, lo cancela (un único pulsador sirve para las dos cosas) |
+| Cancelar Boost (botón) | Cancela el Boost |
+| Boost activo (binario) | Con inicio, objetivo, fin previsto, fin máximo, energía y coste |
+| Objetivo del Boost, duración máxima del Boost (números) | Valores por defecto del botón |
+| `tankwise.boost` | `temperature` o `liters` (litros a la temperatura de ducha que deben estar disponibles) y `duration` (minutos), opcionales |
+| `tankwise.cancel_boost` | Cancela el Boost |
+
+Los eventos `tankwise_boost_started` y `tankwise_boost_finished` (con
+`reason`: `target`, `thermostat`, `duration`, `safety` o `cancelled`,
+energía y coste) sirven para notificaciones o paneles.
+
+Por defecto un Boost no cambia el perfil de uso, porque el motivo puede ser
+cualquiera; las extracciones posteriores se aprenden con normalidad. La
+opción **Contar el Boost como falta de agua** sube la previsión alrededor de
+la hora de cada Boost, como tras una falta de agua.
+
+### Pulsadores
+
+Cualquier dispositivo puede iniciar un Boost con una automatización que
+pulse `button.tankwise_boost` o llame a `tankwise.boost`. El blueprint
+[`boost_from_button.yaml`](blueprints/automation/tankwise/boost_from_button.yaml)
+lo hace sin escribir YAML: eliges el disparador (un disparador de
+dispositivo de un pulsador ZHA, Zigbee2MQTT, Z-Wave o Shelly, un evento...),
+la acción (alternar, solo activar o solo cancelar) y, si quieres, una
+temperatura y una duración. Se importa desde **Ajustes → Automatizaciones y
+escenas → Blueprints → Importar blueprint** con su URL de GitHub.
+
 ## Servicios
 
 | Servicio | Descripción |
 |----------|-------------|
 | `tankwise.replan` | Calcula ahora el plan de calentamiento. `config_entry_id` opcional. |
 | `tankwise.get_plan` | Devuelve el plan de calentamiento completo, franja a franja (solo respuesta). `config_entry_id` opcional. |
+| `tankwise.boost` / `tankwise.cancel_boost` | Inicia o cancela un Boost (ver Boost). |
 | `tankwise.reimport_history` | Vuelve a importar el histórico del recorder de los últimos días y lo combina con lo aprendido (también el botón "Importar de nuevo el histórico"). `config_entry_id` opcional. |
 | `tankwise.reset_learning` | Olvida las pérdidas de calor (`part: losses`), el perfil de uso (`part: demand`) o todo (`part: all`, por defecto). `config_entry_id` opcional. |
 

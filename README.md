@@ -17,7 +17,7 @@ purchase price plus the value of the solar surplus).
 
 ## Project status
 
-> **Development (0.7.0, phase 4 of 7).** TankWise learns the tank and the
+> **Development (0.8.0, phase 5 of 7).** TankWise learns the tank and the
 > household's usage, computes the heating plan and, in the auto, eco, comfort
 > and holiday modes, **controls the regulator** with its safeties. It still
 > starts in shadow mode (publishes the plan without acting): compare the
@@ -31,7 +31,7 @@ purchase price plus the value of the solar surplus).
 | 2 | Demand profile and forecast, hot water appointments | ✅ Done |
 | 3 | Prices, surplus value and optimiser; shadow mode with the plan | ✅ Done |
 | 4 | Controller, safeties and degraded mode; automatic mode | ✅ Done |
-| 5 | Boost with a blueprint for external push buttons | Planned |
+| 5 | Boost with a blueprint for external push buttons | ✅ Done |
 | 6 | Solar forecast, SolarSplit coordination and anti-legionella cycle | Planned |
 | 7 | Migration from automations and full documentation | Planned |
 
@@ -223,12 +223,54 @@ When the plan turns at risk for a new reason TankWise fires the
 example to send a notification when the regulator is unavailable before an
 appointment that depends on a planned heating.
 
+## Boost
+
+A boost means "I want hot water now", whatever the reason: guests, a bath,
+a heavy day. The regulator goes to manual mode at once, whatever the plan or
+the price, in every mode except off (also shadow and holiday). It ends at the
+**boost target** (number, 60 °C), at the thermostat cut-off, after the
+optional **maximum duration** (number, 90 minutes, 0 for no limit), when a
+safety stops the heating, or when it is cancelled. The safeties are never
+skipped. Afterwards the plan is computed again with the energy already
+stored. If the water is already above the target, nothing happens and the
+logbook says so.
+
+| Entity / service | Description |
+|------------------|-------------|
+| Boost (button) | Starts a boost; pressed while it runs, cancels it (one push button does both) |
+| Cancel boost (button) | Cancels the boost |
+| Boost active (binary) | With the start, target, expected end, maximum end, energy and cost |
+| Boost target, boost maximum duration (numbers) | Defaults of the button |
+| `tankwise.boost` | Optional `temperature` or `liters` (litres at the shower temperature that must be available) and `duration` (minutes) |
+| `tankwise.cancel_boost` | Cancels the boost |
+
+Events `tankwise_boost_started` and `tankwise_boost_finished` (with `reason`:
+`target`, `thermostat`, `duration`, `safety` or `cancelled`, energy and cost)
+can drive notifications or dashboards.
+
+By default a boost does not change the usage profile, because its reason can
+be anything; the draws after it are learned as usual. The option **Count a
+boost as a hot water shortage** raises the forecast around the time of each
+boost, like after a shortage.
+
+### Push buttons
+
+Any device can start a boost with an automation that presses
+`button.tankwise_boost` or calls `tankwise.boost`. The
+[`boost_from_button.yaml`](blueprints/automation/tankwise/boost_from_button.yaml)
+blueprint does it without writing YAML: choose the trigger (a device trigger
+of a ZHA, Zigbee2MQTT, Z-Wave or Shelly button, an event...), the action
+(toggle, start only or cancel only) and optionally a temperature and a
+duration. Import it from **Settings → Automations & scenes → Blueprints →
+Import blueprint** with its GitHub URL.
+
 ## Services
 
 | Service | Description |
 |---------|-------------|
 | `tankwise.replan` | Computes the heating plan now. Optional `config_entry_id`. |
 | `tankwise.get_plan` | Returns the whole heating plan, slot by slot (response only). Optional `config_entry_id`. |
+| `tankwise.boost` / `tankwise.cancel_boost` | Starts or cancels a boost (see Boost). |
 | `tankwise.reimport_history` | Imports the recorder history of the last days again and merges it with what was learned (also the "Import history again" button). Optional `config_entry_id`. |
 | `tankwise.reset_learning` | Forgets the heat losses (`part: losses`), the usage profile (`part: demand`) or everything (`part: all`, default). Optional `config_entry_id`. |
 

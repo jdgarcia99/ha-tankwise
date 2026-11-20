@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-20
+
+Fifth phase: boost (hot water now) and a blueprint for push buttons.
+
+### Added
+
+- Boost: the regulator goes to manual mode at once, whatever the plan and
+  the price, in every mode except off (also shadow and holiday). It ends at
+  the boost target (number, 60 °C), the thermostat cut-off, the optional
+  maximum duration (number, 90 minutes, 0 for no limit), a safety, or when
+  cancelled; the safeties are never skipped. If the water is already above
+  the target nothing happens (logbook entry). A boost in progress survives a
+  restart, and the plan is computed again when it ends.
+- Boost button (pressed again while running, cancels), cancel boost button,
+  boost active binary sensor (start, target, expected and maximum end,
+  energy, cost), `tankwise.boost` (optional `temperature` or `liters`, and
+  `duration`) and `tankwise.cancel_boost` services, and the
+  `tankwise_boost_started` / `tankwise_boost_finished` events (reason
+  `target`, `thermostat`, `duration`, `safety` or `cancelled`).
+- Option "Count a boost as a hot water shortage" (off by default): raises
+  the forecast around the time of each boost.
+- Blueprint `blueprints/automation/tankwise/boost_from_button.yaml`: start,
+  cancel or toggle a boost from any trigger (ZHA, Zigbee2MQTT, Z-Wave or
+  Shelly buttons, remotes, events), with an optional temperature and
+  duration.
+
+### Upgrading
+
+- From 0.6.0 directly: the history is imported again (bootstrap version 3)
+  and merged with what is stored, as when upgrading through 0.7.0.
+
 ## [0.7.0] - 2026-11-20
 
 Fourth phase: TankWise controls the regulator in the auto, eco, comfort and
@@ -382,7 +413,8 @@ and the heating plan will follow.
 - The output contract entities (energy needed, deadline, grid allowed,
   requested power and urgency) arrive in a later release.
 
-[Unreleased]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.4.1...v0.5.0

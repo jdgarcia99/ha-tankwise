@@ -54,6 +54,20 @@ MESSAGES: dict[str, dict[str, str]] = {
             "simple rule before each appointment"
         ),
         "degraded_off": "Degraded mode over: back to the plan",
+        "boost_started": "Boost: heating to {target} °C{limit}",
+        "boost_limit": " (at most until {time})",
+        "boost_not_needed": (
+            "Boost not needed: the water is already at {temperature} °C "
+            "(target {target} °C)"
+        ),
+        "boost_finished": (
+            "Boost finished ({reason}) at {temperature} °C: {kwh} kWh, {cost} €"
+        ),
+        "boost_reason_target": "target reached",
+        "boost_reason_thermostat": "thermostat cut-off",
+        "boost_reason_duration": "maximum duration",
+        "boost_reason_safety": "safety",
+        "boost_reason_cancelled": "cancelled",
     },
     "es": {
         "rescue": (
@@ -101,6 +115,20 @@ MESSAGES: dict[str, dict[str, str]] = {
             "regla simple antes de cada cita"
         ),
         "degraded_off": "Fin del modo degradado: se vuelve al plan",
+        "boost_started": "Boost: calentando hasta {target} °C{limit}",
+        "boost_limit": " (como mucho hasta las {time})",
+        "boost_not_needed": (
+            "Boost innecesario: el agua ya está a {temperature} °C "
+            "(objetivo {target} °C)"
+        ),
+        "boost_finished": (
+            "Boost terminado ({reason}) a {temperature} °C: {kwh} kWh, {cost} €"
+        ),
+        "boost_reason_target": "objetivo alcanzado",
+        "boost_reason_thermostat": "corte del termostato",
+        "boost_reason_duration": "duración máxima",
+        "boost_reason_safety": "seguridad",
+        "boost_reason_cancelled": "cancelado",
     },
 }
 

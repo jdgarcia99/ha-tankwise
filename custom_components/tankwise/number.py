@@ -10,11 +10,18 @@ from homeassistant.components.number import (
     NumberEntityDescription,
     NumberMode,
 )
-from homeassistant.const import EntityCategory, UnitOfTemperature, UnitOfVolume
+from homeassistant.const import (
+    EntityCategory,
+    UnitOfTemperature,
+    UnitOfTime,
+    UnitOfVolume,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .const import (
+    SETTING_BOOST_DURATION,
+    SETTING_BOOST_TARGET,
     SETTING_COMFORT_MIN_TEMPERATURE,
     SETTING_MAINS_WATER_TEMPERATURE,
     SETTING_MAX_TEMPERATURE,
@@ -96,6 +103,30 @@ NUMBERS: tuple[TankWiseNumberDescription, ...] = (
         native_step=0.5,
         mode=NumberMode.BOX,
         entity_category=EntityCategory.CONFIG,
+    ),
+    TankWiseNumberDescription(
+        # The boost ends when the tank reaches this temperature.
+        key=SETTING_BOOST_TARGET,
+        translation_key=SETTING_BOOST_TARGET,
+        setting=SETTING_BOOST_TARGET,
+        device_class=NumberDeviceClass.TEMPERATURE,
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+        native_min_value=40,
+        native_max_value=80,
+        native_step=1,
+        mode=NumberMode.BOX,
+    ),
+    TankWiseNumberDescription(
+        # Maximum duration of a boost; 0 means no limit.
+        key=SETTING_BOOST_DURATION,
+        translation_key=SETTING_BOOST_DURATION,
+        setting=SETTING_BOOST_DURATION,
+        device_class=NumberDeviceClass.DURATION,
+        native_unit_of_measurement=UnitOfTime.MINUTES,
+        native_min_value=0,
+        native_max_value=240,
+        native_step=5,
+        mode=NumberMode.BOX,
     ),
     TankWiseNumberDescription(
         # Safety: the manual mode ends above this temperature.

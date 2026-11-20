@@ -16,6 +16,8 @@ must be in manual mode (full power from the grid) or in automatic mode
   safety maximum for one minute, thermostat cut-off (no power for three
   minutes), more than two hours in manual mode, probe unavailable or not
   updated. They are never skipped.
+* Boost: the user asked for hot water now. It heats in every mode the
+  caller allows (also shadow and holiday), with the same safeties.
 * Regulator lost: if the regulator becomes unavailable while TankWise had it
   in manual mode (or the element heats outside the plan) and is still
   unavailable after a margin, the heater switch is opened as a last resort.
@@ -87,6 +89,20 @@ class Reason(StrEnum):
     PROBE_LOST = "probe_lost"
     REGULATOR_LOST = "regulator_lost"
     REGULATOR_BACK = "regulator_back"
+    BOOST = "boost"
+    BOOST_DONE = "boost_done"
+
+
+# Safeties that end the manual mode (and a boost).
+SAFETY_REASONS = frozenset(
+    {
+        Reason.MAX_TEMPERATURE,
+        Reason.CUTOFF,
+        Reason.TOO_LONG,
+        Reason.PROBE_LOST,
+        Reason.REGULATOR_LOST,
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -219,6 +235,8 @@ class ControlInput:
     max_temperature: float  # safety maximum
     power_threshold: float  # W, below it the element is not heating
     regulator_margin: timedelta
+    # A boost is in progress: heat now, in any mode (even shadow).
+    boost: bool = False
 
 
 @dataclass(slots=True)
@@ -254,6 +272,7 @@ class Controller:
         self._hot_since: datetime | None = None
         self._command: tuple[bool, datetime] | None = None
         self._overridden = False
+        self._boosting = False
 
     # ------------------------------------------------------------------
     # Persistence
@@ -281,6 +300,14 @@ class Controller:
     # ------------------------------------------------------------------
     # Events
     # ------------------------------------------------------------------
+
+    def start_boost(self) -> None:
+        """A boost starts: an earlier cut-off no longer blocks the heating.
+
+        If the tank is still full the thermostat cuts off again in a few
+        minutes and the boost ends.
+        """
+        self.full_latch = None
 
     def regulator_lost(self, now: datetime, margin: timedelta) -> bool:
         """Return True if the regulator has been unavailable beyond the margin."""
@@ -316,6 +343,9 @@ class Controller:
         """Decide the orders for this minute."""
         decision = Decision()
         now = data.now
+        boost_ended = self._boosting and not data.boost
+        self._boosting = data.boost
+        active = data.active or data.boost
 
         if data.manual is None:
             if self.lost_since is None:
@@ -339,10 +369,11 @@ class Controller:
             self.desired = None
             return decision
 
-        if not data.active:
+        if not active:
             self.degraded = None
             if self.owns_manual and data.manual:
-                self._send(decision, Action.MANUAL_OFF, Reason.MODE, now)
+                reason = Reason.BOOST_DONE if boost_ended else Reason.MODE
+                self._send(decision, Action.MANUAL_OFF, reason, now)
             self.owns_manual = False
             self.desired = None
             return decision
@@ -364,6 +395,8 @@ class Controller:
             decision.heater_switch_off = True
 
         desired, reason_on, reason_off = self._desired(data)
+        if boost_ended:
+            reason_off = Reason.BOOST_DONE
 
         # Safeties on the manual mode, whoever switched it on.
         if data.manual and (safety := self._safety(data)) is not None:
@@ -394,7 +427,10 @@ class Controller:
     def _desired(self, data: ControlInput) -> tuple[bool, Reason, Reason]:
         """Return whether to heat from the grid now, and the order reasons."""
         now = data.now
-        if data.plan_heat is not None:
+        if data.boost:
+            desired = True
+            reasons = Reason.BOOST, Reason.BOOST_DONE
+        elif data.plan_heat is not None:
             self.degraded = None
             desired = data.plan_heat
             reasons = Reason.PLAN, Reason.PLAN_DONE

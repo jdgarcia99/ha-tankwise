@@ -1,0 +1,92 @@
+blueprint:
+  name: TankWise boost from a push button
+  description: >-
+    Start or cancel a TankWise boost (hot water now, whatever the plan and the
+    price) from any trigger: a Zigbee (ZHA or Zigbee2MQTT), Z-Wave or Shelly
+    button, a remote, an event or a state change. The safeties of TankWise
+    always apply. Create one automation per button or action.
+  domain: automation
+  source_url: https://github.com/jdgarcia99/ha-tankwise/blob/main/blueprints/automation/tankwise/boost_from_button.yaml
+  input:
+    button:
+      name: Button
+      description: >-
+        What presses the button: a device trigger, an event, a state change...
+      selector:
+        trigger: {}
+    action:
+      name: Action
+      description: >-
+        Toggle starts a boost, or cancels the one in progress, so a single
+        button does both.
+      default: toggle
+      selector:
+        select:
+          options:
+            - label: Toggle (start, or cancel if running)
+              value: toggle
+            - label: Start only
+              value: start
+            - label: Cancel only
+              value: cancel
+    boost_active:
+      name: TankWise boost active sensor
+      description: Tells whether a boost is in progress (for the toggle).
+      default: binary_sensor.tankwise_boost_active
+      selector:
+        entity:
+          filter:
+            - integration: tankwise
+              domain: binary_sensor
+    temperature:
+      name: Target temperature
+      description: 0 uses the boost target set in TankWise.
+      default: 0
+      selector:
+        number:
+          min: 0
+          max: 90
+          step: 1
+          unit_of_measurement: "°C"
+    duration:
+      name: Maximum duration
+      description: 0 uses the boost duration set in TankWise.
+      default: 0
+      selector:
+        number:
+          min: 0
+          max: 480
+          step: 5
+          unit_of_measurement: min
+
+mode: single
+max_exceeded: silent
+
+triggers: !input button
+
+variables:
+  requested: !input action
+  active_sensor: !input boost_active
+  temperature: !input temperature
+  duration: !input duration
+
+actions:
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: >-
+              {{ requested == 'cancel'
+                 or (requested == 'toggle' and is_state(active_sensor, 'on')) }}
+        sequence:
+          - action: tankwise.cancel_boost
+    default:
+      - action: tankwise.boost
+        data: >-
+          {% set ns = namespace(data={}) %}
+          {% if temperature | float(0) > 0 %}
+            {% set ns.data = dict(ns.data, temperature=temperature | float) %}
+          {% endif %}
+          {% if duration | float(0) > 0 %}
+            {% set ns.data = dict(ns.data, duration=duration | float) %}
+          {% endif %}
+          {{ ns.data }}

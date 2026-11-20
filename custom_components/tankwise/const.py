@@ -76,6 +76,8 @@ CONF_PROFILE_MODE: Final = "profile_mode"
 CONF_PROFILE_DAYS: Final = "profile_days"
 # Rescue recharge inside appointment blocks (off: strict mode).
 CONF_RESCUE: Final = "rescue"
+# A boost raises the demand forecast like a hot water shortage.
+CONF_BOOST_AS_SHORTAGE: Final = "boost_as_shortage"
 # Minutes the regulator may be unavailable before the heater switch is opened.
 CONF_REGULATOR_MARGIN: Final = "regulator_margin"
 
@@ -105,6 +107,7 @@ DEFAULT_PROFILE_MODE: Final = "workday_weekend"
 DEFAULT_PROFILE_DAYS: Final = 16
 DEFAULT_RESCUE: Final = True
 DEFAULT_REGULATOR_MARGIN: Final = 2  # min
+DEFAULT_BOOST_AS_SHORTAGE: Final = False
 
 DEFAULT_PARAMETERS: Final = {
     CONF_VOLUME: DEFAULT_VOLUME,
@@ -117,6 +120,7 @@ DEFAULT_PARAMETERS: Final = {
     CONF_PROFILE_DAYS: DEFAULT_PROFILE_DAYS,
     CONF_RESCUE: DEFAULT_RESCUE,
     CONF_REGULATOR_MARGIN: DEFAULT_REGULATOR_MARGIN,
+    CONF_BOOST_AS_SHORTAGE: DEFAULT_BOOST_AS_SHORTAGE,
 }
 INTEGER_PARAMETERS: Final = (
     CONF_VOLUME,
@@ -135,6 +139,8 @@ SETTING_MAINS_WATER_TEMPERATURE: Final = "mains_water_temperature"
 SETTING_RESERVE_LITERS: Final = "reserve_liters"
 SETTING_SURPLUS_VALUE: Final = "surplus_value"
 SETTING_MAX_TEMPERATURE: Final = "max_temperature"
+SETTING_BOOST_TARGET: Final = "boost_target"
+SETTING_BOOST_DURATION: Final = "boost_duration"  # min, 0: no limit
 
 MAINS_AUTOMATIC: Final = 0.0  # mains water number value meaning "use the table"
 
@@ -150,6 +156,8 @@ DEFAULT_SETTINGS: Final[dict[str, float]] = {
     # thermostat cut-off (68-70 °C on the reference tank, the probe reads up
     # to ~70 °C then), so the thermostat stays the normal stop.
     SETTING_MAX_TEMPERATURE: 72.0,
+    SETTING_BOOST_TARGET: 60.0,
+    SETTING_BOOST_DURATION: 90.0,
 }
 
 # Control state (select and switch entities, persisted in the store)
@@ -179,6 +187,8 @@ ISSUE_REGULATOR_LOST: Final = "regulator_lost"
 
 # Events
 EVENT_PLAN_AT_RISK: Final = "tankwise_plan_at_risk"
+EVENT_BOOST_STARTED: Final = "tankwise_boost_started"
+EVENT_BOOST_FINISHED: Final = "tankwise_boost_finished"
 
 # Services
 SERVICE_RESET_LEARNING: Final = "reset_learning"
@@ -192,6 +202,11 @@ RESET_PARTS: Final = (PART_LOSSES, PART_DEMAND, PART_ALL)
 SERVICE_REPLAN: Final = "replan"
 SERVICE_GET_PLAN: Final = "get_plan"
 SERVICE_REIMPORT_HISTORY: Final = "reimport_history"
+SERVICE_BOOST: Final = "boost"
+SERVICE_CANCEL_BOOST: Final = "cancel_boost"
+ATTR_TEMPERATURE: Final = "temperature"
+ATTR_LITERS: Final = "liters"
+ATTR_DURATION: Final = "duration"
 
 # Forecast horizon
 FORECAST_HOURS: Final = 36
