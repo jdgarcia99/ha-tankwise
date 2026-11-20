@@ -85,6 +85,12 @@
       },
       "appointment_predicted_temperature": {
         "default": "mdi:thermometer-check"
+      },
+      "power_request": {
+        "default": "mdi:solar-power-variant"
+      },
+      "last_anti_legionella": {
+        "default": "mdi:bacteria-outline"
       }
     },
     "number": {
@@ -130,6 +136,12 @@
       },
       "compensation_cap": {
         "default": "mdi:cash-check"
+      },
+      "anti_legionella": {
+        "default": "mdi:bacteria-outline",
+        "state": {
+          "off": "mdi:bacteria"
+        }
       }
     },
     "binary_sensor": {

@@ -420,3 +420,29 @@ async def test_upgrade_from_0_6_with_an_empty_import(
     assert coordinator.bootstrap.draws >= 1
     assert coordinator.data.tank.cutoff_samples
     assert coordinator.data.tank.heater_power_w != 1500.0
+
+
+async def test_incoherent_stored_losses_give_way_to_the_history(
+    hass: HomeAssistant,
+    mock_entry: MockConfigEntry,
+    freezer: FrozenDateTimeFactory,
+    hass_storage: dict[str, Any],
+) -> None:
+    """0.6 learned 1.86 W/K live (slow draws taken as losses): the history,
+    with about 1 W/K, wins even though the stored value has more windows."""
+    await _record_history(hass, freezer)
+    store = _store_0_5(mock_entry)
+    store["data"]["bootstrap"]["version"] = 2
+    store["data"]["tank"] = {**store["data"]["tank"], "ua": 1.86, "loss_windows": 40}
+    hass_storage[f"{DOMAIN}.{mock_entry.entry_id}"] = store
+    set_input_states(hass, temperature="50.0")
+    mock_entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(mock_entry.entry_id)
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    tank = mock_entry.runtime_data.data.tank
+    assert mock_entry.runtime_data.bootstrap.version == BOOTSTRAP_VERSION
+    assert tank.loss_windows < 40  # the imported windows
+    assert tank.ua_w_per_k == pytest.approx(1.0, abs=0.3)
+    # Coherent parameters with more evidence are still kept.
+    assert tank.heater_power_w == pytest.approx(1505.0)

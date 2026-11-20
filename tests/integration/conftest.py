@@ -36,7 +36,7 @@ INJECTION = "sensor.injection_price"
 GRID_IMPORT = "sensor.grid_import_energy"
 GRID_EXPORT = "sensor.grid_export_energy"
 EXPORT_POWER = "sensor.grid_export_power"
-SOLAR = "sensor.solar_forecast"
+OUTPUT = "switch.diverter_output"
 AMBIENT = "sensor.boiler_room_temperature"
 
 REQUIRED_INPUT = {
@@ -110,7 +110,7 @@ def set_optional_states(hass: HomeAssistant) -> None:
     hass.states.async_set(GRID_IMPORT, "1500.5", total)
     hass.states.async_set(GRID_EXPORT, "800.25", total)
     hass.states.async_set(EXPORT_POWER, "0.8", {"unit_of_measurement": "kW"})
-    hass.states.async_set(SOLAR, "6.4", {"unit_of_measurement": "kWh"})
+    hass.states.async_set(OUTPUT, "on")
     hass.states.async_set(AMBIENT, "18.0", {"unit_of_measurement": "°C"})
 
 

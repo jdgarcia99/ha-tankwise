@@ -32,9 +32,10 @@
           "grid_import_sensor": "Grid import energy",
           "grid_export_sensor": "Grid export energy",
           "export_power_sensor": "Current grid export power",
-          "solar_forecast_sensor": "Solar forecast",
           "ambient_sensor": "Ambient temperature around the tank",
-          "workday_entity": "Workday sensor"
+          "workday_entity": "Workday sensor",
+          "solar_forecast_entries": "Solar production forecast",
+          "regulator_output_switch": "Regulator output switch"
         },
         "data_description": {
           "energy_sensor": "Recommended. Cumulative energy of the water heater (total or total increasing). Without it, the power is integrated.",
@@ -45,9 +46,10 @@
           "grid_import_sensor": "Recommended. Total energy imported from the grid.",
           "grid_export_sensor": "Recommended. Total energy exported to the grid.",
           "export_power_sensor": "Recommended. Power being exported to the grid right now.",
-          "solar_forecast_sensor": "Forecast.Solar or Solcast hourly forecast.",
           "ambient_sensor": "Temperature of the room where the tank is. Without it, the fixed value of the options is used.",
-          "workday_entity": "Binary sensor of the Workday integration. With it, holidays are learned apart from workdays and appointments can be set for workdays or holidays."
+          "workday_entity": "Binary sensor of the Workday integration. With it, holidays are learned apart from workdays and appointments can be set for workdays or holidays.",
+          "solar_forecast_entries": "Forecast.Solar, Solcast or Open-Meteo Solar Forecast entries (several are summed, e.g. one per roof plane). The plan counts on the expected surplus: the forecast minus what the house uses at each hour, learned from the grid export.",
+          "regulator_output_switch": "Switch that enables the regulator output (FreeDS 'PWM enabled'). With it, when the injection price pays more than heating later costs, TankWise switches it off so the surplus is sold; it is switched on again before any heating."
         }
       },
       "reconfigure": {
@@ -136,16 +138,19 @@
           "grid_import_sensor": "Grid import energy",
           "grid_export_sensor": "Grid export energy",
           "export_power_sensor": "Current grid export power",
-          "solar_forecast_sensor": "Solar forecast",
           "ambient_sensor": "Ambient temperature around the tank",
-          "workday_entity": "Workday sensor"
+          "workday_entity": "Workday sensor",
+          "solar_forecast_entries": "Solar production forecast",
+          "regulator_output_switch": "Regulator output switch"
         },
         "data_description": {
           "energy_sensor": "Recommended. Cumulative energy of the water heater (total or total increasing). Without it, the power is integrated.",
           "regulator_sensor": "PWM output of the regulator (e.g. FreeDS). Helps to tell a thermostat cut-off from a regulator stop.",
           "occupancy_entity": "When off, no demand is expected and those days are not learned.",
           "ambient_sensor": "Temperature of the room where the tank is. Without it, the fixed value of the parameters is used.",
-          "workday_entity": "Binary sensor of the Workday integration. With it, holidays are learned apart from workdays and appointments can be set for workdays or holidays."
+          "workday_entity": "Binary sensor of the Workday integration. With it, holidays are learned apart from workdays and appointments can be set for workdays or holidays.",
+          "solar_forecast_entries": "Forecast.Solar, Solcast or Open-Meteo Solar Forecast entries (several are summed, e.g. one per roof plane). The plan counts on the expected surplus: the forecast minus what the house uses at each hour, learned from the grid export.",
+          "regulator_output_switch": "Switch that enables the regulator output (FreeDS 'PWM enabled'). With it, when the injection price pays more than heating later costs, TankWise switches it off so the surplus is sold; it is switched on again before any heating."
         }
       },
       "appointments": {
@@ -527,6 +532,36 @@
             "name": "At risk"
           }
         }
+      },
+      "power_request": {
+        "name": "Requested surplus power",
+        "state_attributes": {
+          "priority": {
+            "name": "Priority",
+            "state": {
+              "high": "High (comfort needs it)",
+              "low": "Low (fills the tank)",
+              "none": "None"
+            }
+          }
+        }
+      },
+      "last_anti_legionella": {
+        "name": "Last anti-legionella cycle",
+        "state_attributes": {
+          "enabled": {
+            "name": "Enabled"
+          },
+          "deadline": {
+            "name": "Deadline"
+          },
+          "planned_at": {
+            "name": "Planned at"
+          },
+          "planned_temperature": {
+            "name": "Planned temperature"
+          }
+        }
       }
     },
     "number": {
@@ -569,6 +604,9 @@
       },
       "compensation_cap": {
         "name": "Surplus compensation cap reached"
+      },
+      "anti_legionella": {
+        "name": "Anti-legionella cycle"
       }
     },
     "binary_sensor": {

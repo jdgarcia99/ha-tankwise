@@ -185,13 +185,17 @@ async def test_real_cost_from_grid_and_surplus(
 ) -> None:
     freezer.move_to(NOW)
     await _setup(hass, mock_entry)
-    # 0.5 kWh from the grid at 0.20 €/kWh.
-    set_input_states(hass, temperature="47.0", energy="123.9", power="1500")
+    # 0.5 kWh from the grid at 0.20 €/kWh (regulator in manual mode).
+    set_input_states(
+        hass, temperature="47.0", energy="123.9", power="1500", manual="on"
+    )
     hass.states.async_set(PRICE, "0.20", _prices(0.20, (14, 15), 0.08))
     await _tick(hass, freezer)
     # 0.5 kWh while exporting: surplus at 0.05 €/kWh.
     hass.states.async_set(EXPORT_POWER, "800", {"unit_of_measurement": "W"})
-    set_input_states(hass, temperature="49.0", energy="124.4", power="1500")
+    set_input_states(
+        hass, temperature="49.0", energy="124.4", power="1500", manual="on"
+    )
     hass.states.async_set(PRICE, "0.20", _prices(0.20, (14, 15), 0.08))
     await _tick(hass, freezer)
 
@@ -204,6 +208,16 @@ async def test_real_cost_from_grid_and_surplus(
     totals = mock_entry.runtime_data.data.totals_today
     assert totals.real_grid_kwh == pytest.approx(0.5)
     assert totals.real_solar_kwh == pytest.approx(0.5)
+
+    # Regulator in automatic mode: surplus even with no export (the
+    # diverter keeps the export close to zero while it heats).
+    hass.states.async_set(EXPORT_POWER, "0", {"unit_of_measurement": "W"})
+    set_input_states(hass, temperature="51.0", energy="124.9", power="1500")
+    hass.states.async_set(PRICE, "0.20", _prices(0.20, (14, 15), 0.08))
+    await _tick(hass, freezer)
+    totals = mock_entry.runtime_data.data.totals_today
+    assert totals.real_grid_kwh == pytest.approx(0.5)
+    assert totals.real_solar_kwh == pytest.approx(1.0)
 
 
 async def test_planned_cost_is_committed_slot_by_slot(

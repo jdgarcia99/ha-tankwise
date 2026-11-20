@@ -79,9 +79,10 @@ from .const import (
     CONF_PROFILE_MODE,
     CONF_RATED_POWER,
     CONF_REGULATOR_MARGIN,
+    CONF_REGULATOR_OUTPUT_SWITCH,
     CONF_REGULATOR_SENSOR,
     CONF_RESCUE,
-    CONF_SOLAR_FORECAST_SENSOR,
+    CONF_SOLAR_FORECAST_ENTRIES,
     CONF_TEMPERATURE_SENSOR,
     CONF_VOLUME,
     CONF_WATER_REGION,
@@ -104,6 +105,7 @@ from .model.appointments import (
 )
 from .model.demand import WEEKDAY_NAMES, DayTypeMode
 from .model.water import REGIONS
+from .solar_forecast import async_forecast_entries
 
 ENERGY_STATE_CLASSES = (SensorStateClass.TOTAL_INCREASING, SensorStateClass.TOTAL)
 
@@ -187,15 +189,39 @@ OPTIONAL_INPUTS_SCHEMA = vol.Schema(
         vol.Optional(CONF_EXPORT_POWER_SENSOR): _sensor_selector(
             SensorDeviceClass.POWER
         ),
-        vol.Optional(CONF_SOLAR_FORECAST_SENSOR): _sensor_selector(),
         vol.Optional(CONF_AMBIENT_SENSOR): _sensor_selector(
             SensorDeviceClass.TEMPERATURE
         ),
         vol.Optional(CONF_WORKDAY_ENTITY): EntitySelector(
             EntitySelectorConfig(domain=BINARY_SENSOR_DOMAIN, integration="workday")
         ),
+        vol.Optional(CONF_REGULATOR_OUTPUT_SWITCH): _entity_selector(
+            [SWITCH_DOMAIN, INPUT_BOOLEAN_DOMAIN]
+        ),
     }
 )
+
+
+async def _optional_inputs_schema(hass: HomeAssistant) -> vol.Schema:
+    """Optional inputs, with the config entries that give a solar forecast."""
+    entries = await async_forecast_entries(hass)
+    if not entries:
+        return OPTIONAL_INPUTS_SCHEMA
+    return OPTIONAL_INPUTS_SCHEMA.extend(
+        {
+            vol.Optional(CONF_SOLAR_FORECAST_ENTRIES): SelectSelector(
+                SelectSelectorConfig(
+                    options=[
+                        SelectOptionDict(value=entry_id, label=label)
+                        for entry_id, label in entries
+                    ],
+                    multiple=True,
+                    mode=SelectSelectorMode.LIST,
+                )
+            )
+        }
+    )
+
 
 PARAMETERS_SCHEMA = vol.Schema(
     {
@@ -352,15 +378,17 @@ def _validate_optional_inputs(
             error := _validate_measurement(hass, entity_id, units, state_classes)
         ):
             errors[key] = error
-    for key in (
-        CONF_INJECTION_PRICE_SENSOR,
-        CONF_SOLAR_FORECAST_SENSOR,
-    ):
+    for key in (CONF_INJECTION_PRICE_SENSOR,):
         if (entity_id := user_input.get(key)) and (
             error := _validate_numeric(hass, entity_id)
         ):
             errors[key] = error
-    for key in (CONF_MASTER_ENTITY, CONF_OCCUPANCY_ENTITY, CONF_WORKDAY_ENTITY):
+    for key in (
+        CONF_MASTER_ENTITY,
+        CONF_OCCUPANCY_ENTITY,
+        CONF_WORKDAY_ENTITY,
+        CONF_REGULATOR_OUTPUT_SWITCH,
+    ):
         if (entity_id := user_input.get(key)) and (
             error := _validate_exists(hass, entity_id)
         ):
@@ -462,7 +490,7 @@ class TankWiseConfigFlow(ConfigFlow, domain=DOMAIN):
         return self.async_show_form(
             step_id="inputs",
             data_schema=self.add_suggested_values_to_schema(
-                OPTIONAL_INPUTS_SCHEMA, user_input
+                await _optional_inputs_schema(self.hass), user_input
             ),
             errors=errors,
         )
@@ -537,7 +565,7 @@ class TankWiseOptionsFlow(OptionsFlowWithReload):
         return self.async_show_form(
             step_id="inputs",
             data_schema=self.add_suggested_values_to_schema(
-                OPTIONAL_INPUTS_SCHEMA,
+                await _optional_inputs_schema(self.hass),
                 user_input if user_input is not None else self.config_entry.options,
             ),
             errors=errors,

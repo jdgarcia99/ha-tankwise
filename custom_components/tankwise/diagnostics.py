@@ -143,6 +143,23 @@ async def async_get_config_entry_diagnostics(
         "plan": plan_report(coordinator),
         "ledger": coordinator.planner.ledger.as_dict(),
         "controller": _controller(coordinator),
+        "solar": {
+            "learned_hours": coordinator.planner.solar.learned_hours(),
+            "base_load_kwh": {
+                hour: round(coordinator.planner.solar.base_load(hour), 3)
+                for hour in range(24)
+            },
+            "forecast_kwh": {
+                moment.isoformat(): round(kwh, 3)
+                for moment, kwh in (coordinator.planner.solar_forecast or {}).items()
+            },
+            "solar_needed": coordinator.planner.solar_needed,
+            "power_request": list(coordinator.data.power_request),
+        },
+        "anti_legionella": {
+            "enabled": coordinator.planner.anti_legionella,
+            **coordinator.planner.legionella.as_dict(),
+        },
         "reconciliations": [
             item.as_dict() for item in coordinator.model.reconciliations
         ],

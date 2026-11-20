@@ -18,6 +18,9 @@ must be in manual mode (full power from the grid) or in automatic mode
   updated. They are never skipped.
 * Boost: the user asked for hot water now. It heats in every mode the
   caller allows (also shadow and holiday), with the same safeties.
+* Selling the surplus: when the plan prefers to export the surplus (the
+  injection pays more than heating later costs), the regulator output is
+  switched off; it is switched on again afterwards and before any heating.
 * Regulator lost: if the regulator becomes unavailable while TankWise had it
   in manual mode (or the element heats outside the plan) and is still
   unavailable after a margin, the heater switch is opened as a last resort.
@@ -73,6 +76,8 @@ class Action(StrEnum):
     MANUAL_OFF = "manual_off"
     HEATER_OFF = "heater_off"
     HEATER_ON = "heater_on"
+    OUTPUT_OFF = "output_off"
+    OUTPUT_ON = "output_on"
 
 
 class Reason(StrEnum):
@@ -91,6 +96,9 @@ class Reason(StrEnum):
     REGULATOR_BACK = "regulator_back"
     BOOST = "boost"
     BOOST_DONE = "boost_done"
+    SELL = "sell"
+    SELL_DONE = "sell_done"
+    HEAT = "heat"
 
 
 # Safeties that end the manual mode (and a boost).
@@ -237,6 +245,10 @@ class ControlInput:
     regulator_margin: timedelta
     # A boost is in progress: heat now, in any mode (even shadow).
     boost: bool = False
+    # The plan lets the solar surplus go to the grid now (sell it).
+    sell_surplus: bool = False
+    # Regulator output switch (None: not configured or unavailable).
+    output: bool | None = None
 
 
 @dataclass(slots=True)
@@ -259,6 +271,7 @@ class Controller:
         """Initialise the controller."""
         # Persistent: TankWise switched the manual mode on / the switch off.
         self.owns_manual = False
+        self.owns_output_off = False
         self.heater_cut = False
         self.cuts: list[datetime] = []
         # Runtime state.
@@ -282,6 +295,7 @@ class Controller:
         """Return the state that must survive a restart."""
         return {
             "owns_manual": self.owns_manual,
+            "owns_output_off": self.owns_output_off,
             "heater_cut": self.heater_cut,
             "cuts": [moment.isoformat() for moment in self.cuts],
         }
@@ -292,6 +306,7 @@ class Controller:
         controller = cls()
         controller.owns_manual = bool(data.get("owns_manual", False))
         controller.heater_cut = bool(data.get("heater_cut", False))
+        controller.owns_output_off = bool(data.get("owns_output_off", False))
         controller.cuts = [
             datetime.fromisoformat(value) for value in data.get("cuts", [])
         ]
@@ -371,6 +386,7 @@ class Controller:
 
         if not active:
             self.degraded = None
+            self._output(decision, data, sell=False, heat=False, reason=Reason.MODE)
             if self.owns_manual and data.manual:
                 reason = Reason.BOOST_DONE if boost_ended else Reason.MODE
                 self._send(decision, Action.MANUAL_OFF, reason, now)
@@ -405,6 +421,9 @@ class Controller:
             self.desired = False
             return decision
 
+        self._output(
+            decision, data, sell=data.sell_surplus, heat=desired, reason=Reason.SELL
+        )
         changed = desired != self.desired
         if changed:
             self._overridden = False
@@ -478,6 +497,34 @@ class Controller:
             self.pause_until = now + LONG_RUN_PAUSE
             return Reason.TOO_LONG
         return None
+
+    def _output(
+        self,
+        decision: Decision,
+        data: ControlInput,
+        *,
+        sell: bool,
+        heat: bool,
+        reason: Reason,
+    ) -> None:
+        """Switch the regulator output: off to sell the surplus, on to heat."""
+        if data.output is None:
+            return
+        if heat:
+            if not data.output:
+                decision.add(Action.OUTPUT_ON, Reason.HEAT)
+            self.owns_output_off = False
+        elif sell and data.active:
+            if data.output and not self.owns_output_off:
+                decision.add(Action.OUTPUT_OFF, Reason.SELL)
+            self.owns_output_off = True
+        elif self.owns_output_off:
+            if not data.output:
+                decision.add(
+                    Action.OUTPUT_ON,
+                    Reason.SELL_DONE if reason is Reason.SELL else reason,
+                )
+            self.owns_output_off = False
 
     def _send(
         self, decision: Decision, action: Action, reason: Reason, now: datetime

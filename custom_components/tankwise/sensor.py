@@ -158,6 +158,19 @@ def _plan_attributes(coordinator: TankWiseCoordinator) -> dict[str, Any]:
     }
 
 
+def _legionella_attributes(coordinator: TankWiseCoordinator) -> dict[str, Any]:
+    planner = coordinator.planner
+    now = dt_util.utcnow()
+    plan = coordinator.data.plan
+    planned = plan.legionella if plan is not None else None
+    return {
+        "enabled": planner.anti_legionella,
+        "deadline": planner.legionella.deadline(now).isoformat(),
+        "planned_at": planned[0].isoformat() if planned else None,
+        "planned_temperature": round(planned[1], 1) if planned else None,
+    }
+
+
 def _next_heating(data: TankWiseData) -> Any:
     heating = data.plan.next_heating() if data.plan else None
     return heating.start if heating else None
@@ -309,6 +322,26 @@ SENSORS: tuple[TankWiseSensorDescription, ...] = (
         device_class=SensorDeviceClass.TIMESTAMP,
         value_fn=_next_heating,
         attributes_fn=_next_heating_attributes,
+        requires_tank=False,
+    ),
+    TankWiseSensorDescription(
+        key="power_request",
+        translation_key="power_request",
+        device_class=SensorDeviceClass.POWER,
+        native_unit_of_measurement=UnitOfPower.WATT,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda data: data.power_request[0],
+        attributes_fn=lambda coordinator: {
+            "priority": coordinator.data.power_request[1]
+        },
+        requires_tank=False,
+    ),
+    TankWiseSensorDescription(
+        key="last_anti_legionella",
+        translation_key="last_anti_legionella",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        value_fn=lambda data: data.legionella_last,
+        attributes_fn=_legionella_attributes,
         requires_tank=False,
     ),
     _money("cost_today", lambda data: data.totals_today.real_cost),

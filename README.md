@@ -17,7 +17,7 @@ purchase price plus the value of the solar surplus).
 
 ## Project status
 
-> **Development (0.8.0, phase 5 of 7).** TankWise learns the tank and the
+> **Development (0.9.0, phase 6 of 7).** TankWise learns the tank and the
 > household's usage, computes the heating plan and, in the auto, eco, comfort
 > and holiday modes, **controls the regulator** with its safeties. It still
 > starts in shadow mode (publishes the plan without acting): compare the
@@ -32,7 +32,7 @@ purchase price plus the value of the solar surplus).
 | 3 | Prices, surplus value and optimiser; shadow mode with the plan | ✅ Done |
 | 4 | Controller, safeties and degraded mode; automatic mode | ✅ Done |
 | 5 | Boost with a blueprint for external push buttons | ✅ Done |
-| 6 | Solar forecast, SolarSplit coordination and anti-legionella cycle | Planned |
+| 6 | Solar forecast, SolarSplit coordination and anti-legionella cycle | ✅ Done |
 | 7 | Migration from automations and full documentation | Planned |
 
 ## Installation
@@ -64,7 +64,9 @@ and no entity ID is fixed in the code.
 - Entity that tells whether the regulator is master of the water heater.
 - Home occupied.
 - Grid injection price, grid import and export energy, current export power.
-- Solar forecast (Forecast.Solar or Solcast).
+- Solar production forecast: one or more Forecast.Solar, Solcast or
+  Open-Meteo Solar Forecast entries (summed).
+- Regulator output switch (e.g. FreeDS "PWM enabled"), to sell the surplus.
 - Ambient temperature where the tank is.
 - Workday sensor (Workday integration): holidays are learned apart and
   appointments can be set for workdays or holidays.
@@ -263,6 +265,38 @@ of a ZHA, Zigbee2MQTT, Z-Wave or Shelly button, an event...), the action
 (toggle, start only or cancel only) and optionally a temperature and a
 duration. Import it from **Settings → Automations & scenes → Blueprints →
 Import blueprint** with its GitHub URL.
+
+## Solar surplus and anti-legionella
+
+**Solar forecast.** Choose one or more forecast entries in the inputs
+(Forecast.Solar, Solcast or Open-Meteo Solar Forecast: the same hourly
+forecast the Energy dashboard uses; several entries, e.g. one per roof
+plane, are summed). The plan counts on the expected surplus: the forecast
+minus what the house uses at each hour. That part is learned for each hour
+of the day from the grid export and from what the water heater took from
+the surplus, so it also corrects the bias of the forecast. Until an hour is
+learned, 0.25 kWh of house consumption is assumed.
+
+**Selling the surplus.** With the regulator output switch (FreeDS "PWM
+enabled") among the inputs, when the injection price pays more than heating
+later costs (by at least 0.03 €/kWh, for the uncertainty of the forecast)
+the plan lets the surplus go to the grid: the output is switched off, and
+switched on again afterwards and before any heating. Logged in the logbook.
+
+**Coordination with other loads (SolarSplit).** The **Requested surplus
+power** sensor (W) says how much surplus TankWise wants now, with a
+`priority`: `high` when the plan needs that surplus for hot water (without
+it, it would heat more from the grid before the next appointment), `low`
+when it only fills the tank. The `tankwise_power_request` event fires when
+either changes, so a surplus manager can share the surplus between loads.
+
+**Anti-legionella** (switch, on by default). A cycle is 60 °C or more for an
+hour, measured by the probe; the **Last anti-legionella cycle** sensor shows
+when it last happened and the deadline (7 days later). Two days before the
+deadline, the plan adds a target of 61.5 °C (limited below the thermostat
+cut-off) after the hour where heating is cheapest: with surplus first,
+otherwise the cheapest purchase price. When the tank reaches 60 °C for an
+hour by itself (e.g. on sunny days), nothing extra is heated.
 
 ## Services
 

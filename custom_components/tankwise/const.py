@@ -45,6 +45,12 @@ CONF_INJECTION_PRICE_SENSOR: Final = "injection_price_sensor"
 CONF_GRID_IMPORT_SENSOR: Final = "grid_import_sensor"
 CONF_GRID_EXPORT_SENSOR: Final = "grid_export_sensor"
 CONF_EXPORT_POWER_SENSOR: Final = "export_power_sensor"
+# Config entries whose hourly solar forecast is used (summed).
+CONF_SOLAR_FORECAST_ENTRIES: Final = "solar_forecast_entries"
+# Switch that enables the regulator output (FreeDS "PWM enabled"): off, the
+# surplus goes to the grid instead of the water heater.
+CONF_REGULATOR_OUTPUT_SWITCH: Final = "regulator_output_switch"
+# Until 0.8: a daily forecast sensor, not usable for an hourly plan.
 CONF_SOLAR_FORECAST_SENSOR: Final = "solar_forecast_sensor"
 CONF_AMBIENT_SENSOR: Final = "ambient_sensor"
 CONF_WORKDAY_ENTITY: Final = "workday_entity"
@@ -58,7 +64,8 @@ OPTIONAL_INPUT_KEYS: Final = (
     CONF_GRID_IMPORT_SENSOR,
     CONF_GRID_EXPORT_SENSOR,
     CONF_EXPORT_POWER_SENSOR,
-    CONF_SOLAR_FORECAST_SENSOR,
+    CONF_SOLAR_FORECAST_ENTRIES,
+    CONF_REGULATOR_OUTPUT_SWITCH,
     CONF_AMBIENT_SENSOR,
     CONF_WORKDAY_ENTITY,
 )
@@ -175,8 +182,9 @@ STORAGE_SAVE_DELAY: Final = 300  # s
 BOOTSTRAP_DAYS: Final = 10
 # Raised when the models change enough for the history to be imported again
 # (2: demand profile, energy reconciliation and stricter cut-off detection;
-# 3: imports of 0.6 that ran before the inputs existed learned nothing).
-BOOTSTRAP_VERSION: Final = 3
+# 3: imports of 0.6 that ran before the inputs existed learned nothing;
+# 4: rest windows ended by a slow draw no longer inflate the heat losses).
+BOOTSTRAP_VERSION: Final = 4
 # The import waits this long for the probe and the power after a start.
 BOOTSTRAP_INPUT_WAIT: Final = timedelta(minutes=30)
 SHORTAGE_WINDOW: Final = timedelta(days=7)
@@ -187,6 +195,7 @@ ISSUE_REGULATOR_LOST: Final = "regulator_lost"
 
 # Events
 EVENT_PLAN_AT_RISK: Final = "tankwise_plan_at_risk"
+EVENT_POWER_REQUEST: Final = "tankwise_power_request"
 EVENT_BOOST_STARTED: Final = "tankwise_boost_started"
 EVENT_BOOST_FINISHED: Final = "tankwise_boost_finished"
 

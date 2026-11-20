@@ -55,9 +55,9 @@ from .const import (
     CONF_PROFILE_DAYS,
     CONF_PROFILE_MODE,
     CONF_RATED_POWER,
+    CONF_REGULATOR_OUTPUT_SWITCH,
     CONF_REGULATOR_SENSOR,
     CONF_RESCUE,
-    CONF_SOLAR_FORECAST_SENSOR,
     CONF_TEMPERATURE_SENSOR,
     CONF_VOLUME,
     CONF_WATER_REGION,
@@ -66,6 +66,7 @@ from .const import (
     DEFAULT_SETTINGS,
     DOMAIN,
     EVENT_PLAN_AT_RISK,
+    EVENT_POWER_REQUEST,
     FORECAST_HOURS,
     MAINS_AUTOMATIC,
     MAINS_SOURCE_MANUAL,
@@ -134,6 +135,7 @@ class TankReadings:
     regulator: float | None = None
     manual_mode: bool | None = None
     heater_switch: bool | None = None
+    regulator_output: bool | None = None
     master: bool | None = None
     occupancy: bool | None = None
     price: float | None = None
@@ -141,7 +143,6 @@ class TankReadings:
     grid_import: float | None = None
     grid_export: float | None = None
     export_power: float | None = None
-    solar_forecast: float | None = None
     ambient_temperature: float | None = None
     workday: bool | None = None
 
@@ -169,6 +170,10 @@ class TankWiseData:
     )
     # Active appointments the tank cannot cover even with the rescue.
     at_risk: list[str] = field(default_factory=list)
+    # Surplus power TankWise wants now (W) and its priority (SolarSplit).
+    power_request: tuple[float, str] = (0.0, "none")
+    # Last anti-legionella cycle really done (60 °C or more for an hour).
+    legionella_last: datetime | None = None
     # Why hot water cannot be guaranteed: "appointments", "demand",
     # "regulator_unavailable", "probe_unavailable" (empty: plan not at risk).
     risk_reasons: list[str] = field(default_factory=list)
@@ -582,6 +587,12 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
         await self.async_save_now()
         await self.async_replan("mode")
 
+    async def async_set_anti_legionella(self, enabled: bool) -> None:
+        """Enable or disable the weekly anti-legionella cycle."""
+        self.planner.anti_legionella = enabled
+        await self.async_save_now()
+        await self.async_replan("anti_legionella")
+
     async def async_set_compensation_cap(self, reached: bool) -> None:
         """Mark whether the compensation cap of the month was reached."""
         self.planner.compensation_cap = reached
@@ -658,6 +669,17 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
         await self.controller.async_update(now, readings, tank, requirements, workdays)
         self._store.async_schedule_save(self._stored_data)
         risk_reasons = self._risk_reasons(at_risk)
+        power_request = self.planner.power_request(now, tank)
+        if self.data is None or power_request != self.data.power_request:
+            self.hass.bus.async_fire(
+                EVENT_POWER_REQUEST,
+                {
+                    "entry_id": self.config_entry.entry_id,
+                    "name": self.config_entry.title,
+                    "power": power_request[0],
+                    "priority": power_request[1],
+                },
+            )
         totals_today, totals_month = self.planner.ledger.current(now)
         return TankWiseData(
             plan=self.planner.plan,
@@ -677,6 +699,8 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
             appointment_requirements=requirements,
             at_risk=at_risk,
             risk_reasons=risk_reasons,
+            power_request=power_request,
+            legionella_last=self.planner.legionella.last_cycle,
         )
 
     def _risk_reasons(self, at_risk: list[str]) -> list[str]:
@@ -836,6 +860,7 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
             regulator=self._read_float(options.get(CONF_REGULATOR_SENSOR)),
             manual_mode=self._read_bool(data.get(CONF_MANUAL_MODE_SWITCH)),
             heater_switch=self._read_bool(data.get(CONF_HEATER_SWITCH)),
+            regulator_output=self._read_bool(options.get(CONF_REGULATOR_OUTPUT_SWITCH)),
             master=self._read_bool(options.get(CONF_MASTER_ENTITY)),
             occupancy=self._read_bool(options.get(CONF_OCCUPANCY_ENTITY)),
             price=self._read_float(data.get(CONF_PRICE_SENSOR)),
@@ -849,7 +874,6 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
             export_power=self._read_measurement(
                 options.get(CONF_EXPORT_POWER_SENSOR), "power"
             ),
-            solar_forecast=self._read_float(options.get(CONF_SOLAR_FORECAST_SENSOR)),
             ambient_temperature=self._read_measurement(
                 options.get(CONF_AMBIENT_SENSOR), "temperature"
             ),
