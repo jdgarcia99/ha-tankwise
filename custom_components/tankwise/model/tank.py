@@ -485,6 +485,23 @@ class TankModel:
         self._step(sample, params, elapsed)
         return self._state(now, params, available=True)
 
+    def reset_losses(self) -> None:
+        """Forget the learned loss coefficient."""
+        self._ua = DEFAULT_UA
+        self._ua_covariance = RLS_INITIAL_COVARIANCE
+        self._loss_windows = 0
+        self._loss = _LossWindow()
+
+    def reset_learning(self) -> None:
+        """Forget every learned parameter (losses, k_cap, power, cut-offs, draws)."""
+        self.reset_losses()
+        self._capacity_samples.clear()
+        self._heater_power_w = None
+        self._heater_power_samples = 0
+        self._cutoff_samples.clear()
+        self._consumptions.clear()
+        self._episode = None
+
     def as_dict(self) -> dict[str, Any]:
         """Return the persistent part of the model."""
         return {

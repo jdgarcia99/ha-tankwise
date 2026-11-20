@@ -25,6 +25,9 @@ ROLE_ENERGY: Final = "energy"
 ROLE_REGULATOR: Final = "regulator"
 ROLE_MANUAL_MODE: Final = "manual_mode"
 ROLE_AMBIENT: Final = "ambient"
+# Not used by the tank model; passed to ``on_sample`` (demand profile).
+ROLE_OCCUPANCY: Final = "occupancy"
+ROLE_WORKDAY: Final = "workday"
 ROLES: Final = (
     ROLE_TEMPERATURE,
     ROLE_POWER,
@@ -32,6 +35,8 @@ ROLES: Final = (
     ROLE_REGULATOR,
     ROLE_MANUAL_MODE,
     ROLE_AMBIENT,
+    ROLE_OCCUPANCY,
+    ROLE_WORKDAY,
 )
 DEFAULT_STEP: Final = timedelta(minutes=1)
 
@@ -65,14 +70,16 @@ def replay(
     start: datetime | None = None,
     end: datetime | None = None,
     step: timedelta = DEFAULT_STEP,
-    on_sample: Callable[[TankSample, TankState], None] | None = None,
+    on_sample: Callable[[TankSample, TankState, Mapping[str, Value]], None]
+    | None = None,
 ) -> ReplayResult:
     """Replay the state changes of each role (see ``ROLES``) through a model.
 
     ``params`` may be a function of the sample time (e.g. the mains water
-    temperature changes with the date). Sampling starts at the first
-    temperature change (or ``start``) and ends at the last change of any
-    input (or ``end``).
+    temperature changes with the date). ``on_sample`` receives each sample,
+    the resulting state and the current value of every role. Sampling
+    starts at the first temperature change (or ``start``) and ends at the
+    last change of any input (or ``end``).
     """
     unknown = set(series) - set(ROLES)
     if unknown:
@@ -124,7 +131,7 @@ def replay(
         )
         state = model.update(sample, params_at(moment))
         if on_sample is not None:
-            on_sample(sample, state)
+            on_sample(sample, state, current)
         samples += 1
         moment += step
     return ReplayResult(model, samples, first, moment - step, state)

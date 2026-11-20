@@ -281,3 +281,22 @@ def test_feed_helper_accepts_custom_params() -> None:
     sim = TankSimulator(temperature=46.0)
     state = feed(TankModel(), sim.run(3), replace(PARAMS, mains_temperature=10.0))
     assert state.mains_temperature == 10.0
+
+
+def test_reset_learning() -> None:
+    sim = TankSimulator(temperature=40.0, cutoff=47.0, report_manual=True)
+    model = TankModel()
+    drive(model, sim, 5)
+    _fill(model, sim)
+    drive(model, sim, 12, draw_kw=SHOWER_KW)
+    drive(model, sim, 30)
+    model._ua = 2.0
+    model.reset_losses()
+    assert model.ua == 1.0
+    assert model.as_dict()["cutoff_samples"]
+    model.reset_learning()
+    data = model.as_dict()
+    assert data["cutoff_samples"] == []
+    assert data["consumptions"] == []
+    assert data["heater_power_w"] is None
+    assert data["equivalent_temperature"] is not None  # the state is kept
