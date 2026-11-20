@@ -99,15 +99,18 @@ inputs with **Reconfigure**.
 ## Hot water appointments
 
 An appointment says "hot water ready by this time, with at least this much
-water": name, time, days of the week (or workdays/holidays with the Workday
-sensor), minimum litres at the shower temperature and active or not. Up to
+water for the block that follows": name, start time, block duration (1 hour
+by default, e.g. 3 hours for the evening showers), days of the week (or
+workdays/holidays with the Workday sensor), minimum litres at the shower
+temperature and active or not. The minimum litres must be available when the
+block starts and cover the whole block without reheating. Up to
 six, none by default. They are added in **Options → Hot water appointments**.
 
 Each appointment gets entities to adjust it from a dashboard (changes are
 saved in the options): `time.<name>_<appointment>_time`,
 `number.<name>_<appointment>_liters` and `switch.<name>_<appointment>_enabled`.
 The sensor `sensor.<name>_<appointment>_suggested_liters` shows the litres
-actually used in the hour after the appointment (P90 of the last four weeks)
+actually used during the block (P90 of the last four weeks)
 to help choosing the minimum. From phase 3 the planner treats every active
 appointment as a hard constraint.
 

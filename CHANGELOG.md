@@ -25,11 +25,12 @@ the demand. It still does not act on any device.
   forecast of its time of day by 20 % for two weeks.
 - Optional Workday sensor: holidays are learned apart from workdays, and the
   coming days are checked with the Workday integration.
-- Hot water appointments (up to six): "water ready by" time, days, minimum
-  litres at the shower temperature and active or not. Each one has time,
-  litres and active entities synchronised with the options, and a suggested
-  litres sensor (P90 of the water used in the hour after it in the last four
-  weeks).
+- Hot water appointments (up to six): start time, block duration (1 hour by
+  default), days, minimum litres at the shower temperature and active or
+  not. The minimum litres must be available when the block starts and cover
+  the whole block without reheating. Each appointment has time, litres and
+  active entities synchronised with the options, and a suggested litres
+  sensor (P90 of the water used during the block in the last four weeks).
 - Sensors: hot water demand today and hot water demand forecast (36 hours,
   slots as an attribute that is not recorded).
 - `tankwise.reset_learning` service (heat losses, usage profile or
@@ -44,6 +45,32 @@ the demand. It still does not act on any device.
 - The heat loss coefficient, learned heating power, thermostat cut-off
   temperature and effective capacity factor sensors are disabled by default
   for new installations.
+- Entity IDs no longer depend on the device name or area: they are always
+  `<platform>.tankwise_<key>` (e.g. `sensor.tankwise_stored_energy`).
+  Entities created by 0.3.0 with the area in their ID (e.g.
+  `sensor.coladuria_tankwise_stored_energy`) are renamed in the entity
+  registry and keep their history. Entity IDs changed by hand are kept.
+- The 0.2 entities `sensor.tankwise_useful_energy`, `sensor.tankwise_charge`
+  and `sensor.tankwise_model_status` are kept: they are the same entities as
+  before (same unique IDs and history), not duplicates. Since 0.3.0 useful
+  energy and charge are measured above the minimum comfort temperature
+  (38 °C) instead of the 0.2 "minimum useful temperature" (32 °C).
+
+### Fixed
+
+- Heating stopped by an automation (e.g. a boost to 45 °C that switches the
+  diverter manual mode off) was learned as a thermostat cut-off, which left
+  the learned cut-off temperature around 46 °C:
+  - the manual mode switched off, or the PWM output falling to rest, up to
+    60 seconds after the power falls now means the regulator stopped the
+    heating (its state reaches Home Assistant a few seconds after the power);
+  - when the regulator is configured but unavailable, a stop of the heating
+    is no longer decided with the temperature backup criterion;
+  - a cut-off more than 12 °C below the configured cut-off temperature is
+    not accepted, and such cut-offs learned before are forgotten;
+  - entries that still had the 0.2 defaults (47 °C cut-off and 1450 W) get
+    the current ones (68 °C and 1500 W).
+- The effective capacity factor is limited to 1.0 (it reached 1.057).
 
 ## [0.3.0] - 2026-11-20
 

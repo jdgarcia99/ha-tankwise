@@ -98,16 +98,19 @@ obligatorias con **Reconfigurar**.
 
 ## Citas de agua caliente
 
-Una cita dice "agua caliente lista a esta hora, con al menos esta cantidad":
-nombre, hora, días de la semana (o laborables/festivos con el sensor Workday),
-litros mínimos a la temperatura de ducha y si está activa. Hasta seis, ninguna
+Una cita dice "agua caliente lista a esta hora, con al menos esta cantidad
+para el bloque que sigue": nombre, hora de inicio, duración del bloque (1 hora
+por defecto, p. ej. 3 horas para las duchas de la tarde), días de la semana (o
+laborables/festivos con el sensor Workday), litros mínimos a la temperatura de
+ducha y si está activa. Los litros mínimos deben estar disponibles al empezar
+el bloque y cubrirlo entero sin recalentar. Hasta seis, ninguna
 por defecto. Se añaden en **Opciones → Citas de agua caliente**.
 
 Cada cita tiene entidades para ajustarla desde un panel (los cambios se
 guardan en las opciones): `time.<nombre>_<cita>_time`,
 `number.<nombre>_<cita>_liters` y `switch.<nombre>_<cita>_enabled`. El sensor
 `sensor.<nombre>_<cita>_suggested_liters` muestra los litros que realmente se
-usan en la hora siguiente a la cita (P90 de las últimas cuatro semanas) para
+usan durante el bloque (P90 de las últimas cuatro semanas) para
 ayudar a elegir el mínimo. Desde la fase 3 el planificador trata cada cita
 activa como una restricción obligatoria.
 
