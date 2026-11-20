@@ -208,6 +208,9 @@ async def test_planned_cost_is_committed_slot_by_slot(
     await _setup(hass, mock_entry, temperature="40.0")
     for _ in range(4):
         await _tick(hass, freezer)
+    # The coordinator jitters its refreshes: make sure one ran after 14:00.
+    await mock_entry.runtime_data.async_refresh()
+    await hass.async_block_till_done()
     slot = mock_entry.runtime_data.planner.current_slot(dt_util.utcnow())
     assert slot is not None and slot.grid_kwh > 0
     assert hass.states.get("binary_sensor.tankwise_planned_grid_heating").state == "on"
