@@ -129,7 +129,7 @@ are translated.
 | Modelled temperature | Equivalent tank temperature tracked by the model |
 | Model status | `calibrated`, `learning` or `uncertain` |
 | Last draw | Start of the last hot water draw, with its energy, minimum temperature and whether there was a shortage |
-| Hot water shortages (7 days) | Draws that left the water below the minimum comfort temperature |
+| Hot water shortages (7 days) | Draws that took the water at least 1.5 °C below the minimum comfort temperature |
 | Hot water demand today | Energy a strong day needs (P90), with the usual day (P50) and the rest of today as attributes |
 | Hot water demand forecast | Demand of the next 36 hours (P90), with the 15-minute slots as an attribute |
 | Heat loss coefficient (diagnostic, disabled by default) | Learned UA, in W/K |
@@ -175,6 +175,14 @@ the observed days of the usage profile and the last 50 draws.
   showers that move by 15 to 30 minutes do not count twice. A draw that left
   the water below the comfort temperature raises the forecast of its time of
   day by 20 % for two weeks. With the home unoccupied the forecast is zero.
+- **Energy reconciliation.** The upper probe sees a shower late and too
+  small while the cold water stays at the bottom, and too large when the cold
+  front reaches it. After each heating the tank is mixed, so the energy
+  balance between two settled heatings gives the energy really drawn and the
+  draws in between are scaled to it. A drop of more than 1 °C beyond the
+  losses over an hour at rest is recorded as a slow draw.
+- **Hot water shortage.** A draw that took the probe at least 1.5 °C below
+  the minimum comfort temperature.
 - **History import.** On the first start the last 10 days of the recorder are
   replayed through the models, so losses, cut-offs, draws and the usage
   profile are known from day one.

@@ -129,7 +129,7 @@ nombres visibles están traducidos.
 | Temperatura modelada | Temperatura equivalente del depósito según el modelo |
 | Estado del modelo | `calibrated`, `learning` o `uncertain` |
 | Última extracción | Inicio de la última extracción, con su energía, temperatura mínima y si hubo falta de agua |
-| Faltas de agua caliente (7 días) | Extracciones que dejaron el agua por debajo de la temperatura mínima de confort |
+| Faltas de agua caliente (7 días) | Extracciones que dejaron el agua al menos 1,5 °C por debajo de la temperatura mínima de confort |
 | Demanda de agua caliente hoy | Energía que necesita un día fuerte (P90), con el día habitual (P50) y el resto de hoy como atributos |
 | Previsión de demanda de agua caliente | Demanda de las próximas 36 horas (P90), con las franjas de 15 minutos como atributo |
 | Coeficiente de pérdidas (diagnóstico, desactivado por defecto) | UA aprendido, en W/K |
@@ -178,6 +178,15 @@ importación del histórico, los días observados del perfil de uso y las
   veces. Una extracción que dejó el agua por debajo de la temperatura de
   confort sube un 20 % la previsión de esa hora durante dos semanas. Con la
   casa vacía la previsión es cero.
+- **Reconciliación energética.** La sonda de arriba ve una ducha tarde y
+  pequeña mientras el agua fría se queda abajo, y demasiado grande cuando el
+  frente frío llega a ella. Tras cada calentamiento el depósito está mezclado,
+  así que el balance de energía entre dos calentamientos asentados da la
+  energía realmente extraída y las extracciones intermedias se ajustan a ella.
+  Una bajada de más de 1 °C sobre las pérdidas en una hora en reposo se
+  registra como extracción lenta.
+- **Falta de agua caliente.** Una extracción que llevó la sonda al menos
+  1,5 °C por debajo de la temperatura mínima de confort.
 - **Importación del histórico.** En el primer arranque se reproducen los
   últimos 10 días del recorder a través de los modelos, así que pérdidas,
   cortes, extracciones y el perfil de uso se conocen desde el primer día.

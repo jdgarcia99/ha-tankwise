@@ -32,7 +32,7 @@ This module is pure Python and must not import Home Assistant.
 from __future__ import annotations
 
 from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from enum import StrEnum
 import math
@@ -90,7 +90,23 @@ HEATING_DRAW_THRESHOLD = -1.5  # while heating the probe response is uneven
 END_WINDOW = timedelta(minutes=5)
 END_TOLERANCE = 0.2  # °C accumulated over END_WINDOW counts as "about zero"
 MIN_TRACK_DROP = 0.1  # °C, a new minimum must be this much lower
-HISTORY_SPAN = timedelta(minutes=10)
+# Slow draws: a tap left running, or a shower with a hot, full tank where the
+# cold water never reaches the upper probe quickly.
+SLOW_WINDOW = timedelta(minutes=60)
+SLOW_DRAW_THRESHOLD = -1.0  # °C accumulated over SLOW_WINDOW at rest
+SLOW_END_WINDOW = timedelta(minutes=15)
+SLOW_END_TOLERANCE = 0.15  # °C over SLOW_END_WINDOW counts as "about zero"
+SLOW_SETTLE = timedelta(minutes=45)  # after heating or another draw
+HISTORY_SPAN = SLOW_WINDOW
+
+# Energy reconciliation: after each heating the probe sees the mixed tank, so
+# the balance between two settled heatings tells how much energy was really
+# drawn; the draws detected in between are scaled to match.
+MIN_RECONCILE_HEAT_KWH = 0.3
+MIN_RECONCILE_DRAWS_KWH = 0.1
+MIN_RECONCILE_FACTOR = 0.5
+MAX_RECONCILE_FACTOR = 5.0
+MAX_RECONCILIATIONS = 20
 MAX_CONSUMPTIONS = 200
 # A draw is a shortage only if the probe went this far below the comfort
 # temperature: water kept being drawn below it (about 6 litres or more), not
@@ -301,6 +317,10 @@ class ConsumptionEvent:
     min_temperature: float
     while_heating: bool
     shortage: bool
+    # Detected by the slow draw detector (60-minute window).
+    slow: bool = False
+    # Factor applied by the energy reconciliation (None: not reconciled).
+    reconciled: float | None = None
 
     def as_dict(self) -> dict[str, Any]:
         """Return a JSON-serialisable representation."""
@@ -312,6 +332,10 @@ class ConsumptionEvent:
             "min_temperature": round(self.min_temperature, 2),
             "while_heating": self.while_heating,
             "shortage": self.shortage,
+            "slow": self.slow,
+            "reconciled": (
+                round(self.reconciled, 3) if self.reconciled is not None else None
+            ),
         }
 
     @classmethod
@@ -328,6 +352,10 @@ class ConsumptionEvent:
             min_temperature=float(minimum),
             while_heating=bool(data["while_heating"]),
             shortage=bool(data.get("shortage", False)),
+            slow=bool(data.get("slow", False)),
+            reconciled=(
+                None if data.get("reconciled") is None else float(data["reconciled"])
+            ),
         )
 
 
@@ -380,6 +408,7 @@ class _ActiveEvent:
     min_time: datetime
     detected: datetime
     while_heating: bool
+    slow: bool = False
 
 
 @dataclass(slots=True)
@@ -405,6 +434,41 @@ class _CapacityEpisode:
     ambient_sum: float = 0.0
     samples: int = 0
     hours: float = 0.0
+
+
+@dataclass(slots=True)
+class _Anchor:
+    """A settled state after a heating, start of an energy balance."""
+
+    time: datetime
+    probe: float
+    heat_kwh: float = 0.0
+    loss_kwh: float = 0.0
+
+
+@dataclass(frozen=True, slots=True)
+class Reconciliation:
+    """Result of an energy balance between two settled heatings."""
+
+    start: datetime
+    end: datetime
+    heat_kwh: float
+    loss_kwh: float
+    measured_kwh: float
+    actual_kwh: float
+    factor: float | None
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return a JSON-serialisable representation."""
+        return {
+            "start": self.start.isoformat(),
+            "end": self.end.isoformat(),
+            "heat_kwh": round(self.heat_kwh, 3),
+            "loss_kwh": round(self.loss_kwh, 3),
+            "measured_kwh": round(self.measured_kwh, 3),
+            "actual_kwh": round(self.actual_kwh, 3),
+            "factor": round(self.factor, 3) if self.factor is not None else None,
+        }
 
 
 @dataclass(slots=True)
@@ -446,6 +510,8 @@ class TankModel:
         self._quiet_since: datetime | None = None
         self._loss = _LossWindow()
         self._episode: _CapacityEpisode | None = None
+        self._anchor: _Anchor | None = None
+        self._reconciliations: deque[Reconciliation] = deque(maxlen=MAX_RECONCILIATIONS)
 
     # ------------------------------------------------------------------
     # Public API
@@ -455,6 +521,11 @@ class TankModel:
     def consumptions(self) -> list[ConsumptionEvent]:
         """Return the most recent detected draws, oldest first."""
         return list(self._consumptions)
+
+    @property
+    def reconciliations(self) -> list[Reconciliation]:
+        """Return the recent energy balances, oldest first."""
+        return list(self._reconciliations)
 
     @property
     def ua(self) -> float:
@@ -669,7 +740,7 @@ class TankModel:
         full_residual = observed - loss_change - k_cap * heat / capacity
         residual = min(0.0, observed - loss_change) if heating_window else full_residual
         self._residuals.append((now, residual))
-        while self._residuals and now - self._residuals[0][0] > RESIDUAL_WINDOW:
+        while self._residuals and now - self._residuals[0][0] > SLOW_WINDOW:
             self._residuals.popleft()
 
         equivalent = self._track_draws(
@@ -681,6 +752,7 @@ class TankModel:
         self._equivalent = self._clamp_temperature(equivalent, params)
 
         self._track_capacity_episode(sample, heat, elapsed, ambient, params)
+        self._track_anchor(sample, heat, elapsed, ambient, params)
 
         if full is not None and self._plausible_cutoff(params):
             self._calibrate(now, regulator_confirmed=full, params=params)
@@ -946,18 +1018,30 @@ class TankModel:
             if self._probe < event.min_probe - MIN_TRACK_DROP:
                 event.min_probe = self._probe
                 event.min_time = now
+            end_window, tolerance = (
+                (SLOW_END_WINDOW, SLOW_END_TOLERANCE)
+                if event.slow
+                else (END_WINDOW, END_TOLERANCE)
+            )
             if (
-                now - event.detected >= END_WINDOW
-                and self._residual_sum(now, END_WINDOW) > -END_TOLERANCE
+                now - event.detected >= end_window
+                and self._residual_sum(now, end_window) > -tolerance
             ):
                 self._close_event(now, params)
             return corrected
 
         threshold = HEATING_DRAW_THRESHOLD if heating_window else IDLE_DRAW_THRESHOLD
+        window = RESIDUAL_WINDOW
+        slow = False
         if self._residual_sum(now, RESIDUAL_WINDOW) >= threshold:
-            return predicted
+            if not self._slow_draw(now, heating_window, params):
+                return predicted
+            window = SLOW_WINDOW
+            slow = True
+            self._loss = _LossWindow()  # the window contained the draw
 
-        reference = max(self._history, key=lambda point: point.probe, default=None)
+        recent = [point for point in self._history if now - point.timestamp <= window]
+        reference = max(recent, key=lambda point: point.probe, default=None)
         start, start_temperature = (
             (reference.timestamp, reference.probe)
             if reference is not None
@@ -968,15 +1052,50 @@ class TankModel:
         self._event = _ActiveEvent(
             start=start,
             start_temperature=start_temperature,
-            energy_kwh=-self._residual_sum(now, RESIDUAL_WINDOW) * capacity / k_cap,
+            energy_kwh=-self._residual_sum(now, window) * capacity / k_cap,
             min_probe=self._probe,
             min_time=now,
             detected=now,
             while_heating=heating_window,
+            slow=slow,
         )
         if self._episode is not None:
             self._episode.draw_seen = True
         return corrected
+
+    def _slow_draw(
+        self, now: datetime, heating_window: bool, params: TankParams
+    ) -> bool:
+        """Return True if the probe fell slowly but clearly over an hour.
+
+        Both the residual accumulated over the hour and the robust slope of
+        the whole hour (less sensitive to noise than its two ends) must show
+        a drop beyond the standing losses.
+        """
+        if heating_window or not self._residuals:
+            return False
+        if now - self._residuals[0][0] < SLOW_WINDOW - timedelta(minutes=5):
+            return False  # not enough history yet
+        for reference in (self._heater.last_heating_end, self._last_consumption_end):
+            if reference is not None and now - reference < SLOW_SETTLE:
+                return False
+        if self._residual_sum(now, SLOW_WINDOW) >= SLOW_DRAW_THRESHOLD:
+            return False
+        points = [
+            ((point.timestamp - now).total_seconds() / 3600, point.probe)
+            for point in self._history
+        ]
+        if len(points) < 2:
+            return False
+        slope, _ = theil_sen(points)  # °C/h
+        assert self._equivalent is not None
+        loss_rate = (
+            self._ua
+            * (self._equivalent - params.ambient_temperature)
+            / (params.heat_capacity * 1000)
+        )
+        hours = SLOW_WINDOW.total_seconds() / 3600
+        return (slope + loss_rate) * hours < SLOW_DRAW_THRESHOLD
 
     def _close_event(self, now: datetime, params: TankParams) -> None:
         event = self._event
@@ -992,6 +1111,7 @@ class TankModel:
                 shortage=(
                     event.min_probe <= params.comfort_min_temperature - SHORTAGE_MARGIN
                 ),
+                slow=event.slow,
             )
         )
         self._event = None
@@ -999,6 +1119,91 @@ class TankModel:
         self._last_consumption_end = now
         self._history.clear()
         self._residuals.clear()
+
+    # ------------------------------------------------------------------
+    # Energy reconciliation
+    # ------------------------------------------------------------------
+
+    def _track_anchor(
+        self,
+        sample: TankSample,
+        heat: float,
+        elapsed: timedelta,
+        ambient: float,
+        params: TankParams,
+    ) -> None:
+        """Balance the energy between settled states after heatings."""
+        assert sample.power is not None
+        assert self._probe is not None
+        assert self._equivalent is not None
+        now = sample.timestamp
+        anchor = self._anchor
+        if anchor is not None:
+            anchor.heat_kwh += heat
+            hours = elapsed.total_seconds() / 3600
+            anchor.loss_kwh += self._ua * (self._equivalent - ambient) * hours / 1000
+
+        tracker = self._heater
+        settled = (
+            tracker.state is HeaterState.IDLE
+            and sample.power <= params.power_threshold_w
+            and tracker.last_heating_end is not None
+            and now - tracker.last_heating_end >= POST_HEATING
+            and self._event is None
+        )
+        if not settled:
+            return
+        if anchor is None:
+            self._anchor = _Anchor(now, self._probe)
+            return
+        if anchor.heat_kwh < MIN_RECONCILE_HEAT_KWH:
+            return  # no real heating since the anchor: keep balancing from it
+        self._reconcile(anchor, now, params)
+        self._anchor = _Anchor(now, self._probe)
+
+    def _reconcile(self, anchor: _Anchor, now: datetime, params: TankParams) -> None:
+        """Scale the draws since the anchor to the energy really drawn.
+
+        With the probe at the top, a draw is seen late and too small when
+        the cold water stays at the bottom; the next heating mixes the tank
+        and reveals the energy that is really missing.
+        """
+        assert self._probe is not None
+        capacity = params.heat_capacity
+        k_cap = self.capacity_factor(params)
+        indexes = [
+            index
+            for index, event in enumerate(self._consumptions)
+            if anchor.time <= event.start < now
+        ]
+        measured = sum(self._consumptions[index].energy_kwh for index in indexes)
+        drawn_at_probe = (
+            k_cap * anchor.heat_kwh
+            - anchor.loss_kwh
+            - capacity * (self._probe - anchor.probe)
+        )
+        actual = max(0.0, drawn_at_probe / k_cap)
+        factor = None
+        if measured >= MIN_RECONCILE_DRAWS_KWH:
+            factor = _clamp(
+                actual / measured, MIN_RECONCILE_FACTOR, MAX_RECONCILE_FACTOR
+            )
+            for index in indexes:
+                event = self._consumptions[index]
+                self._consumptions[index] = replace(
+                    event, energy_kwh=event.energy_kwh * factor, reconciled=factor
+                )
+        self._reconciliations.append(
+            Reconciliation(
+                start=anchor.time,
+                end=now,
+                heat_kwh=anchor.heat_kwh,
+                loss_kwh=anchor.loss_kwh,
+                measured_kwh=measured,
+                actual_kwh=actual,
+                factor=factor,
+            )
+        )
 
     # ------------------------------------------------------------------
     # Effective capacity learning
@@ -1128,6 +1333,7 @@ class TankModel:
         self._residuals.clear()
         self._event = None
         self._episode = None
+        self._anchor = None
         self._filter.tau_s = FILTER_TAU_S
         self._loss = _LossWindow()
         self._quiet_since = now

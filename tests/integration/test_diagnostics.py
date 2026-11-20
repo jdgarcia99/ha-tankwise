@@ -41,6 +41,7 @@ async def test_diagnostics(hass: HomeAssistant, mock_entry: MockConfigEntry) -> 
         "observations": 16,
     }
     assert diagnostics["appointments"] == []
+    assert diagnostics["reconciliations"] == []
 
 
 def _keys(data: dict, prefix: str = "") -> set[str]:

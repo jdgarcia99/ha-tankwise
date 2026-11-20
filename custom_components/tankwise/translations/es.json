@@ -281,6 +281,12 @@
           },
           "while_heating": {
             "name": "Durante un calentamiento"
+          },
+          "slow": {
+            "name": "Extracción lenta"
+          },
+          "reconciled": {
+            "name": "Corregida con el balance energético"
           }
         }
       },

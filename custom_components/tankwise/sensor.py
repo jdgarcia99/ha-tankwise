@@ -58,6 +58,8 @@ def _last_draw_attributes(coordinator: TankWiseCoordinator) -> dict[str, Any]:
         "min_temperature": round(event.min_temperature, 1),
         "shortage": event.shortage,
         "while_heating": event.while_heating,
+        "slow": event.slow,
+        "reconciled": event.reconciled is not None,
     }
 
 

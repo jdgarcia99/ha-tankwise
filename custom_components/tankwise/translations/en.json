@@ -281,6 +281,12 @@
           },
           "while_heating": {
             "name": "While heating"
+          },
+          "slow": {
+            "name": "Slow draw"
+          },
+          "reconciled": {
+            "name": "Corrected by the energy balance"
           }
         }
       },

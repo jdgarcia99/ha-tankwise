@@ -49,6 +49,9 @@ async def async_get_config_entry_diagnostics(
         "model": model,
         "consumptions": consumptions[-DIAGNOSTIC_CONSUMPTIONS:],
         "shortages_7d": data.shortages_7d,
+        "reconciliations": [
+            item.as_dict() for item in coordinator.model.reconciliations
+        ],
         "demand": {
             "status": coordinator.demand.status().value,
             "params": {

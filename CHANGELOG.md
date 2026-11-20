@@ -23,6 +23,21 @@ the demand. It still does not act on any device.
   showers that move from one slot to another.
 - A draw that left the water below the comfort temperature raises the
   forecast of its time of day by 20 % for two weeks.
+- Energy reconciliation: with the probe at the top of the tank, a draw is
+  seen late and too small while the cold water stays at the bottom (morning
+  showers) and too large when the cold front reaches the probe (evening
+  showers). After each heating the probe sees the mixed tank, so the energy
+  balance between two settled heatings gives the energy really drawn, and
+  the draws detected in between are scaled to match (×0.5 to ×5). On the
+  reference installation the morning showers went from 0.4-1.1 kWh to their
+  real 0.6-1.0 kWh and the evening ones were lowered by 10-30 %.
+- Slow draws: a drop of more than 1 °C beyond the standing losses over an
+  hour at rest, confirmed by the robust slope of the hour, is recorded as a
+  draw (e.g. a shower with a hot, full tank where the cold water barely
+  reaches the probe). This also keeps such drops out of the loss learning:
+  the learned coefficient went from 1.39 to 0.94 W/K on real data.
+- Days of the usage profile are closed at 09:00 the next day, once the night
+  heating has reconciled the evening draws.
 - Optional Workday sensor: holidays are learned apart from workdays, and the
   coming days are checked with the Workday integration.
 - Hot water appointments (up to six): start time, block duration (1 hour by
@@ -71,6 +86,10 @@ the demand. It still does not act on any device.
   - entries that still had the 0.2 defaults (47 °C cut-off and 1450 W) get
     the current ones (68 °C and 1500 W).
 - The effective capacity factor is limited to 1.0 (it reached 1.057).
+- A draw counts as a hot water shortage only if the probe fell at least
+  1.5 °C below the comfort temperature (water kept being drawn below it), not
+  when the end of a shower just touches it. On real data this kept the 8
+  real shortages of a week and dropped the 2 that only touched 38 °C.
 
 ## [0.3.0] - 2026-11-20
 

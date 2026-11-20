@@ -53,7 +53,9 @@ SHORTAGE_SPREAD_SLOTS = 1  # also raise the neighbouring slots (time jitter)
 MIN_TYPE_OBSERVATIONS = 3  # below this, days of every type are used
 MIN_READY_DAYS = 7
 MIN_DAY_COVERAGE = timedelta(hours=20)
-FINALIZE_DELAY = timedelta(hours=1)  # let draws around midnight close first
+# Days are closed the next morning, once the night heating has reconciled
+# the energy of the evening draws.
+FINALIZE_DELAY = timedelta(hours=9)
 MAX_STEP = timedelta(minutes=5)  # longer gaps do not count as coverage
 HISTORY_DAYS = 120
 

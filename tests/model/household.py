@@ -74,7 +74,7 @@ def feed(
 ) -> datetime:
     """Run the demand model over ``days`` days (plus the finalize delay)."""
     moment = datetime.combine(first, time.min, TZ)
-    end = moment + timedelta(days=days, hours=2)
+    end = moment + timedelta(days=days, hours=10)
     index = 0
     closed: list[ConsumptionEvent] = []
     while moment <= end:
