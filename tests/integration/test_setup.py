@@ -56,19 +56,19 @@ NOW = "2026-11-15 12:00:00+00:00"
 CAPACITY = 0.1163
 MAINS = mains_water_temperature("balearic_islands", date(2026, 11, 15))
 
-STORED = "sensor.water_heater_stored_energy"
-USEFUL = "sensor.water_heater_useful_energy"
-CHARGE = "sensor.water_heater_charge"
-LITERS = "sensor.water_heater_available_liters"
-TANK_TEMPERATURE = "sensor.water_heater_tank_temperature"
-STATUS = "sensor.water_heater_model_status"
-LAST_DRAW = "sensor.water_heater_last_draw"
-SHORTAGES = "sensor.water_heater_water_shortages_7d"
-UA = "sensor.water_heater_heat_loss_coefficient"
-HEATER_POWER = "sensor.water_heater_heater_power"
-CUTOFF = "sensor.water_heater_cutoff_temperature"
-CAPACITY_FACTOR = "sensor.water_heater_capacity_factor"
-MAINS_SENSOR = "sensor.water_heater_mains_water_temperature"
+STORED = "sensor.tankwise_stored_energy"
+USEFUL = "sensor.tankwise_useful_energy"
+CHARGE = "sensor.tankwise_charge"
+LITERS = "sensor.tankwise_available_liters"
+TANK_TEMPERATURE = "sensor.tankwise_tank_temperature"
+STATUS = "sensor.tankwise_model_status"
+LAST_DRAW = "sensor.tankwise_last_draw"
+SHORTAGES = "sensor.tankwise_water_shortages_7d"
+UA = "sensor.tankwise_heat_loss_coefficient"
+HEATER_POWER = "sensor.tankwise_heater_power"
+CUTOFF = "sensor.tankwise_cutoff_temperature"
+CAPACITY_FACTOR = "sensor.tankwise_capacity_factor"
+MAINS_SENSOR = "sensor.tankwise_mains_water_temperature"
 TANK_SENSORS = (STORED, USEFUL, CHARGE, LITERS, TANK_TEMPERATURE, STATUS)
 LEARNED_SENSORS = (
     LAST_DRAW,
@@ -79,6 +79,8 @@ LEARNED_SENSORS = (
     CAPACITY_FACTOR,
     MAINS_SENSOR,
 )
+
+pytestmark = pytest.mark.usefixtures("entity_registry_enabled_by_default")
 
 MANIFEST = Path(__file__).parents[2] / "custom_components" / DOMAIN / "manifest.json"
 

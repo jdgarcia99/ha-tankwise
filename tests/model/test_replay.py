@@ -114,7 +114,11 @@ def test_unavailable_values_freeze_the_model() -> None:
         ROLE_POWER: [StateChange(start, 0.0)],
     }
     seen = []
-    replay(series, params, on_sample=lambda sample, state: seen.append(state.available))
+    replay(
+        series,
+        params,
+        on_sample=lambda sample, state, values: seen.append(state.available),
+    )
     assert seen[:10] == [True] * 10
     assert not any(seen[10:20])
     assert seen[20]
@@ -135,7 +139,7 @@ def test_params_can_depend_on_time() -> None:
         series,
         params_at,
         end=start + timedelta(minutes=4),
-        on_sample=lambda sample, state: mains.append(state.mains_temperature),
+        on_sample=lambda sample, state, values: mains.append(state.mains_temperature),
     )
     assert mains == [12.0, 12.0, 11.0, 11.0, 11.0]
 

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, tzinfo
 from enum import StrEnum
 from functools import partial
 import logging
@@ -22,18 +22,22 @@ from homeassistant.core import HomeAssistant, State
 from homeassistant.util import dt as dt_util
 
 from .inputs import InputError, parse_bool, parse_measurement, parse_numeric, state_unit
+from .model.demand import DemandModel
 from .model.replay import (
     ROLE_AMBIENT,
     ROLE_ENERGY,
     ROLE_MANUAL_MODE,
+    ROLE_OCCUPANCY,
     ROLE_POWER,
     ROLE_REGULATOR,
     ROLE_TEMPERATURE,
+    ROLE_WORKDAY,
     ReplayResult,
     StateChange,
+    Value,
     replay,
 )
-from .model.tank import TankParams
+from .model.tank import TankModel, TankParams, TankSample, TankState
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -70,6 +74,7 @@ class BootstrapInfo:
     samples: int = 0
     draws: int = 0
     calibrations: int = 0
+    days: int = 0
     error: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
@@ -82,6 +87,7 @@ class BootstrapInfo:
             "samples": self.samples,
             "draws": self.draws,
             "calibrations": self.calibrations,
+            "days": self.days,
             "error": self.error,
         }
 
@@ -96,6 +102,7 @@ class BootstrapInfo:
             samples=int(data.get("samples", 0)),
             draws=int(data.get("draws", 0)),
             calibrations=int(data.get("calibrations", 0)),
+            days=int(data.get("days", 0)),
             error=data.get("error"),
         )
 
@@ -108,7 +115,7 @@ def states_to_changes(
     for state in states:
         value: float | bool | None
         try:
-            if role == ROLE_MANUAL_MODE:
+            if role in (ROLE_MANUAL_MODE, ROLE_OCCUPANCY, ROLE_WORKDAY):
                 value = parse_bool(state.state)
             elif role == ROLE_REGULATOR:
                 value = parse_numeric(state.state)
@@ -150,15 +157,16 @@ async def async_bootstrap(
     params_at: Callable[[datetime], TankParams],
     *,
     days: int,
-) -> tuple[BootstrapInfo, ReplayResult | None]:
-    """Replay the recorder history of the given roles through a new model.
+    tz: tzinfo,
+) -> tuple[BootstrapInfo, ReplayResult | None, DemandModel | None]:
+    """Replay the recorder history of the given roles through new models.
 
     ``roles`` maps replay roles (see ``model.replay.ROLES``) to entity IDs.
+    Returns the summary, the tank model replay and the demand profile.
     """
     if RECORDER_DOMAIN not in hass.config.components:
-        return BootstrapInfo(
-            BootstrapStatus.NO_RECORDER, finished=dt_util.utcnow()
-        ), None
+        info = BootstrapInfo(BootstrapStatus.NO_RECORDER, finished=dt_util.utcnow())
+        return info, None, None
 
     from homeassistant.components.recorder import get_instance
 
@@ -176,20 +184,40 @@ async def async_bootstrap(
             for role, entity_id in entity_ids.items()
         }
         if not series.get(ROLE_TEMPERATURE) or not series.get(ROLE_POWER):
-            return BootstrapInfo(
-                BootstrapStatus.NO_HISTORY, finished=dt_util.utcnow()
-            ), None
+            info = BootstrapInfo(BootstrapStatus.NO_HISTORY, finished=dt_util.utcnow())
+            return info, None, None
+        model = TankModel()
+        demand = DemandModel(tz)
+
+        def _feed_demand(
+            sample: TankSample, state: TankState, values: Mapping[str, Value]
+        ) -> None:
+            occupancy = values.get(ROLE_OCCUPANCY)
+            workday = values.get(ROLE_WORKDAY)
+            demand.update(
+                sample.timestamp,
+                available=state.available,
+                occupied=occupancy if isinstance(occupancy, bool) else None,
+                draws=model.consumptions,
+                workday=workday if isinstance(workday, bool) else None,
+            )
+
         result = await hass.async_add_executor_job(
-            partial(replay, series, params_at, end=end)
+            partial(
+                replay,
+                series,
+                params_at,
+                model=model,
+                end=end,
+                on_sample=_feed_demand,
+            )
         )
     except Exception as err:
         _LOGGER.warning("Could not import the tank history: %s", err)
-        return (
-            BootstrapInfo(
-                BootstrapStatus.FAILED, finished=dt_util.utcnow(), error=str(err)
-            ),
-            None,
+        info = BootstrapInfo(
+            BootstrapStatus.FAILED, finished=dt_util.utcnow(), error=str(err)
         )
+        return info, None, None
 
     model_data = result.model.as_dict()
     info = BootstrapInfo(
@@ -200,16 +228,19 @@ async def async_bootstrap(
         samples=result.samples,
         draws=len(result.model.consumptions),
         calibrations=int(model_data["calibration_count"]),
+        days=len(demand.observations),
     )
     _LOGGER.info(
-        "Imported %d samples of tank history (%s to %s): %d draws, %d cut-offs",
+        "Imported %d samples of tank history (%s to %s): %d draws, %d cut-offs, "
+        "%d days for the demand profile",
         info.samples,
         info.start,
         info.end,
         info.draws,
         info.calibrations,
+        info.days,
     )
-    return info, result
+    return info, result, demand
 
 
 def _iso(value: datetime | None) -> str | None:

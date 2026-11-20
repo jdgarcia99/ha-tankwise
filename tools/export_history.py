@@ -68,6 +68,7 @@ ROLES: dict[str, bool] = {
     "regulator": False,
     "master": False,
     "occupancy": False,
+    "workday": False,
     "price": True,
     "injection_price": True,
     "grid_import": False,

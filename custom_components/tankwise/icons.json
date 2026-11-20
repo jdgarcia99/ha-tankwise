@@ -43,6 +43,15 @@
       },
       "mains_water_temperature": {
         "default": "mdi:water-thermometer"
+      },
+      "demand_today": {
+        "default": "mdi:water-sync"
+      },
+      "demand_forecast": {
+        "default": "mdi:chart-bell-curve"
+      },
+      "appointment_suggested_liters": {
+        "default": "mdi:water-check"
       }
     },
     "number": {
@@ -54,7 +63,28 @@
       },
       "mains_water_temperature": {
         "default": "mdi:water-thermometer-outline"
+      },
+      "appointment_liters": {
+        "default": "mdi:cup-water"
       }
+    },
+    "time": {
+      "appointment_time": {
+        "default": "mdi:clock-time-four-outline"
+      }
+    },
+    "switch": {
+      "appointment_enabled": {
+        "default": "mdi:calendar-check",
+        "state": {
+          "off": "mdi:calendar-remove"
+        }
+      }
+    }
+  },
+  "services": {
+    "reset_learning": {
+      "service": "mdi:restore"
     }
   }
 }

@@ -95,6 +95,8 @@ async def test_history_is_imported_on_first_start(
     assert coordinator.model.as_dict()["cutoff_samples"]
     assert any(event.energy_kwh > 1.0 for event in coordinator.model.consumptions)
     assert coordinator.data.tank.last_consumption is not None
+    # The demand profile was rebuilt from the same history.
+    assert coordinator.bootstrap.days == len(coordinator.demand.observations)
 
     stored = hass_storage[f"{DOMAIN}.{mock_entry.entry_id}"]["data"]
     assert stored["bootstrap"]["status"] == "done"
@@ -154,7 +156,7 @@ async def test_failure_does_not_break_setup(
     assert info.status is BootstrapStatus.FAILED
     assert info.error == "database locked"
     assert "Could not import the tank history" in caplog.text
-    assert hass.states.get("sensor.water_heater_stored_energy").state != "unavailable"
+    assert hass.states.get("sensor.tankwise_stored_energy").state != "unavailable"
 
 
 def test_states_to_changes_converts_units_and_bad_values() -> None:

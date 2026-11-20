@@ -1,0 +1,15 @@
+reset_learning:
+  fields:
+    config_entry_id:
+      selector:
+        config_entry:
+          integration: tankwise
+    part:
+      default: all
+      selector:
+        select:
+          translation_key: reset_part
+          options:
+            - losses
+            - demand
+            - all

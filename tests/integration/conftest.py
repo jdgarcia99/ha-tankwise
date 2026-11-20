@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Generator
 from typing import Any
+from unittest.mock import PropertyMock, patch
 
 from homeassistant.core import HomeAssistant
 import pytest
@@ -15,6 +17,7 @@ from custom_components.tankwise.const import (
     CONF_POWER_SENSOR,
     CONF_PRICE_SENSOR,
     CONF_TEMPERATURE_SENSOR,
+    CONFIG_ENTRY_MINOR_VERSION,
     CONFIG_ENTRY_VERSION,
     DEFAULT_PARAMETERS,
     DOMAIN,
@@ -44,6 +47,17 @@ REQUIRED_INPUT = {
     CONF_MANUAL_MODE_SWITCH: MANUAL,
     CONF_PRICE_SENSOR: PRICE,
 }
+
+
+@pytest.fixture
+def entity_registry_enabled_by_default() -> Generator[None]:
+    """Create the entities that are disabled by default as enabled."""
+    with patch(
+        "homeassistant.helpers.entity.Entity.entity_registry_enabled_default",
+        new_callable=PropertyMock,
+        return_value=True,
+    ):
+        yield
 
 
 @pytest.fixture(autouse=True)
@@ -114,6 +128,7 @@ def mock_entry(entry_options: dict[str, Any]) -> MockConfigEntry:
         title="Water heater",
         unique_id=TEMPERATURE,
         version=CONFIG_ENTRY_VERSION,
+        minor_version=CONFIG_ENTRY_MINOR_VERSION,
         data=dict(REQUIRED_INPUT),
         options=entry_options,
     )

@@ -7,6 +7,90 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-20
+
+Second phase: TankWise learns the household's hot water usage and forecasts
+the demand. It still does not act on any device.
+
+### Added
+
+- Usage profile: each complete day (at least 20 hours observed, home
+  occupied) is kept as the energy drawn in 96 slots of 15 minutes. Days are
+  grouped as workdays and weekends/holidays (or per weekday, or all alike);
+  the last 16 days of each type are used, recent ones weighing more.
+- Forecast of the next 36 hours with P50 and P90 per slot, computed on the
+  cumulative curve of each day so that a strong day is not inflated by
+  showers that move from one slot to another.
+- A draw that left the water below the comfort temperature raises the
+  forecast of its time of day by 20 % for two weeks.
+- Energy reconciliation: with the probe at the top of the tank, a draw is
+  seen late and too small while the cold water stays at the bottom (morning
+  showers) and too large when the cold front reaches the probe (evening
+  showers). After each heating the probe sees the mixed tank, so the energy
+  balance between two settled heatings gives the energy really drawn, and
+  the draws detected in between are scaled to match (×0.5 to ×5). On the
+  reference installation the morning showers went from 0.4-1.1 kWh to their
+  real 0.6-1.0 kWh and the evening ones were lowered by 10-30 %.
+- Slow draws: a drop of more than 1 °C beyond the standing losses over an
+  hour at rest, confirmed by the robust slope of the hour, is recorded as a
+  draw (e.g. a shower with a hot, full tank where the cold water barely
+  reaches the probe). This also keeps such drops out of the loss learning:
+  the learned coefficient went from 1.39 to 0.94 W/K on real data.
+- Days of the usage profile are closed at 09:00 the next day, once the night
+  heating has reconciled the evening draws.
+- Optional Workday sensor: holidays are learned apart from workdays, and the
+  coming days are checked with the Workday integration.
+- Hot water appointments (up to six): start time, block duration (1 hour by
+  default), days, minimum litres at the shower temperature and active or
+  not. The minimum litres must be available when the block starts and cover
+  the whole block without reheating. Each appointment has time, litres and
+  active entities synchronised with the options, and a suggested litres
+  sensor (P90 of the water used during the block in the last four weeks).
+- Sensors: hot water demand today and hot water demand forecast (36 hours,
+  slots as an attribute that is not recorded).
+- `tankwise.reset_learning` service (heat losses, usage profile or
+  everything).
+- The history import also rebuilds the usage profile.
+
+### Changed
+
+- The options are a menu: installation parameters, inputs and hot water
+  appointments. Heating power, ambient temperature, thermostat cut-off and
+  the usage profile settings are folded under "Advanced options".
+- The heat loss coefficient, learned heating power, thermostat cut-off
+  temperature and effective capacity factor sensors are disabled by default
+  for new installations.
+- Entity IDs no longer depend on the device name or area: they are always
+  `<platform>.tankwise_<key>` (e.g. `sensor.tankwise_stored_energy`).
+  Entities created by 0.3.0 with the area in their ID (e.g.
+  `sensor.coladuria_tankwise_stored_energy`) are renamed in the entity
+  registry and keep their history. Entity IDs changed by hand are kept.
+- The 0.2 entities `sensor.tankwise_useful_energy`, `sensor.tankwise_charge`
+  and `sensor.tankwise_model_status` are kept: they are the same entities as
+  before (same unique IDs and history), not duplicates. Since 0.3.0 useful
+  energy and charge are measured above the minimum comfort temperature
+  (38 °C) instead of the 0.2 "minimum useful temperature" (32 °C).
+
+### Fixed
+
+- Heating stopped by an automation (e.g. a boost to 45 °C that switches the
+  diverter manual mode off) was learned as a thermostat cut-off, which left
+  the learned cut-off temperature around 46 °C:
+  - the manual mode switched off, or the PWM output falling to rest, up to
+    60 seconds after the power falls now means the regulator stopped the
+    heating (its state reaches Home Assistant a few seconds after the power);
+  - when the regulator is configured but unavailable, a stop of the heating
+    is no longer decided with the temperature backup criterion;
+  - a cut-off more than 12 °C below the configured cut-off temperature is
+    not accepted, and such cut-offs learned before are forgotten;
+  - entries that still had the 0.2 defaults (47 °C cut-off and 1450 W) get
+    the current ones (68 °C and 1500 W).
+- The effective capacity factor is limited to 1.0 (it reached 1.057).
+- A draw counts as a hot water shortage only if the probe fell at least
+  1.5 °C below the comfort temperature (water kept being drawn below it), not
+  when the end of a shower just touches it. On real data this kept the 8
+  real shortages of a week and dropped the 2 that only touched 38 °C.
+
 ## [0.3.0] - 2026-11-20
 
 First phase of the full control of the water heater: TankWise learns the
@@ -139,7 +223,8 @@ and the heating plan will follow.
 - The output contract entities (energy needed, deadline, grid allowed,
   requested power and urgency) arrive in a later release.
 
-[Unreleased]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.2.3...v0.3.0
 [0.2.3]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.2.1...v0.2.2

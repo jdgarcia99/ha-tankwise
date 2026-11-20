@@ -49,4 +49,39 @@ async def async_get_config_entry_diagnostics(
         "model": model,
         "consumptions": consumptions[-DIAGNOSTIC_CONSUMPTIONS:],
         "shortages_7d": data.shortages_7d,
+        "reconciliations": [
+            item.as_dict() for item in coordinator.model.reconciliations
+        ],
+        "demand": {
+            "status": coordinator.demand.status().value,
+            "params": {
+                "mode": coordinator.demand_params.mode.value,
+                "observations": coordinator.demand_params.observations,
+            },
+            "observed_days": [
+                {
+                    "day": obs.day.isoformat(),
+                    "workday": obs.workday,
+                    "kwh": round(obs.total, 3),
+                }
+                for obs in coordinator.demand.observations
+            ],
+            "marks": [
+                {"start": mark.start.isoformat(), "reason": mark.reason}
+                for mark in coordinator.demand.marks
+            ],
+            "today_p50_p90": list(data.demand_today),
+            "remaining_p50_p90": list(data.demand_remaining),
+            "forecast_p90_36h": data.forecast.total(0.9),
+        },
+        "appointments": [
+            {
+                **appointment.as_dict(),
+                "suggested_liters_p50": usage.p50 if usage else None,
+                "suggested_liters_p90": usage.p90 if usage else None,
+                "measured_days": usage.days if usage else 0,
+            }
+            for appointment in coordinator.appointments
+            for usage in [data.appointment_usage.get(appointment.id)]
+        ],
     }

@@ -199,7 +199,7 @@ def test_shower_records_minimum_temperature_and_shortage() -> None:
     event = model.consumptions[0]
     assert event.min_temperature == pytest.approx(sim.temperature, abs=1.0)
     assert event.start_temperature == pytest.approx(60.0, abs=1.0)
-    assert event.shortage is (event.min_temperature < 38.0)
+    assert event.shortage is (event.min_temperature <= 36.5)
     assert event.end > event.start
     assert state.last_consumption == event
     assert not state.drawing
@@ -281,3 +281,37 @@ def test_feed_helper_accepts_custom_params() -> None:
     sim = TankSimulator(temperature=46.0)
     state = feed(TankModel(), sim.run(3), replace(PARAMS, mains_temperature=10.0))
     assert state.mains_temperature == 10.0
+
+
+def test_reset_learning() -> None:
+    sim = TankSimulator(temperature=40.0, cutoff=47.0, report_manual=True)
+    model = TankModel()
+    drive(model, sim, 5)
+    _fill(model, sim)
+    drive(model, sim, 12, draw_kw=SHOWER_KW)
+    drive(model, sim, 30)
+    model._ua = 2.0
+    model.reset_losses()
+    assert model.ua == 1.0
+    assert model.as_dict()["cutoff_samples"]
+    model.reset_learning()
+    data = model.as_dict()
+    assert data["cutoff_samples"] == []
+    assert data["consumptions"] == []
+    assert data["heater_power_w"] is None
+    assert data["equivalent_temperature"] is not None  # the state is kept
+
+
+@pytest.mark.parametrize(("draw_minutes", "shortage"), [(4, False), (9, True)])
+def test_shortage_needs_water_drawn_below_comfort(
+    draw_minutes: int, shortage: bool
+) -> None:
+    """Touching the comfort temperature at the end of a shower is not a shortage."""
+    sim = TankSimulator(temperature=44.0, noise=0.25)
+    model = TankModel()
+    params = replace(PARAMS, cutoff_temperature=68.0, comfort_min_temperature=38.0)
+    drive(model, sim, 60, params=params)
+    drive(model, sim, draw_minutes, draw_kw=SHOWER_KW, params=params)
+    drive(model, sim, 40, params=params)
+    [event] = model.consumptions
+    assert event.shortage is shortage

@@ -17,14 +17,15 @@ PVPC de compra más el valor del excedente solar).
 
 ## Estado del proyecto
 
-> **En desarrollo (0.3.0, fase 1 de 7).** TankWise aprende cómo se comporta
-> el depósito y detecta cada extracción de agua caliente, pero **todavía no
-> actúa sobre ningún dispositivo**. Mantén tus automatizaciones hasta la fase 4.
+> **En desarrollo (0.4.0, fase 2 de 7).** TankWise aprende cómo se comporta
+> el depósito, detecta cada extracción de agua caliente y prevé la demanda,
+> pero **todavía no actúa sobre ningún dispositivo**. Mantén tus
+> automatizaciones hasta la fase 4.
 
 | Fase | Contenido | Estado |
 |------|-----------|--------|
 | 1 | Modelo térmico, detección de extracciones, importación del histórico, sensores (sin actuar) | ✅ Hecha |
-| 2 | Perfil de demanda y previsión | Prevista |
+| 2 | Perfil de demanda y previsión, citas de agua caliente | ✅ Hecha |
 | 3 | Precios, valor del excedente y optimizador; modo Sombra con el plan | Prevista |
 | 4 | Controlador, seguridades y modo degradado; modo Auto | Prevista |
 | 5 | Boost con blueprint para pulsadores externos | Prevista |
@@ -62,17 +63,26 @@ ningún `entity_id` está fijado en el código.
 - Precio de inyección, energía importada y exportada, potencia exportada ahora.
 - Previsión solar (Forecast.Solar o Solcast).
 - Temperatura ambiente donde está el termo.
+- Sensor de días laborables (integración Workday): los festivos se aprenden
+  aparte y las citas se pueden fijar para laborables o festivos.
 
-**Opciones (parámetros de la instalación)**
+**Opciones**
+
+El menú de opciones tiene tres partes: parámetros de la instalación, entradas
+y citas de agua caliente. Los parámetros solo muestran el volumen del depósito
+y la región del agua de red; lo que TankWise aprende solo queda plegado en
+**Opciones avanzadas**:
 
 | Parámetro | Valor por defecto |
 |-----------|-------------------|
 | Volumen | 100 L |
-| Potencia de calentamiento (valor inicial, después se aprende) | 1500 W |
 | Región del agua de red | Islas Baleares |
-| Temperatura ambiente sin sensor | 20 °C |
-| Temperatura de corte del termostato (valor inicial, después se aprende) | 68 °C |
-| Umbral de potencia de corte del termostato | 50 W |
+| *Avanzada:* potencia de calentamiento (valor inicial, después se aprende) | 1500 W |
+| *Avanzada:* temperatura ambiente sin sensor | 20 °C |
+| *Avanzada:* temperatura de corte del termostato (valor inicial, después se aprende) | 68 °C |
+| *Avanzada:* umbral de potencia de corte del termostato | 50 W |
+| *Avanzada:* agrupar los días del perfil de uso | Laborables y fines de semana/festivos |
+| *Avanzada:* días de cada tipo en el perfil de uso | 16 |
 
 **Ajustes (entidades number)**
 
@@ -85,6 +95,24 @@ ningún `entity_id` está fijado en el código.
 Las instalaciones que vienen de la 0.2 se migran solas y conservan lo
 aprendido. Un aviso de reparación pide completar las nuevas entradas
 obligatorias con **Reconfigurar**.
+
+## Citas de agua caliente
+
+Una cita dice "agua caliente lista a esta hora, con al menos esta cantidad
+para el bloque que sigue": nombre, hora de inicio, duración del bloque (1 hora
+por defecto, p. ej. 3 horas para las duchas de la tarde), días de la semana (o
+laborables/festivos con el sensor Workday), litros mínimos a la temperatura de
+ducha y si está activa. Los litros mínimos deben estar disponibles al empezar
+el bloque y cubrirlo entero sin recalentar. Hasta seis, ninguna
+por defecto. Se añaden en **Opciones → Citas de agua caliente**.
+
+Cada cita tiene entidades para ajustarla desde un panel (los cambios se
+guardan en las opciones): `time.<nombre>_<cita>_time`,
+`number.<nombre>_<cita>_liters` y `switch.<nombre>_<cita>_enabled`. El sensor
+`sensor.<nombre>_<cita>_suggested_liters` muestra los litros que realmente se
+usan durante el bloque (P90 de las últimas cuatro semanas) para
+ayudar a elegir el mínimo. Desde la fase 3 el planificador trata cada cita
+activa como una restricción obligatoria.
 
 ## Entidades
 
@@ -101,15 +129,24 @@ nombres visibles están traducidos.
 | Temperatura modelada | Temperatura equivalente del depósito según el modelo |
 | Estado del modelo | `calibrated`, `learning` o `uncertain` |
 | Última extracción | Inicio de la última extracción, con su energía, temperatura mínima y si hubo falta de agua |
-| Faltas de agua caliente (7 días) | Extracciones que dejaron el agua por debajo de la temperatura mínima de confort |
-| Coeficiente de pérdidas (diagnóstico) | UA aprendido, en W/K |
-| Potencia de calentamiento aprendida (diagnóstico) | Potencia media de la resistencia a plena potencia |
-| Temperatura de corte del termostato (diagnóstico) | Mediana de los últimos 20 cortes |
-| Factor de capacidad efectiva (diagnóstico) | Parte de la energía de calentamiento que ve la sonda |
+| Faltas de agua caliente (7 días) | Extracciones que dejaron el agua al menos 1,5 °C por debajo de la temperatura mínima de confort |
+| Demanda de agua caliente hoy | Energía que necesita un día fuerte (P90), con el día habitual (P50) y el resto de hoy como atributos |
+| Previsión de demanda de agua caliente | Demanda de las próximas 36 horas (P90), con las franjas de 15 minutos como atributo |
+| Coeficiente de pérdidas (diagnóstico, desactivado por defecto) | UA aprendido, en W/K |
+| Potencia de calentamiento aprendida (diagnóstico, desactivado por defecto) | Potencia media de la resistencia a plena potencia |
+| Temperatura de corte del termostato (diagnóstico, desactivado por defecto) | Mediana de los últimos 20 cortes |
+| Factor de capacidad efectiva (diagnóstico, desactivado por defecto) | Parte de la energía de calentamiento que ve la sonda |
 | Temperatura del agua de red (diagnóstico) | Valor en uso y su origen |
 
 El diagnóstico incluye los parámetros aprendidos, el resultado de la
-importación del histórico y las últimas 50 extracciones.
+importación del histórico, los días observados del perfil de uso y las
+últimas 50 extracciones.
+
+## Servicios
+
+| Servicio | Descripción |
+|----------|-------------|
+| `tankwise.reset_learning` | Olvida las pérdidas de calor (`part: losses`), el perfil de uso (`part: demand`) o todo (`part: all`, por defecto). `config_entry_id` opcional. |
 
 ## Cómo funciona el modelo del depósito
 
@@ -132,9 +169,27 @@ importación del histórico y las últimas 50 extracciones.
   filtrada con el previsto. Una extracción empieza cuando el residuo acumulado
   en 10 minutos baja de −1 °C y termina cuando se mantiene cerca de cero
   durante 5 minutos. Su energía es `C · ΔT_residual / k_cap`.
+- **Perfil de uso.** Cada día completo (al menos 20 h observadas, casa
+  ocupada) se guarda como la energía extraída en sus 96 franjas de 15
+  minutos. La previsión usa los últimos 16 días del mismo tipo, con más peso
+  los recientes (semivida de tres semanas). Los percentiles se calculan sobre
+  la curva acumulada de cada día, no franja a franja: la P90 de un día es un
+  día "fuerte", y las duchas que se mueven 15–30 minutos no cuentan dos
+  veces. Una extracción que dejó el agua por debajo de la temperatura de
+  confort sube un 20 % la previsión de esa hora durante dos semanas. Con la
+  casa vacía la previsión es cero.
+- **Reconciliación energética.** La sonda de arriba ve una ducha tarde y
+  pequeña mientras el agua fría se queda abajo, y demasiado grande cuando el
+  frente frío llega a ella. Tras cada calentamiento el depósito está mezclado,
+  así que el balance de energía entre dos calentamientos asentados da la
+  energía realmente extraída y las extracciones intermedias se ajustan a ella.
+  Una bajada de más de 1 °C sobre las pérdidas en una hora en reposo se
+  registra como extracción lenta.
+- **Falta de agua caliente.** Una extracción que llevó la sonda al menos
+  1,5 °C por debajo de la temperatura mínima de confort.
 - **Importación del histórico.** En el primer arranque se reproducen los
-  últimos 10 días del recorder a través del modelo, así que pérdidas, cortes y
-  extracciones se conocen desde el primer día.
+  últimos 10 días del recorder a través de los modelos, así que pérdidas,
+  cortes, extracciones y el perfil de uso se conocen desde el primer día.
 - **Modo seguro.** Sin sonda o sin potencia el modelo se congela y los
   sensores del depósito quedan no disponibles; no se inventa nada. Tras una
   interrupción de más de 30 minutos el estado es incierto hasta el siguiente

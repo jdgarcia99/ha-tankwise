@@ -33,7 +33,8 @@
           "grid_export_sensor": "Grid export energy",
           "export_power_sensor": "Current grid export power",
           "solar_forecast_sensor": "Solar forecast",
-          "ambient_sensor": "Ambient temperature around the tank"
+          "ambient_sensor": "Ambient temperature around the tank",
+          "workday_entity": "Workday sensor"
         },
         "data_description": {
           "energy_sensor": "Recommended. Cumulative energy of the water heater (total or total increasing). Without it, the power is integrated.",
@@ -45,7 +46,8 @@
           "grid_export_sensor": "Recommended. Total energy exported to the grid.",
           "export_power_sensor": "Recommended. Power being exported to the grid right now.",
           "solar_forecast_sensor": "Forecast.Solar or Solcast hourly forecast.",
-          "ambient_sensor": "Temperature of the room where the tank is. Without it, the fixed value of the options is used."
+          "ambient_sensor": "Temperature of the room where the tank is. Without it, the fixed value of the options is used.",
+          "workday_entity": "Binary sensor of the Workday integration. With it, holidays are learned apart from workdays and appointments can be set for workdays or holidays."
         }
       },
       "reconfigure": {
@@ -81,21 +83,40 @@
   "options": {
     "step": {
       "init": {
+        "title": "TankWise options",
+        "menu_options": {
+          "parameters": "Installation parameters",
+          "inputs": "Inputs",
+          "appointments": "Hot water appointments"
+        }
+      },
+      "parameters": {
         "title": "Installation parameters",
         "data": {
           "volume": "Tank volume",
-          "rated_power": "Heating power (initial value)",
-          "water_region": "Mains water region",
-          "ambient_temperature": "Ambient temperature (without sensor)",
-          "cutoff_temperature": "Thermostat cut-off temperature (initial value)",
-          "cutoff_power_threshold": "Thermostat cut-off power threshold"
+          "water_region": "Mains water region"
         },
         "data_description": {
-          "rated_power": "Power of the heating element. It is then learned from the power sensor.",
-          "water_region": "Used to estimate the mains water temperature of each day. It can be fixed by hand with the 'Mains water temperature' number.",
-          "ambient_temperature": "Temperature around the tank used for the losses when there is no ambient sensor.",
-          "cutoff_temperature": "Probe temperature when the thermostat cuts off (tank full). It is then learned from the detected cut-offs.",
-          "cutoff_power_threshold": "With the regulator asking for power, below this power for 3 minutes the thermostat is considered to have cut off."
+          "water_region": "Used to estimate the mains water temperature of each day. It can be fixed by hand with the 'Mains water temperature' number."
+        },
+        "sections": {
+          "advanced": {
+            "name": "Advanced options",
+            "description": "Initial values of what TankWise learns and settings of the usage profile. The defaults suit most installations.",
+            "data": {
+              "rated_power": "Heating power (initial value)",
+              "ambient_temperature": "Ambient temperature without sensor",
+              "cutoff_temperature": "Thermostat cut-off temperature (initial value)",
+              "cutoff_power_threshold": "Thermostat cut-off power threshold",
+              "profile_mode": "Group days of the usage profile",
+              "profile_days": "Days of each type in the usage profile"
+            },
+            "data_description": {
+              "rated_power": "It is then learned from the power sensor.",
+              "cutoff_temperature": "It is then learned from the detected cut-offs.",
+              "profile_days": "More days give a steadier forecast when usage changes from one day to the next; fewer days adapt faster."
+            }
+          }
         }
       },
       "inputs": {
@@ -110,13 +131,52 @@
           "grid_export_sensor": "Grid export energy",
           "export_power_sensor": "Current grid export power",
           "solar_forecast_sensor": "Solar forecast",
-          "ambient_sensor": "Ambient temperature around the tank"
+          "ambient_sensor": "Ambient temperature around the tank",
+          "workday_entity": "Workday sensor"
         },
         "data_description": {
           "energy_sensor": "Recommended. Cumulative energy of the water heater (total or total increasing). Without it, the power is integrated.",
           "regulator_sensor": "PWM output of the regulator (e.g. FreeDS). Helps to tell a thermostat cut-off from a regulator stop.",
           "occupancy_entity": "When off, no demand is expected and those days are not learned.",
-          "ambient_sensor": "Temperature of the room where the tank is. Without it, the fixed value of the parameters is used."
+          "ambient_sensor": "Temperature of the room where the tank is. Without it, the fixed value of the parameters is used.",
+          "workday_entity": "Binary sensor of the Workday integration. With it, holidays are learned apart from workdays and appointments can be set for workdays or holidays."
+        }
+      },
+      "appointments": {
+        "title": "Hot water appointments",
+        "description": "Times when hot water must be ready, with a minimum amount of water (at most six).",
+        "menu_options": {
+          "add_appointment": "Add an appointment",
+          "edit_appointment": "Edit an appointment",
+          "remove_appointment": "Remove appointments"
+        }
+      },
+      "edit_appointment": {
+        "title": "Edit an appointment",
+        "data": {
+          "appointment": "Appointment"
+        }
+      },
+      "remove_appointment": {
+        "title": "Remove appointments",
+        "data": {
+          "appointment": "Appointment"
+        }
+      },
+      "appointment": {
+        "title": "Hot water appointment",
+        "data": {
+          "name": "Name",
+          "time": "Hot water ready by",
+          "days": "Days",
+          "duration": "Block duration",
+          "liters": "Minimum water",
+          "enabled": "Active"
+        },
+        "data_description": {
+          "liters": "Litres at the shower temperature (40 °C by default) that must be available when the block starts to cover the whole block without reheating. The 'suggested litres' sensor shows what the block usually uses.",
+          "days": "Workdays and holidays need the Workday sensor.",
+          "duration": "Time the hot water use lasts after the appointment (e.g. 60 min for a morning shower, 180 min for the evening showers)."
         }
       }
     },
@@ -124,7 +184,12 @@
       "entity_not_found": "Entity not found.",
       "invalid_unit": "The entity has an unsupported unit of measurement.",
       "invalid_state_class": "The energy sensor must have state class 'total' or 'total_increasing'.",
-      "not_numeric": "The entity state is not a number."
+      "not_numeric": "The entity state is not a number.",
+      "no_days": "Choose at least one day.",
+      "no_name": "Enter a name."
+    },
+    "abort": {
+      "too_many_appointments": "There are already six appointments, the maximum."
     }
   },
   "selector": {
@@ -133,6 +198,33 @@
         "balearic_islands": "Balearic Islands",
         "mainland": "Mainland Spain (generic)",
         "canary_islands": "Canary Islands"
+      }
+    },
+    "profile_mode": {
+      "options": {
+        "weekday": "Each day of the week apart",
+        "workday_weekend": "Workdays and weekends/holidays",
+        "all": "All days alike"
+      }
+    },
+    "days": {
+      "options": {
+        "mon": "Monday",
+        "tue": "Tuesday",
+        "wed": "Wednesday",
+        "thu": "Thursday",
+        "fri": "Friday",
+        "sat": "Saturday",
+        "sun": "Sunday",
+        "workday": "Workdays",
+        "holiday": "Holidays and non-working days"
+      }
+    },
+    "reset_part": {
+      "options": {
+        "losses": "Heat losses",
+        "demand": "Usage profile",
+        "all": "Everything"
       }
     }
   },
@@ -189,6 +281,12 @@
           },
           "while_heating": {
             "name": "While heating"
+          },
+          "slow": {
+            "name": "Slow draw"
+          },
+          "reconciled": {
+            "name": "Corrected by the energy balance"
           }
         }
       },
@@ -236,6 +334,58 @@
             }
           }
         }
+      },
+      "demand_today": {
+        "name": "Hot water demand today",
+        "state_attributes": {
+          "p50": {
+            "name": "Usual day"
+          },
+          "remaining_p50": {
+            "name": "Rest of today (usual day)"
+          },
+          "remaining_p90": {
+            "name": "Rest of today (strong day)"
+          },
+          "day_type": {
+            "name": "Day type"
+          },
+          "observed_days": {
+            "name": "Observed days"
+          },
+          "profile_status": {
+            "name": "Profile status",
+            "state": {
+              "learning": "Learning",
+              "ready": "Ready"
+            }
+          }
+        }
+      },
+      "demand_forecast": {
+        "name": "Hot water demand forecast",
+        "state_attributes": {
+          "p50": {
+            "name": "Usual"
+          },
+          "start": {
+            "name": "Start"
+          },
+          "end": {
+            "name": "End"
+          }
+        }
+      },
+      "appointment_suggested_liters": {
+        "name": "{appointment} suggested litres",
+        "state_attributes": {
+          "p50": {
+            "name": "Usual"
+          },
+          "days": {
+            "name": "Days measured"
+          }
+        }
       }
     },
     "number": {
@@ -247,6 +397,19 @@
       },
       "mains_water_temperature": {
         "name": "Mains water temperature (0 = automatic)"
+      },
+      "appointment_liters": {
+        "name": "{appointment} litres"
+      }
+    },
+    "time": {
+      "appointment_time": {
+        "name": "{appointment} time"
+      }
+    },
+    "switch": {
+      "appointment_enabled": {
+        "name": "{appointment} active"
       }
     }
   },
@@ -254,6 +417,27 @@
     "missing_required_inputs": {
       "title": "TankWise needs more information",
       "description": "The new version of TankWise needs some entities that are not configured yet for {name}: {inputs}.\n\nOpen **Settings → Devices & services → TankWise**, choose **Reconfigure** on {name} and select them."
+    }
+  },
+  "services": {
+    "reset_learning": {
+      "name": "Reset learning",
+      "description": "Forgets what TankWise has learned: the heat losses, the usage profile or everything.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Water heater",
+          "description": "TankWise instance. All of them if empty."
+        },
+        "part": {
+          "name": "What to forget",
+          "description": "Heat losses, usage profile or everything."
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "entry_not_loaded": {
+      "message": "The TankWise instance {entry_id} is not loaded."
     }
   }
 }

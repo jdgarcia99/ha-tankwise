@@ -35,6 +35,13 @@ async def test_diagnostics(hass: HomeAssistant, mock_entry: MockConfigEntry) -> 
     assert diagnostics["bootstrap"]["status"] == "no_recorder"
     assert diagnostics["consumptions"] == []
     assert "consumptions" not in diagnostics["model"]
+    assert diagnostics["demand"]["status"] == "learning"
+    assert diagnostics["demand"]["params"] == {
+        "mode": "workday_weekend",
+        "observations": 16,
+    }
+    assert diagnostics["appointments"] == []
+    assert diagnostics["reconciliations"] == []
 
 
 def _keys(data: dict, prefix: str = "") -> set[str]:
