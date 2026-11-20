@@ -66,7 +66,7 @@ async def test_settings_update_derived_values_at_once(
 
     await _set(hass, SHOWER, 45.0)
     assert float(hass.states.get(LITERS).state) == pytest.approx(
-        100 * (60 - table) / (45 - table)
+        100 * (60 - 38) / (45 - table)
     )
 
     await _set(hass, COMFORT, 40.0)
@@ -75,7 +75,7 @@ async def test_settings_update_derived_values_at_once(
     await _set(hass, MAINS, 18.0)
     assert float(hass.states.get(MAINS_SENSOR).state) == 18.0
     assert hass.states.get(MAINS_SENSOR).attributes["source"] == "manual"
-    assert float(hass.states.get(LITERS).state) == pytest.approx(100 * 42 / 27)
+    assert float(hass.states.get(LITERS).state) == pytest.approx(100 * 20 / 27)
 
     await _set(hass, MAINS, 0.0)
     assert hass.states.get(MAINS_SENSOR).attributes["source"] == "table"

@@ -78,7 +78,9 @@ from .const import (
 from .inputs import InputError, parse_bool, parse_measurement, parse_numeric, state_unit
 from .model.appointments import (
     Appointment,
+    AppointmentRequirement,
     AppointmentUsage,
+    appointment_requirement,
     appointment_usage,
     load_appointments,
 )
@@ -147,6 +149,11 @@ class TankWiseData:
     demand_today: tuple[float, float]
     demand_remaining: tuple[float, float]
     appointment_usage: dict[str, AppointmentUsage] = field(default_factory=dict)
+    appointment_requirements: dict[str, AppointmentRequirement] = field(
+        default_factory=dict
+    )
+    # Active appointments the tank cannot cover even when full.
+    at_risk: list[str] = field(default_factory=list)
 
 
 class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
@@ -380,8 +387,17 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
             options={**self.config_entry.options, CONF_APPOINTMENTS: items},
         )
         if self.data is not None:
+            usage = self._appointment_usage()
+            requirements, at_risk = self._appointment_requirements(
+                usage, self.data.tank, self.data.readings.occupancy
+            )
             self.async_set_updated_data(
-                replace(self.data, appointment_usage=self._appointment_usage())
+                replace(
+                    self.data,
+                    appointment_usage=usage,
+                    appointment_requirements=requirements,
+                    at_risk=at_risk,
+                )
             )
 
     async def async_reset_learning(self, part: str) -> None:
@@ -459,6 +475,10 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
             )
         self._store.async_schedule_save(self._stored_data)
         _mains, source = self.mains_water_temperature_at(now)
+        usage = self._appointment_usage()
+        requirements, at_risk = self._appointment_requirements(
+            usage, tank, readings.occupancy
+        )
         return TankWiseData(
             readings=readings,
             tank=tank,
@@ -470,8 +490,40 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
                 forecast.window(now, midnight, 0.5),
                 forecast.window(now, midnight, 0.9),
             ),
-            appointment_usage=self._appointment_usage(),
+            appointment_usage=usage,
+            appointment_requirements=requirements,
+            at_risk=at_risk,
         )
+
+    def _appointment_requirements(
+        self,
+        usage: dict[str, AppointmentUsage],
+        tank: TankState,
+        occupancy: bool | None,
+    ) -> tuple[dict[str, AppointmentRequirement], list[str]]:
+        """Temperature each appointment needs, and those beyond a full tank."""
+        params = self.tank_params
+        requirements = {
+            appointment.id: appointment_requirement(
+                appointment,
+                usage.get(appointment.id),
+                volume_l=params.volume_l,
+                comfort_temperature=params.comfort_min_temperature,
+                shower_temperature=params.shower_temperature,
+                mains_temperature=tank.mains_temperature,
+                usable_factor=tank.usable_factor,
+                max_temperature=tank.cutoff_temperature,
+            )
+            for appointment in self.appointments
+        }
+        at_risk = []
+        if occupancy is not False:  # appointments are suspended with nobody home
+            at_risk = [
+                appointment.id
+                for appointment in self.appointments
+                if appointment.enabled and not requirements[appointment.id].feasible
+            ]
+        return requirements, at_risk
 
     def _appointment_usage(self) -> dict[str, AppointmentUsage]:
         """Measure the litres used in the hour after each appointment."""

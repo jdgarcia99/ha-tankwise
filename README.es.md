@@ -17,7 +17,7 @@ PVPC de compra más el valor del excedente solar).
 
 ## Estado del proyecto
 
-> **En desarrollo (0.4.1, fase 2 de 7).** TankWise aprende cómo se comporta
+> **En desarrollo (0.5.0, fase 2 de 7).** TankWise aprende cómo se comporta
 > el depósito, detecta cada extracción de agua caliente y prevé la demanda,
 > pero **todavía no actúa sobre ningún dispositivo**. Mantén tus
 > automatizaciones hasta la fase 4.
@@ -111,8 +111,11 @@ guardan en las opciones): `time.<nombre>_<cita>_time`,
 `number.<nombre>_<cita>_liters` y `switch.<nombre>_<cita>_enabled`. El sensor
 `sensor.<nombre>_<cita>_suggested_liters` muestra los litros que realmente se
 usan durante el bloque (P90 de las últimas cuatro semanas) para
-ayudar a elegir el mínimo. Desde la fase 3 el planificador trata cada cita
-activa como una restricción obligatoria.
+ayudar a elegir el mínimo, y `sensor.<nombre>_<cita>_required_temperature` la
+temperatura que necesita el depósito al empezar el bloque. Si supera el corte
+aprendido del termostato, `binary_sensor.tankwise_plan_at_risk` se enciende:
+ni el depósito lleno cubre el bloque. Desde la fase 3 el planificador trata
+cada cita activa como una restricción obligatoria sobre los litros útiles.
 
 ## Entidades
 
@@ -125,7 +128,8 @@ nombres visibles están traducidos.
 | Energía almacenada | kWh almacenados por encima de la temperatura del agua de red |
 | Energía útil | kWh almacenados por encima de la temperatura mínima de confort |
 | Carga | Energía útil en porcentaje de un depósito lleno |
-| Agua caliente disponible | Litros disponibles a la temperatura de ducha |
+| Agua caliente disponible | Litros útiles a la temperatura de ducha antes de que el agua baje de la temperatura de confort (litros teóricos como atributo) |
+| Plan en riesgo (binario) | Encendido cuando una cita activa necesita más de lo que da el depósito lleno |
 | Temperatura modelada | Temperatura equivalente del depósito según el modelo |
 | Estado del modelo | `calibrated`, `learning` o `uncertain` |
 | Última extracción | Inicio de la última extracción, con su energía, temperatura mínima y si hubo falta de agua |
@@ -151,8 +155,11 @@ importación del histórico, los días observados del perfil de uso y las
 ## Cómo funciona el modelo del depósito
 
 - **Energía y litros.** `C = V · 0,001163` kWh/K. Energía almacenada
-  `E = C · (T − T_red)` y litros a la temperatura de ducha
-  `L = V · (T − T_red) / (T_ducha − T_red)`.
+  `E = C · (T − T_red)`. El agua fría que entra se mezcla con la caliente, así
+  que solo se aprovecha el calor por encima de la temperatura de confort:
+  litros útiles a la temperatura de ducha
+  `L = k_use · V · (T − T_confort) / (T_ducha − T_red)`, con `k_use` aprendido
+  de las faltas reales.
 - **Pérdidas.** `P = UA · (T − T_ambiente)`. UA se aprende por mínimos
   cuadrados recursivos con la pendiente de la sonda en ventanas de reposo de
   al menos dos horas (sin calentar ni extracciones), entre 0,3 y 3 W/K.

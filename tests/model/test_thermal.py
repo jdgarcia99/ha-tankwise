@@ -39,14 +39,17 @@ def test_heat_capacity_of_100_litres() -> None:
 
 
 def test_stored_energy_and_litres_at_40c() -> None:
-    """60 °C, mains 17 °C: E = 0.1163 · 43 kWh, L = 100 · 43 / 23 litres."""
+    """60 °C, mains 17 °C, comfort 38 °C: E = 0.1163 · 43 kWh; useful litres
+    100 · 22 / 23 (heat above comfort), theoretical 100 · 43 / 23."""
     params = TankParams(mains_temperature=17.0, cutoff_temperature=68.0)
     model = TankModel()
     state = model.update(
         TankSample(timestamp=START, temperature=60.0, power=0.0, energy=10.0), params
     )
     assert state.stored_energy_kwh == pytest.approx(0.1163 * 43, rel=1e-3)
-    assert state.liters_available == pytest.approx(100 * 43 / 23, rel=1e-3)
+    assert state.liters_available == pytest.approx(100 * 22 / 23, rel=1e-3)
+    assert state.liters_theoretical == pytest.approx(100 * 43 / 23, rel=1e-3)
+    assert state.usable_factor == 1.0
     assert state.useful_energy_kwh == pytest.approx(0.1163 * 22, rel=1e-3)
     assert state.charge_percent == pytest.approx(100 * 22 / 30, rel=1e-3)
 

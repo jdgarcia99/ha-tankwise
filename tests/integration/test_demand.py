@@ -309,3 +309,79 @@ async def test_demand_profile_is_persisted(
     assert await hass.config_entries.async_setup(mock_entry.entry_id)
     await hass.async_block_till_done()
     assert len(mock_entry.runtime_data.demand.observations) == 3
+
+
+async def test_required_temperature_and_plan_at_risk(
+    hass: HomeAssistant, mock_entry: MockConfigEntry, freezer: FrozenDateTimeFactory
+) -> None:
+    """The evening needs more than a full tank gives: plan at risk."""
+    freezer.move_to(NOW)
+    big_evening = {
+        **EVENING,
+        "liters": 150.0,
+        "days": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
+    }
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Water heater",
+        version=2,
+        minor_version=2,
+        data=dict(mock_entry.data),
+        options={**mock_entry.options, CONF_APPOINTMENTS: [MORNING, big_evening]},
+    )
+    await _setup(hass, entry, history=14)
+    coordinator = entry.runtime_data
+    mains = coordinator.data.tank.mains_temperature
+
+    morning = hass.states.get("sensor.tankwise_ducha_manana_required_temperature")
+    # Morning: 60 L minimum above the 46 L used: 38 + 60 * (40 - mains) / 100.
+    assert float(morning.state) == pytest.approx(38 + 60 * (40 - mains) / 100, abs=0.05)
+    assert morning.attributes["liters_source"] == "minimum"
+    assert morning.attributes["feasible"] is True
+
+    evening = hass.states.get("sensor.tankwise_tarde_required_temperature")
+    assert float(evening.state) == pytest.approx(
+        38 + 150 * (40 - mains) / 100, abs=0.05
+    )
+    assert evening.attributes["feasible"] is False
+
+    risk = hass.states.get("binary_sensor.tankwise_plan_at_risk")
+    assert risk.state == "on"
+    assert risk.attributes["appointments"][0]["name"] == "Tarde"
+    assert risk.attributes["cutoff_temperature"] == 68.0
+
+    # Suspending the appointment clears the risk.
+    await hass.services.async_call(
+        "switch",
+        SERVICE_TURN_OFF,
+        {ATTR_ENTITY_ID: "switch.tankwise_tarde_enabled"},
+        blocking=True,
+    )
+    await hass.async_block_till_done()
+    assert hass.states.get("binary_sensor.tankwise_plan_at_risk").state == "off"
+
+
+async def test_plan_not_at_risk_with_nobody_home(
+    hass: HomeAssistant, mock_entry: MockConfigEntry, freezer: FrozenDateTimeFactory
+) -> None:
+    freezer.move_to(NOW)
+    big = {
+        **EVENING,
+        "liters": 150.0,
+        "days": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
+    }
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Water heater",
+        version=2,
+        minor_version=2,
+        data=dict(mock_entry.data),
+        options={**mock_entry.options, CONF_APPOINTMENTS: [big]},
+    )
+    await _setup(hass, entry)
+    assert hass.states.get("binary_sensor.tankwise_plan_at_risk").state == "on"
+    hass.states.async_set(OCCUPANCY, "off")
+    freezer.tick(UPDATE_INTERVAL)
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert hass.states.get("binary_sensor.tankwise_plan_at_risk").state == "off"

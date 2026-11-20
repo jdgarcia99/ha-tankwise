@@ -52,6 +52,9 @@
       },
       "appointment_suggested_liters": {
         "default": "mdi:water-check"
+      },
+      "appointment_required_temperature": {
+        "default": "mdi:thermometer-chevron-up"
       }
     },
     "number": {
@@ -78,6 +81,14 @@
         "default": "mdi:calendar-check",
         "state": {
           "off": "mdi:calendar-remove"
+        }
+      }
+    },
+    "binary_sensor": {
+      "plan_at_risk": {
+        "default": "mdi:water-check",
+        "state": {
+          "on": "mdi:water-alert"
         }
       }
     }

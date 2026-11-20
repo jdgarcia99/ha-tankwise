@@ -259,7 +259,12 @@ async def test_sensors_from_first_reading(
     assert float(hass.states.get(USEFUL).state) == pytest.approx(CAPACITY * (60 - 38))
     assert float(hass.states.get(CHARGE).state) == pytest.approx(100 * 22 / 30)
     liters = hass.states.get(LITERS)
-    assert float(liters.state) == pytest.approx(100 * (60 - MAINS) / (40 - MAINS))
+    # Useful litres: heat above the 38 °C comfort temperature.
+    assert float(liters.state) == pytest.approx(100 * (60 - 38) / (40 - MAINS))
+    assert liters.attributes["theoretical_liters"] == pytest.approx(
+        100 * (60 - MAINS) / (40 - MAINS), abs=0.1
+    )
+    assert liters.attributes["usable_factor"] == 1.0
     assert liters.attributes["unit_of_measurement"] == "L"
     assert liters.attributes["shower_temperature"] == 40.0
     assert float(hass.states.get(TANK_TEMPERATURE).state) == 60.0

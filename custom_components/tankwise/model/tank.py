@@ -107,6 +107,19 @@ MIN_RECONCILE_DRAWS_KWH = 0.1
 MIN_RECONCILE_FACTOR = 0.5
 MAX_RECONCILE_FACTOR = 5.0
 MAX_RECONCILIATIONS = 20
+
+# Useful litres: water at the shower temperature that can be drawn before the
+# outlet falls below the comfort temperature. The incoming cold water mixes
+# with the hot water, so only the heat above the comfort temperature is
+# usable: L = k_use * V * (T - T_comfort) / (T_shower - T_mains). k_use is
+# learned from real shortages (litres drawn since the last settled heating
+# until the probe crossed the comfort temperature, over the litres predicted
+# then); it was 1.00 (median) on the reference installation.
+DEFAULT_USABLE_FACTOR = 1.0
+MIN_USABLE_FACTOR = 0.5
+MAX_USABLE_FACTOR = 1.5
+MAX_USABLE_SAMPLES = 10
+MIN_USABLE_PREDICTED_L = 5.0
 MAX_CONSUMPTIONS = 200
 # A draw is a shortage only if the probe went this far below the comfort
 # temperature: water kept being drawn below it (about 6 litres or more), not
@@ -374,13 +387,16 @@ class TankState:
     stored_energy_kwh: float | None
     useful_energy_kwh: float | None
     charge_percent: float | None
-    liters_available: float | None
+    liters_available: float | None  # useful litres (see DEFAULT_USABLE_FACTOR)
+    liters_theoretical: float | None  # all the heat above mains, stratified
     cutoff_temperature: float
     cutoff_samples: tuple[float, ...]
     ua_w_per_k: float
     loss_windows: int
     capacity_factor: float
     capacity_samples: int
+    usable_factor: float
+    usable_samples: int
     heater_power_w: float
     calibration_count: int
     last_calibration: datetime | None
@@ -409,6 +425,8 @@ class _ActiveEvent:
     detected: datetime
     while_heating: bool
     slow: bool = False
+    # Draw energy accumulated when the probe crossed the comfort temperature.
+    energy_at_comfort: float | None = None
 
 
 @dataclass(slots=True)
@@ -471,6 +489,20 @@ class Reconciliation:
         }
 
 
+@dataclass(frozen=True, slots=True)
+class _UsableObservation:
+    """A real shortage, waiting for the reconciliation of its interval."""
+
+    anchor_time: datetime
+    anchor_probe: float
+    energy_before_kwh: float  # draws since the anchor, before this one
+    energy_until_comfort_kwh: float  # this draw until the comfort crossing
+    mains: float
+    shower: float
+    comfort: float
+    volume_l: float
+
+
 @dataclass(slots=True)
 class _LossWindow:
     points: list[tuple[datetime, float]] = field(default_factory=list)
@@ -512,6 +544,8 @@ class TankModel:
         self._episode: _CapacityEpisode | None = None
         self._anchor: _Anchor | None = None
         self._reconciliations: deque[Reconciliation] = deque(maxlen=MAX_RECONCILIATIONS)
+        self._usable_samples: list[float] = []
+        self._pending_usable: list[_UsableObservation] = []
 
     # ------------------------------------------------------------------
     # Public API
@@ -538,6 +572,15 @@ class TankModel:
             return params.capacity_factor
         return _clamp(
             median(self._capacity_samples), MIN_CAPACITY_FACTOR, MAX_CAPACITY_FACTOR
+        )
+
+    @property
+    def usable_factor(self) -> float:
+        """Return the learned share of the useful litres really available."""
+        if not self._usable_samples:
+            return DEFAULT_USABLE_FACTOR
+        return _clamp(
+            median(self._usable_samples), MIN_USABLE_FACTOR, MAX_USABLE_FACTOR
         )
 
     def heater_power(self, params: TankParams) -> float:
@@ -596,6 +639,7 @@ class TankModel:
         """Forget every learned parameter (losses, k_cap, power, cut-offs, draws)."""
         self.reset_losses()
         self._capacity_samples.clear()
+        self._usable_samples.clear()
         self._heater_power_w = None
         self._heater_power_samples = 0
         self._cutoff_samples.clear()
@@ -611,6 +655,7 @@ class TankModel:
             "ua_covariance": self._ua_covariance,
             "loss_windows": self._loss_windows,
             "capacity_samples": list(self._capacity_samples),
+            "usable_samples": list(self._usable_samples),
             "heater_power_w": self._heater_power_w,
             "heater_power_samples": self._heater_power_samples,
             "cutoff_samples": list(self._cutoff_samples),
@@ -650,6 +695,9 @@ class TankModel:
                 model._capacity_samples = [
                     float(value) for value in data["capacity_samples"]
                 ][-MAX_CAPACITY_SAMPLES:]
+                model._usable_samples = [
+                    float(value) for value in data.get("usable_samples", [])
+                ][-MAX_USABLE_SAMPLES:]
                 power = data["heater_power_w"]
                 model._heater_power_w = None if power is None else float(power)
                 model._heater_power_samples = int(data["heater_power_samples"])
@@ -1015,6 +1063,11 @@ class TankModel:
             # input. The draw energy is what the balance cannot explain.
             corrected = min(predicted, self._probe)
             event.energy_kwh -= full_residual * capacity / k_cap
+            if (
+                event.energy_at_comfort is None
+                and self._probe < params.comfort_min_temperature
+            ):
+                event.energy_at_comfort = event.energy_kwh
             if self._probe < event.min_probe - MIN_TRACK_DROP:
                 event.min_probe = self._probe
                 event.min_time = now
@@ -1114,6 +1167,29 @@ class TankModel:
                 slow=event.slow,
             )
         )
+        if self._consumptions[-1].shortage and self._anchor is not None:
+            anchor = self._anchor
+            before = sum(
+                draw.energy_kwh
+                for draw in list(self._consumptions)[:-1]
+                if anchor.time <= draw.start < event.start
+            )
+            self._pending_usable.append(
+                _UsableObservation(
+                    anchor_time=anchor.time,
+                    anchor_probe=anchor.probe,
+                    energy_before_kwh=before,
+                    energy_until_comfort_kwh=(
+                        event.energy_at_comfort
+                        if event.energy_at_comfort is not None
+                        else event.energy_kwh
+                    ),
+                    mains=params.mains_temperature,
+                    shower=params.shower_temperature,
+                    comfort=params.comfort_min_temperature,
+                    volume_l=params.volume_l,
+                )
+            )
         self._event = None
         self._filter.tau_s = FILTER_TAU_S
         self._last_consumption_end = now
@@ -1193,6 +1269,7 @@ class TankModel:
                 self._consumptions[index] = replace(
                     event, energy_kwh=event.energy_kwh * factor, reconciled=factor
                 )
+        self._learn_usable(anchor, factor if factor is not None else 1.0)
         self._reconciliations.append(
             Reconciliation(
                 start=anchor.time,
@@ -1204,6 +1281,27 @@ class TankModel:
                 factor=factor,
             )
         )
+
+    def _learn_usable(self, anchor: _Anchor, factor: float) -> None:
+        """Learn k_use from the shortages of a reconciled interval."""
+        pending, self._pending_usable = self._pending_usable, []
+        for item in pending:
+            if item.anchor_time != anchor.time:
+                continue  # older interval (e.g. before a restart): dropped
+            span = item.shower - item.mains
+            if span <= 0:
+                continue
+            predicted = item.volume_l * (item.anchor_probe - item.comfort) / span
+            if predicted < MIN_USABLE_PREDICTED_L:
+                continue
+            drawn_kwh = (
+                item.energy_before_kwh + item.energy_until_comfort_kwh
+            ) * factor
+            drawn_l = drawn_kwh / (WATER_HEAT_CAPACITY_KWH_PER_L_K * span)
+            self._usable_samples.append(
+                _clamp(drawn_l / predicted, MIN_USABLE_FACTOR, MAX_USABLE_FACTOR)
+            )
+            del self._usable_samples[:-MAX_USABLE_SAMPLES]
 
     # ------------------------------------------------------------------
     # Effective capacity learning
@@ -1334,6 +1432,7 @@ class TankModel:
         self._event = None
         self._episode = None
         self._anchor = None
+        self._pending_usable = []
         self._filter.tau_s = FILTER_TAU_S
         self._loss = _LossWindow()
         self._quiet_since = now
@@ -1343,7 +1442,7 @@ class TankModel:
     ) -> TankState:
         cutoff = self.cutoff_temperature(params)
         equivalent = self._equivalent if available else None
-        stored = useful = charge = liters = None
+        stored = useful = charge = liters = theoretical = None
         if equivalent is not None:
             capacity = params.heat_capacity
             mains = params.mains_temperature
@@ -1357,11 +1456,17 @@ class TankModel:
                 else 0.0
             )
             span = params.shower_temperature - mains
-            liters = (
-                max(0.0, params.volume_l * (equivalent - mains) / span)
-                if span > 0
-                else 0.0
-            )
+            if span > 0:
+                theoretical = max(0.0, params.volume_l * (equivalent - mains) / span)
+                liters = max(
+                    0.0,
+                    self.usable_factor
+                    * params.volume_l
+                    * (equivalent - comfort)
+                    / span,
+                )
+            else:
+                theoretical = liters = 0.0
         return TankState(
             timestamp=now,
             available=available and equivalent is not None,
@@ -1375,12 +1480,15 @@ class TankModel:
             useful_energy_kwh=useful,
             charge_percent=charge,
             liters_available=liters,
+            liters_theoretical=theoretical,
             cutoff_temperature=cutoff,
             cutoff_samples=tuple(self._cutoff_samples),
             ua_w_per_k=self._ua,
             loss_windows=self._loss_windows,
             capacity_factor=self.capacity_factor(params),
             capacity_samples=len(self._capacity_samples),
+            usable_factor=self.usable_factor,
+            usable_samples=len(self._usable_samples),
             heater_power_w=self.heater_power(params),
             calibration_count=self._calibration_count,
             last_calibration=self._last_calibration,

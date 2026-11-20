@@ -247,6 +247,15 @@
           },
           "mains_water_temperature": {
             "name": "Mains water temperature"
+          },
+          "comfort_min_temperature": {
+            "name": "Minimum comfort temperature"
+          },
+          "theoretical_liters": {
+            "name": "Theoretical litres (perfect stratification)"
+          },
+          "usable_factor": {
+            "name": "Usable factor"
           }
         }
       },
@@ -386,6 +395,27 @@
             "name": "Days measured"
           }
         }
+      },
+      "appointment_required_temperature": {
+        "name": "{appointment} required temperature",
+        "state_attributes": {
+          "liters": {
+            "name": "Litres to cover"
+          },
+          "liters_source": {
+            "name": "Litres from",
+            "state": {
+              "minimum": "Minimum of the appointment",
+              "usage": "Usual use (P90)"
+            }
+          },
+          "cutoff_temperature": {
+            "name": "Thermostat cut-off"
+          },
+          "feasible": {
+            "name": "Reachable"
+          }
+        }
       }
     },
     "number": {
@@ -410,6 +440,19 @@
     "switch": {
       "appointment_enabled": {
         "name": "{appointment} active"
+      }
+    },
+    "binary_sensor": {
+      "plan_at_risk": {
+        "name": "Plan at risk",
+        "state_attributes": {
+          "appointments": {
+            "name": "Appointments at risk"
+          },
+          "cutoff_temperature": {
+            "name": "Thermostat cut-off"
+          }
+        }
       }
     }
   },

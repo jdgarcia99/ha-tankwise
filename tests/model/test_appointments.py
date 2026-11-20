@@ -172,3 +172,45 @@ def test_usage_covers_the_whole_block() -> None:
     one_shower = liters_from_energy(EVENING_KWH, 40, 15)
     assert usage.p50 >= one_shower * 0.95  # at least the gym shower every day
     assert usage.p90 == pytest.approx(one_shower * 3, rel=0.05)  # strong days
+
+
+def test_required_temperature_inverts_useful_litres() -> None:
+    from tankwise_model.appointments import (
+        AppointmentUsage,
+        appointment_requirement,
+        required_temperature,
+    )
+
+    # 98 useful litres with mains 13.7 °C need 63.7 °C (the 19/11 evening).
+    temperature = required_temperature(
+        98.0,
+        volume_l=100,
+        comfort_temperature=38.0,
+        shower_temperature=40.0,
+        mains_temperature=13.7,
+        usable_factor=1.0,
+    )
+    assert temperature == pytest.approx(38 + 98 * 26.3 / 100)
+
+    block = Appointment(
+        "t", "Tarde", time(17), frozenset({"mon"}), 40, duration=timedelta(hours=3)
+    )
+    common = {
+        "volume_l": 100,
+        "comfort_temperature": 38.0,
+        "shower_temperature": 40.0,
+        "mains_temperature": 13.7,
+        "usable_factor": 1.0,
+        "max_temperature": 68.0,
+    }
+    # The P90 of the block (109 L) is above the minimum (40 L).
+    requirement = appointment_requirement(block, AppointmentUsage(60, 109, 9), **common)
+    assert requirement.source == "usage"
+    assert requirement.liters == 109
+    assert requirement.temperature == pytest.approx(38 + 109 * 0.263)
+    assert requirement.feasible  # 66.7 °C <= 68 °C
+    # Without measurements the minimum rules; 130 L is beyond a full tank.
+    big = Appointment("b", "Baño", time(20), frozenset({"sun"}), 130)
+    requirement = appointment_requirement(big, None, **common)
+    assert requirement.source == "minimum"
+    assert not requirement.feasible
