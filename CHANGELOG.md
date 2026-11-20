@@ -49,6 +49,13 @@ It still does not act on any device.
   plan costs 0.45 €/day against 0.78 €/day really spent, with no hot water
   shortage against 9 real ones.
 
+### Objective (not reached yet)
+
+- Average cost of at most 0.30 €/day on the reference installation. The plan
+  reaches 0.45 €/day in the simulation bench; the next step is the solar
+  forecast (phase 6), so the plan can count on tomorrow's surplus instead of
+  heating from the grid at night.
+
 ## [0.5.0] - 2026-11-20
 
 ### Changed
