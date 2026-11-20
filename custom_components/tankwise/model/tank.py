@@ -92,6 +92,11 @@ END_TOLERANCE = 0.2  # °C accumulated over END_WINDOW counts as "about zero"
 MIN_TRACK_DROP = 0.1  # °C, a new minimum must be this much lower
 HISTORY_SPAN = timedelta(minutes=10)
 MAX_CONSUMPTIONS = 200
+# A draw is a shortage only if the probe went this far below the comfort
+# temperature: water kept being drawn below it (about 6 litres or more), not
+# just the end of a shower touching it. Measured on real showers: the
+# shortages went 3-9.5 °C below 38 °C, the false ones 0.5-1.25 °C.
+SHORTAGE_MARGIN = 1.5
 
 # Probe filter time constants: smooth at rest, fast while following a draw
 FILTER_TAU_S = 240.0
@@ -984,7 +989,9 @@ class TankModel:
                 start_temperature=event.start_temperature,
                 min_temperature=event.min_probe,
                 while_heating=event.while_heating,
-                shortage=event.min_probe < params.comfort_min_temperature,
+                shortage=(
+                    event.min_probe <= params.comfort_min_temperature - SHORTAGE_MARGIN
+                ),
             )
         )
         self._event = None
