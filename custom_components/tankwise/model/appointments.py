@@ -214,3 +214,70 @@ def appointment_usage(
         p90=weighted_quantile(liters, weights, 0.9),
         days=len(days),
     )
+
+
+@dataclass(frozen=True, slots=True)
+class AppointmentRequirement:
+    """What the tank needs when an appointment block starts."""
+
+    liters: float  # useful litres at the shower temperature
+    source: str  # "minimum" (set by the user) or "usage" (P90 of the block)
+    temperature: float  # tank temperature needed at the start of the block
+    feasible: bool  # reachable below the learned thermostat cut-off
+
+
+def required_temperature(
+    liters: float,
+    *,
+    volume_l: float,
+    comfort_temperature: float,
+    shower_temperature: float,
+    mains_temperature: float,
+    usable_factor: float,
+) -> float:
+    """Return the tank temperature that gives ``liters`` useful litres.
+
+    Inverse of the useful litres: L = k_use * V * (T - T_comfort) /
+    (T_shower - T_mains).
+    """
+    span = max(0.0, shower_temperature - mains_temperature)
+    return comfort_temperature + liters * span / (volume_l * usable_factor)
+
+
+def appointment_requirement(
+    appointment: Appointment,
+    usage: AppointmentUsage | None,
+    *,
+    volume_l: float,
+    comfort_temperature: float,
+    shower_temperature: float,
+    mains_temperature: float,
+    usable_factor: float,
+    max_temperature: float,
+) -> AppointmentRequirement:
+    """Litres and temperature needed at the start of the appointment block.
+
+    The litres are the larger of the minimum set by the user and the P90 of
+    the litres used during the block (a quantile of the whole block, never a
+    sum of hourly quantiles).
+    """
+    measured = usage.p90 if usage is not None and usage.p90 is not None else 0.0
+    liters, source = (
+        (measured, "usage")
+        if measured > appointment.liters
+        else (appointment.liters, "minimum")
+    )
+    temperature = required_temperature(
+        liters,
+        volume_l=volume_l,
+        comfort_temperature=comfort_temperature,
+        shower_temperature=shower_temperature,
+        mains_temperature=mains_temperature,
+        usable_factor=usable_factor,
+    )
+    return AppointmentRequirement(
+        liters=liters,
+        source=source,
+        temperature=temperature,
+        feasible=temperature <= max_temperature,
+    )

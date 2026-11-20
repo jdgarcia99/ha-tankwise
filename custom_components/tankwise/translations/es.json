@@ -247,6 +247,15 @@
           },
           "mains_water_temperature": {
             "name": "Temperatura del agua de red"
+          },
+          "comfort_min_temperature": {
+            "name": "Temperatura mínima de confort"
+          },
+          "theoretical_liters": {
+            "name": "Litros teóricos (estratificación perfecta)"
+          },
+          "usable_factor": {
+            "name": "Factor de aprovechamiento"
           }
         }
       },
@@ -386,6 +395,27 @@
             "name": "Días medidos"
           }
         }
+      },
+      "appointment_required_temperature": {
+        "name": "{appointment} temperatura necesaria",
+        "state_attributes": {
+          "liters": {
+            "name": "Litros a cubrir"
+          },
+          "liters_source": {
+            "name": "Origen de los litros",
+            "state": {
+              "minimum": "Mínimo de la cita",
+              "usage": "Uso habitual (P90)"
+            }
+          },
+          "cutoff_temperature": {
+            "name": "Corte del termostato"
+          },
+          "feasible": {
+            "name": "Alcanzable"
+          }
+        }
       }
     },
     "number": {
@@ -410,6 +440,19 @@
     "switch": {
       "appointment_enabled": {
         "name": "{appointment} activa"
+      }
+    },
+    "binary_sensor": {
+      "plan_at_risk": {
+        "name": "Plan en riesgo",
+        "state_attributes": {
+          "appointments": {
+            "name": "Citas en riesgo"
+          },
+          "cutoff_temperature": {
+            "name": "Corte del termostato"
+          }
+        }
       }
     }
   },

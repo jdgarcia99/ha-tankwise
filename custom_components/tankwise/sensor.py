@@ -148,9 +148,16 @@ SENSORS: tuple[TankWiseSensorDescription, ...] = (
         value_fn=lambda data: data.tank.liters_available,
         attributes_fn=lambda coordinator: {
             "shower_temperature": coordinator.tank_params.shower_temperature,
+            "comfort_min_temperature": coordinator.tank_params.comfort_min_temperature,
             "mains_water_temperature": round(
                 coordinator.data.tank.mains_temperature, 1
             ),
+            "theoretical_liters": (
+                round(coordinator.data.tank.liters_theoretical, 1)
+                if coordinator.data.tank.liters_theoretical is not None
+                else None
+            ),
+            "usable_factor": round(coordinator.data.tank.usable_factor, 3),
         },
     ),
     TankWiseSensorDescription(
@@ -290,6 +297,12 @@ async def async_setup_entry(
                 SuggestedLitersSensor(coordinator, appointment, "suggested_liters")
                 for appointment in coordinator.appointments
             ),
+            *(
+                RequiredTemperatureSensor(
+                    coordinator, appointment, "required_temperature"
+                )
+                for appointment in coordinator.appointments
+            ),
         ]
     )
 
@@ -358,4 +371,39 @@ class SuggestedLitersSensor(AppointmentEntity, SensorEntity):
         return {
             "p50": round(usage.p50, 1) if usage.p50 is not None else None,
             "days": usage.days,
+        }
+
+
+class RequiredTemperatureSensor(AppointmentEntity, SensorEntity):
+    """Tank temperature needed when the appointment block starts."""
+
+    _platform = "sensor"
+    _attr_device_class = SensorDeviceClass.TEMPERATURE
+    _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 1
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the temperature that gives the litres of the block."""
+        requirement = self.coordinator.data.appointment_requirements.get(
+            self._appointment_id
+        )
+        return requirement.temperature if requirement else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return the litres it covers and whether a full tank reaches it."""
+        requirement = self.coordinator.data.appointment_requirements.get(
+            self._appointment_id
+        )
+        if requirement is None:
+            return {}
+        return {
+            "liters": round(requirement.liters, 1),
+            "liters_source": requirement.source,
+            "cutoff_temperature": round(
+                self.coordinator.data.tank.cutoff_temperature, 1
+            ),
+            "feasible": requirement.feasible,
         }

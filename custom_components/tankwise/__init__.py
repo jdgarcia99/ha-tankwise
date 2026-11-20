@@ -48,6 +48,7 @@ from .storage import TankWiseStore
 _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: list[Platform] = [
+    Platform.BINARY_SENSOR,
     Platform.NUMBER,
     Platform.SENSOR,
     Platform.SWITCH,
@@ -221,7 +222,13 @@ def _async_normalise_entity_ids(
     object_ids = {
         f"appointment_{appointment.id}_{kind}": f"{appointment.slug}_{kind}"
         for appointment in load_appointments(entry.options.get(CONF_APPOINTMENTS, []))
-        for kind in ("time", "liters", "enabled", "suggested_liters")
+        for kind in (
+            "time",
+            "liters",
+            "enabled",
+            "suggested_liters",
+            "required_temperature",
+        )
     }
     prefix = f"{entry.entry_id}_"
     registry = er.async_get(hass)

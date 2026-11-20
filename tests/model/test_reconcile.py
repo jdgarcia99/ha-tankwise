@@ -114,3 +114,46 @@ def test_reconciled_draws_survive_a_restart() -> None:
     restored = TankModel.from_dict(data)
     assert restored.as_dict()["consumptions"] == model.as_dict()["consumptions"]
     assert restored.consumptions[0].reconciled is not None
+
+
+def test_usable_factor_is_learned_from_a_real_shortage() -> None:
+    """Heat to ~60 °C, draw until the water runs lukewarm, heat again."""
+    tank = LayeredTank(temperature=40.0)
+    model = TankModel()
+    params = replace(LAYERED, comfort_min_temperature=38.0, shower_temperature=40.0)
+    feed(model, tank.run(60), params)
+    feed(model, tank.run(100, heat=True), params)
+    feed(model, tank.run(60), params)  # settled: the anchor
+    assert model.usable_factor == 1.0
+    feed(model, tank.run(14, liters=8), params)  # 112 litres: lukewarm at the end
+    feed(model, tank.run(60), params)
+    assert model.consumptions[-1].shortage
+    feed(model, tank.run(120, heat=True), params)
+    feed(model, tank.run(40), params)  # reconciliation closes the observation
+    data = model.as_dict()
+    assert len(data["usable_samples"]) == 1
+    assert 0.5 <= model.usable_factor <= 1.5
+    restored = TankModel.from_dict(json.loads(json.dumps(data)))
+    assert restored.usable_factor == pytest.approx(model.usable_factor)
+    model.reset_learning()
+    assert model.usable_factor == 1.0
+
+
+def test_useful_litres_use_the_learned_factor() -> None:
+    model = TankModel()
+    model._usable_samples = [0.8, 0.8, 0.9]
+    params = TankParams(mains_temperature=14.0, comfort_min_temperature=38.0)
+    from datetime import UTC, datetime
+
+    from tankwise_model.tank import TankSample
+
+    state = model.update(
+        TankSample(
+            timestamp=datetime(2026, 11, 19, 16, tzinfo=UTC),
+            temperature=63.7,
+            power=0.0,
+        ),
+        params,
+    )
+    assert state.liters_available == pytest.approx(0.8 * 100 * 25.7 / 26, rel=1e-3)
+    assert state.liters_theoretical == pytest.approx(100 * 49.7 / 26, rel=1e-3)
