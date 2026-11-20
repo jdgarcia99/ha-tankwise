@@ -20,3 +20,17 @@ replan:
       selector:
         config_entry:
           integration: tankwise
+
+get_plan:
+  fields:
+    config_entry_id:
+      selector:
+        config_entry:
+          integration: tankwise
+
+reimport_history:
+  fields:
+    config_entry_id:
+      selector:
+        config_entry:
+          integration: tankwise

@@ -17,6 +17,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from .const import (
     SETTING_COMFORT_MIN_TEMPERATURE,
     SETTING_MAINS_WATER_TEMPERATURE,
+    SETTING_MAX_TEMPERATURE,
     SETTING_RESERVE_LITERS,
     SETTING_SHOWER_TEMPERATURE,
     SETTING_SURPLUS_VALUE,
@@ -92,6 +93,19 @@ NUMBERS: tuple[TankWiseNumberDescription, ...] = (
         native_unit_of_measurement=UnitOfTemperature.CELSIUS,
         native_min_value=0,
         native_max_value=30,
+        native_step=0.5,
+        mode=NumberMode.BOX,
+        entity_category=EntityCategory.CONFIG,
+    ),
+    TankWiseNumberDescription(
+        # Safety: the manual mode ends above this temperature.
+        key=SETTING_MAX_TEMPERATURE,
+        translation_key=SETTING_MAX_TEMPERATURE,
+        setting=SETTING_MAX_TEMPERATURE,
+        device_class=NumberDeviceClass.TEMPERATURE,
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+        native_min_value=50,
+        native_max_value=90,
         native_step=0.5,
         mode=NumberMode.BOX,
         entity_category=EntityCategory.CONFIG,

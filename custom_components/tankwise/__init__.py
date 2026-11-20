@@ -105,9 +105,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: TankWiseConfigEntry) -> 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     if coordinator.needs_bootstrap:
-        entry.async_create_background_task(
-            hass, coordinator.async_run_bootstrap(), f"{DOMAIN} history import"
-        )
+        coordinator.async_start_bootstrap()
     return True
 
 

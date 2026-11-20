@@ -44,7 +44,6 @@ class TankWiseSensorDescription(SensorEntityDescription):
     attributes_fn: Callable[[TankWiseCoordinator], dict[str, Any]] | None = None
     # Unavailable while the tank model is frozen (safe mode).
     requires_tank: bool = True
-    unrecorded: frozenset[str] = frozenset()
 
 
 def _last_draw_attributes(coordinator: TankWiseCoordinator) -> dict[str, Any]:
@@ -133,18 +132,28 @@ def _plan_attributes(coordinator: TankWiseCoordinator) -> dict[str, Any]:
         "rescue_kwh": round(plan.rescue_kwh, 3),
         "rescue_cost": round(plan.rescue_cost, 3),
         "at_risk": plan.at_risk,
-        "slots": [
+        # Compact summary; the slot by slot plan is in the diagnostics and
+        # the tankwise.get_plan service (too big for a state attribute).
+        "end": plan.slots[-1].start.isoformat() if plan.slots else None,
+        "heatings": [
             {
-                "start": slot.start.isoformat(),
-                "grid_kwh": round(slot.grid_kwh, 3),
-                "solar_kwh": round(slot.solar_kwh, 3),
-                "solar_allowed": slot.solar_allowed,
-                "temperature": round(slot.temperature, 1),
-                "liters": round(slot.useful_liters),
-                "cost": round(slot.cost, 4),
-                "rescue": slot.rescue,
+                "start": heating.start.isoformat(),
+                "end": heating.end.isoformat(),
+                "kwh": round(heating.energy_kwh, 2),
+                "cost": round(heating.cost, 3),
+                "rescue": heating.rescue,
             }
-            for slot in plan.slots
+            for heating in plan.heatings()
+        ],
+        "blocks": [
+            {
+                "name": block.name,
+                "start": block.start.isoformat(),
+                "required_temperature": round(block.required_temperature, 1),
+                "predicted_temperature": round(block.predicted_temperature, 1),
+                "at_risk": block.at_risk,
+            }
+            for block in plan.blocks
         ],
     }
 
@@ -283,7 +292,6 @@ SENSORS: tuple[TankWiseSensorDescription, ...] = (
         value_fn=lambda data: data.forecast.total(0.9),
         attributes_fn=_forecast_attributes,
         requires_tank=False,
-        unrecorded=frozenset({"slots"}),
     ),
     TankWiseSensorDescription(
         key="plan",
@@ -294,7 +302,6 @@ SENSORS: tuple[TankWiseSensorDescription, ...] = (
         value_fn=lambda data: data.plan.cost if data.plan else None,
         attributes_fn=_plan_attributes,
         requires_tank=False,
-        unrecorded=frozenset({"slots"}),
     ),
     TankWiseSensorDescription(
         key="next_heating",
@@ -424,6 +431,9 @@ class TankWiseSensor(TankWiseEntity, SensorEntity):
     """A sensor derived from the coordinator data."""
 
     _platform = "sensor"
+    # Home Assistant reads this at class creation: it cannot be per instance.
+    # The demand forecast lists its slots; the recorder keeps the totals.
+    _unrecorded_attributes = frozenset({"slots", "heatings", "blocks"})
 
     entity_description: TankWiseSensorDescription
 
@@ -435,7 +445,6 @@ class TankWiseSensor(TankWiseEntity, SensorEntity):
         """Initialise the sensor."""
         super().__init__(coordinator, description.key)
         self.entity_description = description
-        self._unrecorded_attributes = description.unrecorded
 
     @property
     def available(self) -> bool:

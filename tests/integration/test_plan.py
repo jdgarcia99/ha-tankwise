@@ -99,7 +99,13 @@ async def test_plan_in_shadow_mode(
     assert float(plan.state) > 0
     assert plan.attributes["mode"] == "shadow"
     assert plan.attributes["tomorrow_prices"] is False
-    assert len(plan.attributes["slots"]) == 144
+    # Compact summary only: the slots would exceed the recorder size limit.
+    assert "slots" not in plan.attributes
+    # 17:00 today and tomorrow are inside the 36-hour horizon.
+    assert [block["name"] for block in plan.attributes["blocks"]] == ["Tarde"] * 2
+    assert dt_util.as_local(
+        dt_util.parse_datetime(plan.attributes["heatings"][0]["start"])
+    ).hour in (14, 15)
     assert plan.attributes["at_risk"] is False
 
     next_heating = hass.states.get(NEXT)

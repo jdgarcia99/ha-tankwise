@@ -111,12 +111,14 @@
               "cutoff_temperature": "Thermostat cut-off temperature (initial value)",
               "cutoff_power_threshold": "Thermostat cut-off power threshold",
               "profile_mode": "Group days of the usage profile",
-              "profile_days": "Days of each type in the usage profile"
+              "profile_days": "Days of each type in the usage profile",
+              "regulator_margin": "Minutes before cutting the heater switch"
             },
             "data_description": {
               "rated_power": "It is then learned from the power sensor.",
               "cutoff_temperature": "It is then learned from the detected cut-offs.",
-              "profile_days": "More days give a steadier forecast when usage changes from one day to the next; fewer days adapt faster."
+              "profile_days": "More days give a steadier forecast when usage changes from one day to the next; fewer days adapt faster.",
+              "regulator_margin": "If the regulator stays unavailable this long while TankWise has it in manual mode (or the element heats outside the plan), the heater switch is opened as a last resort. It is closed again when the regulator comes back."
             }
           }
         }
@@ -448,6 +450,15 @@
           },
           "at_risk": {
             "name": "At risk"
+          },
+          "end": {
+            "name": "Plan until"
+          },
+          "heatings": {
+            "name": "Heatings"
+          },
+          "blocks": {
+            "name": "Appointments"
           }
         }
       },
@@ -534,6 +545,9 @@
       },
       "surplus_value": {
         "name": "Surplus value without injection price"
+      },
+      "max_temperature": {
+        "name": "Safety maximum temperature"
       }
     },
     "time": {
@@ -558,6 +572,9 @@
           },
           "cutoff_temperature": {
             "name": "Thermostat cut-off"
+          },
+          "reasons": {
+            "name": "Reasons"
           }
         }
       },
@@ -572,6 +589,30 @@
           },
           "grid_kwh": {
             "name": "Grid energy"
+          }
+        }
+      },
+      "degraded_mode": {
+        "name": "Degraded mode",
+        "state_attributes": {
+          "reason": {
+            "name": "Reason",
+            "state": {
+              "probe": "Tank temperature not available",
+              "no_plan": "No plan (prices or tank model missing)"
+            }
+          },
+          "target_temperature": {
+            "name": "Target temperature"
+          },
+          "appointment": {
+            "name": "Appointment"
+          },
+          "due": {
+            "name": "Water ready at"
+          },
+          "heating_from": {
+            "name": "Heating from"
           }
         }
       }
@@ -592,6 +633,9 @@
     "button": {
       "replan": {
         "name": "Replan"
+      },
+      "reimport_history": {
+        "name": "Import history again"
       }
     }
   },
@@ -599,6 +643,14 @@
     "missing_required_inputs": {
       "title": "TankWise needs more information",
       "description": "The new version of TankWise needs some entities that are not configured yet for {name}: {inputs}.\n\nOpen **Settings → Devices & services → TankWise**, choose **Reconfigure** on {name} and select them."
+    },
+    "heater_switch_off": {
+      "title": "The water heater switch of {name} is off",
+      "description": "TankWise cannot heat the water while the water heater power switch is off, and it does not switch it on by itself. Switch it on again if it was not on purpose."
+    },
+    "regulator_lost": {
+      "title": "The regulator of {name} keeps disconnecting",
+      "description": "TankWise had to open the water heater switch several times in the last week because the regulator (e.g. FreeDS) became unavailable while heating. Check its Wi-Fi connection and power supply."
     }
   },
   "services": {
@@ -619,6 +671,26 @@
     "replan": {
       "name": "Replan",
       "description": "Computes the heating plan now.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Water heater",
+          "description": "TankWise instance. All of them if empty."
+        }
+      }
+    },
+    "get_plan": {
+      "name": "Get plan",
+      "description": "Returns the whole heating plan, slot by slot.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Water heater",
+          "description": "TankWise instance. All of them if empty."
+        }
+      }
+    },
+    "reimport_history": {
+      "name": "Import history again",
+      "description": "Imports the recorder history of the last days again and merges it with what TankWise has learned (nothing learned is lost).",
       "fields": {
         "config_entry_id": {
           "name": "Water heater",

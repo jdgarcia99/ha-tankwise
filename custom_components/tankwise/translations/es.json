@@ -111,12 +111,14 @@
               "cutoff_temperature": "Temperatura de corte del termostato (valor inicial)",
               "cutoff_power_threshold": "Umbral de potencia de corte del termostato",
               "profile_mode": "Agrupar los días del perfil de uso",
-              "profile_days": "Días de cada tipo en el perfil de uso"
+              "profile_days": "Días de cada tipo en el perfil de uso",
+              "regulator_margin": "Minutos antes de cortar el interruptor del termo"
             },
             "data_description": {
               "rated_power": "Después se aprende del sensor de potencia.",
               "cutoff_temperature": "Después se aprende de los cortes detectados.",
-              "profile_days": "Más días dan una previsión más estable cuando el uso cambia de un día a otro; menos días se adaptan antes."
+              "profile_days": "Más días dan una previsión más estable cuando el uso cambia de un día a otro; menos días se adaptan antes.",
+              "regulator_margin": "Si el regulador sigue sin estar disponible este tiempo mientras TankWise lo tiene en manual (o la resistencia calienta fuera del plan), se abre el interruptor del termo como último recurso. Se vuelve a cerrar cuando el regulador vuelve."
             }
           }
         }
@@ -448,6 +450,15 @@
           },
           "at_risk": {
             "name": "En riesgo"
+          },
+          "end": {
+            "name": "Plan hasta"
+          },
+          "heatings": {
+            "name": "Calentamientos"
+          },
+          "blocks": {
+            "name": "Citas"
           }
         }
       },
@@ -534,6 +545,9 @@
       },
       "surplus_value": {
         "name": "Valor del excedente sin precio de inyección"
+      },
+      "max_temperature": {
+        "name": "Temperatura máxima de seguridad"
       }
     },
     "time": {
@@ -558,6 +572,9 @@
           },
           "cutoff_temperature": {
             "name": "Corte del termostato"
+          },
+          "reasons": {
+            "name": "Motivos"
           }
         }
       },
@@ -572,6 +589,30 @@
           },
           "grid_kwh": {
             "name": "Energía de red"
+          }
+        }
+      },
+      "degraded_mode": {
+        "name": "Modo degradado",
+        "state_attributes": {
+          "reason": {
+            "name": "Motivo",
+            "state": {
+              "probe": "Temperatura del termo no disponible",
+              "no_plan": "Sin plan (faltan precios o el modelo del termo)"
+            }
+          },
+          "target_temperature": {
+            "name": "Temperatura objetivo"
+          },
+          "appointment": {
+            "name": "Cita"
+          },
+          "due": {
+            "name": "Agua lista a las"
+          },
+          "heating_from": {
+            "name": "Calentar desde"
           }
         }
       }
@@ -592,6 +633,9 @@
     "button": {
       "replan": {
         "name": "Replanificar"
+      },
+      "reimport_history": {
+        "name": "Importar de nuevo el histórico"
       }
     }
   },
@@ -599,6 +643,14 @@
     "missing_required_inputs": {
       "title": "TankWise necesita más información",
       "description": "La nueva versión de TankWise necesita algunas entidades que todavía no están configuradas en {name}: {inputs}.\n\nAbre **Ajustes → Dispositivos y servicios → TankWise**, elige **Reconfigurar** en {name} y selecciónalas."
+    },
+    "heater_switch_off": {
+      "title": "El interruptor del termo de {name} está apagado",
+      "description": "TankWise no puede calentar el agua mientras el interruptor de alimentación del termo esté apagado, y no lo enciende por su cuenta. Vuelve a encenderlo si no fue a propósito."
+    },
+    "regulator_lost": {
+      "title": "El regulador de {name} se desconecta a menudo",
+      "description": "TankWise ha tenido que abrir el interruptor del termo varias veces en la última semana porque el regulador (p. ej. FreeDS) dejó de estar disponible mientras calentaba. Revisa su conexión Wi-Fi y su alimentación."
     }
   },
   "services": {
@@ -619,6 +671,26 @@
     "replan": {
       "name": "Replanificar",
       "description": "Calcula ahora el plan de calentamiento.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Termo",
+          "description": "Instancia de TankWise. Todas si se deja vacío."
+        }
+      }
+    },
+    "get_plan": {
+      "name": "Obtener el plan",
+      "description": "Devuelve el plan de calentamiento completo, franja a franja.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Termo",
+          "description": "Instancia de TankWise. Todas si se deja vacío."
+        }
+      }
+    },
+    "reimport_history": {
+      "name": "Importar de nuevo el histórico",
+      "description": "Vuelve a importar el histórico del recorder de los últimos días y lo combina con lo que TankWise ha aprendido (no se pierde nada de lo aprendido).",
       "fields": {
         "config_entry_id": {
           "name": "Termo",

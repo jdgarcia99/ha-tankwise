@@ -268,3 +268,18 @@ def test_unavailable_regulator_is_not_a_cutoff() -> None:
                 params,
             )
         assert model.as_dict()["calibration_count"] == expected
+
+
+def test_pwm_oscillation_after_cutoff_is_a_single_cutoff() -> None:
+    """20/11 15:04-15:54: near the cut-off the PWM swings 0-100 % every minute.
+
+    The element draws only its standby power the whole time, so there is one
+    thermostat cut-off, not one per swing.
+    """
+    events: list[Event] = [*CUTOFF_2308]
+    for minute in range(12, 59):
+        stamp = f"23:{minute:02d}"
+        events += [(f"{stamp}:05", "regulator", 100), (f"{stamp}:35", "regulator", 0)]
+    model, calibrations = _replay(15, events, "22:00:30", "23:59:30")
+    assert calibrations == [(_at(15, "23:12:30"), True)]
+    assert len(model.as_dict()["cutoff_samples"]) <= 1

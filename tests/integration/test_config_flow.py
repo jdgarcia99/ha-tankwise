@@ -310,6 +310,7 @@ async def test_options_parameters_with_advanced_section(
                 CONF_CUTOFF_POWER_THRESHOLD: 40.0,
                 CONF_PROFILE_MODE: "weekday",
                 CONF_PROFILE_DAYS: 20.0,
+                "regulator_margin": 5.0,
             },
         },
     )
@@ -323,6 +324,7 @@ async def test_options_parameters_with_advanced_section(
         CONF_CUTOFF_POWER_THRESHOLD: 40,
         CONF_PROFILE_MODE: "weekday",
         CONF_PROFILE_DAYS: 20,
+        "regulator_margin": 5,
         "rescue": False,
         CONF_ENERGY_SENSOR: ENERGY,  # inputs are kept
     }

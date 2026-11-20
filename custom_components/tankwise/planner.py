@@ -5,10 +5,10 @@ matters changes (tomorrow's prices arrive, a draw ends, the mode, occupancy,
 an appointment or a setting changes, or the tank drifts from the plan). The
 optimiser runs in the executor.
 
-Until the controller exists (phase 4) TankWise acts on nothing: the plan is
-published, its decisions are accounted as they would have been executed
+The decisions of the plan are accounted as they would have been executed
 (planned cost, rescue recharges) and external orders on the regulator manual
-mode that contradict the plan are logged.
+mode that contradict the plan are logged. The controller (:mod:`.controller`)
+executes the plan in the modes that act.
 """
 
 from __future__ import annotations
@@ -25,12 +25,13 @@ from .const import (
     CONF_PRICE_SENSOR,
     CONF_RESCUE,
     DEFAULT_MODE,
-    DOMAIN,
     REPLAN_DEVIATION,
+    SETTING_MAX_TEMPERATURE,
     SETTING_RESERVE_LITERS,
     SETTING_SURPLUS_VALUE,
     SURPLUS_EXPORT_W,
 )
+from .messages import log
 from .model.ledger import Ledger
 from .model.optimizer import Plan, PlanSlot, optimise
 from .model.planning import HORIZON_SLOTS, Mode, build_plan_input
@@ -43,27 +44,7 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 
-LOGBOOK_DOMAIN = "logbook"
 SLOT = timedelta(minutes=15)
-
-MESSAGES = {
-    "en": {
-        "rescue": "Rescue recharge planned for {name} ({time}): {kwh} kWh, {cost} €",
-        "manual_on": "The regulator manual mode was switched on outside the plan",
-        "manual_off": (
-            "The regulator manual mode was switched off during a planned heating"
-        ),
-    },
-    "es": {
-        "rescue": (
-            "Recarga de rescate prevista para {name} ({time}): {kwh} kWh, {cost} €"
-        ),
-        "manual_on": "El modo manual del regulador se encendió fuera del plan",
-        "manual_off": (
-            "El modo manual del regulador se apagó durante un calentamiento planificado"
-        ),
-    },
-}
 
 
 def slot_start(moment: datetime) -> datetime:
@@ -260,7 +241,10 @@ class Planner:
             ambient_temperature=ambient,
             comfort_temperature=params.comfort_min_temperature,
             shower_temperature=params.shower_temperature,
-            max_temperature=tank.cutoff_temperature,
+            max_temperature=min(
+                tank.cutoff_temperature,
+                coordinator.settings[SETTING_MAX_TEMPERATURE],
+            ),
             heater_power_w=tank.heater_power_w,
             capacity_factor=tank.capacity_factor,
             usable_factor=tank.usable_factor,
@@ -314,19 +298,9 @@ class Planner:
     # Logbook
     # ------------------------------------------------------------------
 
-    def _message(self, key: str, **values: Any) -> str:
-        language = "es" if (self.hass.config.language or "").startswith("es") else "en"
-        return MESSAGES[language][key].format(**values)
-
     def log(self, key: str, **values: Any) -> None:
-        """Write a logbook entry (if the logbook is loaded)."""
-        message = self._message(key, **values)
-        _LOGGER.info(message)
-        if LOGBOOK_DOMAIN not in self.hass.config.components:
-            return
-        from homeassistant.components.logbook import async_log_entry
-
-        async_log_entry(self.hass, self.coordinator.config_entry.title, message, DOMAIN)
+        """Write a logbook entry."""
+        log(self.hass, self.coordinator.config_entry.title, key, **values)
 
     def _log_rescues(self) -> None:
         assert self.plan is not None

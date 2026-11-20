@@ -1,11 +1,13 @@
 """Cold start: rebuild the tank model from the recorder history.
 
-When TankWise is installed (or upgraded from a version without this
-feature) it replays the last days of the probe, heater power and energy,
+When TankWise is installed (or upgraded to models that learn more) it
+replays the last days of the probe, heater power and energy,
 regulator output, manual mode and ambient temperature through a fresh tank
 model. Losses, effective capacity, heater power, thermostat cut-offs and the
 draws of that period are learned before the first live sample, so the demand
-profile does not start empty.
+profile does not start empty. The coordinator merges the result with what it
+had already learned (see ``TankModel.merge_learning``): an import never loses
+learning.
 """
 
 from __future__ import annotations
@@ -60,6 +62,9 @@ class BootstrapStatus(StrEnum):
     DONE = "done"
     NO_RECORDER = "no_recorder"
     NO_HISTORY = "no_history"
+    # Samples were replayed but nothing was learned (e.g. the units of the
+    # inputs were unknown): not adopted, imported again later.
+    EMPTY = "empty"
     FAILED = "failed"
 
 
@@ -224,8 +229,9 @@ async def async_bootstrap(
         return info, None, None
 
     model_data = result.model.as_dict()
+    learned = result.model.learned_samples() > 0 or demand.observations
     info = BootstrapInfo(
-        BootstrapStatus.DONE,
+        BootstrapStatus.DONE if learned else BootstrapStatus.EMPTY,
         finished=dt_util.utcnow(),
         start=result.start,
         end=result.end,

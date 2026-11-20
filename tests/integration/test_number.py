@@ -88,6 +88,7 @@ async def test_settings_update_derived_values_at_once(
         "mains_water_temperature": 0.0,
         "reserve_liters": 10.0,
         "surplus_value": 0.0,
+        "max_temperature": 72.0,
     }
 
 
