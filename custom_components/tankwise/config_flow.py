@@ -78,6 +78,7 @@ from .const import (
     CONF_PROFILE_MODE,
     CONF_RATED_POWER,
     CONF_REGULATOR_SENSOR,
+    CONF_RESCUE,
     CONF_SOLAR_FORECAST_SENSOR,
     CONF_TEMPERATURE_SENSOR,
     CONF_VOLUME,
@@ -204,6 +205,7 @@ PARAMETERS_SCHEMA = vol.Schema(
                 mode=SelectSelectorMode.DROPDOWN,
             )
         ),
+        vol.Required(CONF_RESCUE): BooleanSelector(),
         vol.Required(SECTION_ADVANCED): section(
             vol.Schema(
                 {

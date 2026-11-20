@@ -17,16 +17,16 @@ PVPC de compra más el valor del excedente solar).
 
 ## Estado del proyecto
 
-> **En desarrollo (0.5.0, fase 2 de 7).** TankWise aprende cómo se comporta
-> el depósito, detecta cada extracción de agua caliente y prevé la demanda,
-> pero **todavía no actúa sobre ningún dispositivo**. Mantén tus
-> automatizaciones hasta la fase 4.
+> **En desarrollo (0.6.0, fase 3 de 7).** TankWise aprende el depósito y el
+> uso de la casa y publica el plan de calentamiento, pero **todavía no actúa
+> sobre ningún dispositivo** (modo Sombra). Mantén tus automatizaciones hasta
+> la fase 4 y compara el coste planificado con el real.
 
 | Fase | Contenido | Estado |
 |------|-----------|--------|
 | 1 | Modelo térmico, detección de extracciones, importación del histórico, sensores (sin actuar) | ✅ Hecha |
 | 2 | Perfil de demanda y previsión, citas de agua caliente | ✅ Hecha |
-| 3 | Precios, valor del excedente y optimizador; modo Sombra con el plan | Prevista |
+| 3 | Precios, valor del excedente y optimizador; modo Sombra con el plan | ✅ Hecha |
 | 4 | Controlador, seguridades y modo degradado; modo Auto | Prevista |
 | 5 | Boost con blueprint para pulsadores externos | Prevista |
 | 6 | Previsión solar, coordinación con SolarSplit y antilegionela | Prevista |
@@ -146,10 +146,54 @@ El diagnóstico incluye los parámetros aprendidos, el resultado de la
 importación del histórico, los días observados del perfil de uso y las
 últimas 50 extracciones.
 
+## Plan de calentamiento (modo Sombra)
+
+Cada 15 minutos, y cuando cambia algo relevante, TankWise calcula el plan de
+calentamiento más barato para las próximas 36 horas: cuánta energía de red
+meter en cada franja y si aprovechar el excedente solar o dejarlo ir a la red
+(cuando la inyección se paga más de lo que cuesta calentar de noche). Cada
+cita debe empezar con litros útiles suficientes para todo su bloque; el resto
+de la demanda se cubre franja a franja más una reserva. Las rachas de
+calentamiento de red duran como mucho dos horas.
+
+**Recarga de rescate** (opción, activada por defecto): si el bloque de una
+cita necesita más que el depósito lleno, se llena antes del bloque y, dentro
+de él, solo se calienta la energía que falta para cubrir la demanda habitual
+que queda, nunca después del bloque. Los rescates se registran y se cuentan
+por mes (kWh y €). El plan en riesgo solo se enciende si ni con el rescate se
+cubre la cita. Con la opción desactivada (modo estricto) nunca se calienta
+dentro de un bloque.
+
+| Modo | Comportamiento |
+|------|----------------|
+| Auto | Demanda habitual de un día fuerte (P90) |
+| Eco | Demanda habitual de un día normal (P50): más barato, más riesgo |
+| Confort | P90 más un 20 % |
+| Vacaciones | Sin calentar de red, solo excedente solar |
+| Sombra (por defecto) | Publica el plan sin actuar |
+| Desactivado | Sin plan |
+
+Hasta la fase 4 todos los modos solo publican el plan. Compara el **Coste
+planificado** con el **Coste del termo** (real) y mira el logbook: allí se
+registran las órdenes externas sobre el modo manual que contradicen el plan.
+
+| Entidad | Descripción |
+|---------|-------------|
+| Plan de calentamiento | Coste del plan para las próximas 36 horas; las franjas van como atributo |
+| Próximo calentamiento | Inicio del próximo calentamiento de red, con duración, energía y coste |
+| `<cita>` temperatura prevista | Temperatura que el plan prevé al empezar el bloque |
+| Coste del termo hoy / este mes | Coste real: red al precio de compra, excedente a su valor |
+| Coste planificado hoy / este mes | Lo que gasta el plan |
+| Ahorro estimado este mes | Coste real menos coste planificado |
+| Energía / coste de las recargas de rescate este mes | kWh y € de los rescates |
+| Calentamiento de red planificado (binario) | La franja actual del plan calienta de red |
+| Modo (select), reserva y valor del excedente (números), tope de compensación (interruptor), replanificar (botón) | Ajustes |
+
 ## Servicios
 
 | Servicio | Descripción |
 |----------|-------------|
+| `tankwise.replan` | Calcula ahora el plan de calentamiento. `config_entry_id` opcional. |
 | `tankwise.reset_learning` | Olvida las pérdidas de calor (`part: losses`), el perfil de uso (`part: demand`) o todo (`part: all`, por defecto). `config_entry_id` opcional. |
 
 ## Cómo funciona el modelo del depósito

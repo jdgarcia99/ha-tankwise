@@ -13,6 +13,48 @@ from .coordinator import TankWiseConfigEntry
 DIAGNOSTIC_CONSUMPTIONS = 50
 
 
+def _plan(coordinator: Any) -> dict[str, Any] | None:
+    planner = coordinator.planner
+    plan = planner.plan
+    if plan is None:
+        return {"mode": planner.mode.value, "plan": None}
+    heating = plan.next_heating()
+    return {
+        "mode": planner.mode.value,
+        "computed_at": planner.plan_computed.isoformat()
+        if planner.plan_computed
+        else None,
+        "reason": planner.plan_reason,
+        "tomorrow_prices": planner.prices.tomorrow_known if planner.prices else None,
+        "cost": plan.cost,
+        "grid_kwh": plan.grid_kwh,
+        "rescue_kwh": plan.rescue_kwh,
+        "rescue_cost": plan.rescue_cost,
+        "at_risk": plan.at_risk,
+        "next_heating": (
+            {
+                "start": heating.start.isoformat(),
+                "end": heating.end.isoformat(),
+                "energy_kwh": heating.energy_kwh,
+                "cost": heating.cost,
+            }
+            if heating
+            else None
+        ),
+        "blocks": [
+            {
+                "id": block.id,
+                "required_temperature": block.required_temperature,
+                "predicted_temperature": block.predicted_temperature,
+                "rescue_kwh": block.rescue_kwh,
+                "at_risk": block.at_risk,
+            }
+            for block in plan.blocks
+        ],
+        "ledger": planner.ledger.as_dict(),
+    }
+
+
 async def async_get_config_entry_diagnostics(
     hass: HomeAssistant, entry: TankWiseConfigEntry
 ) -> dict[str, Any]:
@@ -49,6 +91,7 @@ async def async_get_config_entry_diagnostics(
         "model": model,
         "consumptions": consumptions[-DIAGNOSTIC_CONSUMPTIONS:],
         "shortages_7d": data.shortages_7d,
+        "plan": _plan(coordinator),
         "reconciliations": [
             item.as_dict() for item in coordinator.model.reconciliations
         ],

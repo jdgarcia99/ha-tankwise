@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-20
+
+Third phase: TankWise computes and publishes the heating plan (shadow mode).
+It still does not act on any device.
+
+### Added
+
+- Prices per 15-minute slot from the purchase price sensor (hourly prices of
+  today and tomorrow as attributes; today's prices repeated until tomorrow's
+  are published) and the value of the solar surplus: injection price, a fixed
+  value (number entity) without injection sensor, or zero when the
+  compensation cap of the month is reached (switch entity).
+- Heating plan by dynamic programming over 36 hours: grid energy per slot and
+  whether to take the solar surplus or let it go to the grid. Appointments
+  are hard constraints on useful litres at the start of each block (larger of
+  the minimum and the P90 of the whole block); outside blocks each slot with
+  demand must be covered plus a reserve (number entity, 10 litres). Grid
+  heating runs last two hours at most. The energy left at the end is valued
+  at the median night price.
+- Rescue recharge (option, on by default; off is strict mode): a block that
+  needs more than a full tank is reached full, and inside the block only the
+  energy missing to cover the P90 left in it is heated, never after the
+  block. Rescues are logged in the logbook, marked in the plan and counted
+  per month in kWh and €. The plan at risk turns on only when not even the
+  rescue covers an appointment.
+- Mode select: auto, eco (P50), comfort (P90 + 20 %), holiday (no grid),
+  shadow (default) and off. Until the controller exists every mode only
+  publishes the plan.
+- Sensors: heating plan (cost of the horizon, slots as an attribute), next
+  heating, predicted temperature per appointment, real and planned cost today
+  and this month, estimated savings this month, rescue energy and cost this
+  month. Binary sensor: planned grid heating now.
+- Replan button and `tankwise.replan` service; replanning at every slot and
+  when prices, draws, mode, occupancy, appointments or settings change, or
+  when the tank drifts more than 3 °C from the plan.
+- In shadow mode, external orders on the regulator manual mode that
+  contradict the plan are logged and counted.
+- Simulation bench on exported history (walk-forward, opt-in with
+  `TANKWISE_BENCH=1`). On the reference installation (13-20 November) the
+  plan costs 0.45 €/day against 0.78 €/day really spent, with no hot water
+  shortage against 9 real ones.
+
 ## [0.5.0] - 2026-11-20
 
 ### Changed
@@ -256,7 +298,8 @@ and the heating plan will follow.
 - The output contract entities (energy needed, deadline, grid allowed,
   requested power and urgency) arrive in a later release.
 
-[Unreleased]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.3.0...v0.4.0

@@ -54,6 +54,7 @@ from .const import (
     CONF_PROFILE_MODE,
     CONF_RATED_POWER,
     CONF_REGULATOR_SENSOR,
+    CONF_RESCUE,
     CONF_SOLAR_FORECAST_SENSOR,
     CONF_TEMPERATURE_SENSOR,
     CONF_VOLUME,
@@ -85,6 +86,9 @@ from .model.appointments import (
     load_appointments,
 )
 from .model.demand import DayTypeMode, DemandForecast, DemandModel, DemandParams
+from .model.ledger import Totals
+from .model.optimizer import Plan
+from .model.planning import Mode
 from .model.replay import (
     ROLE_AMBIENT,
     ROLE_ENERGY,
@@ -97,6 +101,7 @@ from .model.replay import (
 )
 from .model.tank import PowerDropDetector, TankModel, TankParams, TankSample, TankState
 from .model.water import mains_water_temperature
+from .planner import Planner
 from .storage import TankWiseStore
 
 _LOGGER = logging.getLogger(__name__)
@@ -152,8 +157,11 @@ class TankWiseData:
     appointment_requirements: dict[str, AppointmentRequirement] = field(
         default_factory=dict
     )
-    # Active appointments the tank cannot cover even when full.
+    # Active appointments the tank cannot cover even with the rescue.
     at_risk: list[str] = field(default_factory=list)
+    plan: Plan | None = None
+    totals_today: Totals = field(default_factory=Totals)
+    totals_month: Totals = field(default_factory=Totals)
 
 
 class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
@@ -187,6 +195,7 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
         self.demand = DemandModel(dt_util.get_default_time_zone())
         # Workday status of the coming days, from the workday integration.
         self._workdays: dict[date, bool] = {}
+        self.planner = Planner(self)
 
     # ------------------------------------------------------------------
     # Persistence
@@ -220,6 +229,7 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
                 self.demand = DemandModel.from_dict(stored["demand"], self.demand.tz)
             except ValueError as err:
                 _LOGGER.warning("Discarding stored demand profile: %s", err)
+        self.planner.restore(stored.get("control") or {})
 
     def _stored_data(self) -> dict[str, Any]:
         return {
@@ -227,6 +237,7 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
             "demand": self.demand.as_dict(),
             "settings": dict(self.settings),
             "bootstrap": self.bootstrap.as_dict(),
+            "control": self.planner.as_dict(),
         }
 
     async def async_save_now(self) -> None:
@@ -294,6 +305,7 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
         power = self.config_entry.data.get(CONF_POWER_SENSOR)
         regulator = self.config_entry.options.get(CONF_REGULATOR_SENSOR)
         manual = self.config_entry.data.get(CONF_MANUAL_MODE_SWITCH)
+        occupancy = self.config_entry.options.get(CONF_OCCUPANCY_ENTITY)
         now = dt_util.utcnow()
         if regulator:
             detector.update_regulator(now, _numeric(self.hass.states.get(regulator)))
@@ -312,10 +324,20 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
                 detector.update_regulator(new_state.last_changed, _numeric(new_state))
             elif entity_id == manual:
                 detector.update_manual(new_state.last_changed, _boolean(new_state))
+                old_state = event.data["old_state"]
+                old, new = _boolean(old_state), _boolean(new_state)
+                if old is not None and new is not None and old != new:
+                    self.planner.on_manual_mode(new_state.last_changed, new)
+            elif entity_id == occupancy:
+                self.async_request_replan("occupancy")
             else:
                 detector.update_power(new_state.last_changed, _power_watts(new_state))
 
-        tracked = [entity_id for entity_id in (power, regulator, manual) if entity_id]
+        tracked = [
+            entity_id
+            for entity_id in (power, regulator, manual, occupancy)
+            if entity_id
+        ]
         self.config_entry.async_on_unload(
             async_track_state_change_event(self.hass, tracked, _async_changed)
         )
@@ -386,6 +408,7 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
             self.config_entry,
             options={**self.config_entry.options, CONF_APPOINTMENTS: items},
         )
+        self.async_request_replan("appointment")
         if self.data is not None:
             usage = self._appointment_usage()
             requirements, at_risk = self._appointment_requirements(
@@ -413,10 +436,34 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
         await self.async_save_now()
         await self.async_request_refresh()
 
+    @callback
+    def async_request_replan(self, reason: str) -> None:
+        """Compute a new plan soon (debounced refresh)."""
+        self.planner.request(reason)
+        self.hass.async_create_task(self.async_request_refresh())
+
+    async def async_replan(self, reason: str = "manual") -> None:
+        """Compute a new plan now (button and service)."""
+        self.planner.request(reason)
+        await self.async_refresh()
+
+    async def async_set_mode(self, mode: Mode) -> None:
+        """Change the operating mode."""
+        self.planner.mode = mode
+        await self.async_save_now()
+        await self.async_replan("mode")
+
+    async def async_set_compensation_cap(self, reached: bool) -> None:
+        """Mark whether the compensation cap of the month was reached."""
+        self.planner.compensation_cap = reached
+        await self.async_save_now()
+        await self.async_replan("compensation_cap")
+
     async def async_set_setting(self, key: str, value: float) -> None:
         """Change a runtime setting (number entity) and refresh the state."""
         self.settings[key] = float(value)
         self._store.async_schedule_save(self._stored_data)
+        self.async_request_replan("setting")
         if self.data is None or self._last_sample is None:
             return
         # Same timestamp as the last sample: the derived values are
@@ -473,13 +520,18 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
             demand_today = self.demand.day_totals(
                 today, now, params, workdays.get(today)
             )
+        await self.planner.async_update(now, readings, tank, forecast, workdays)
         self._store.async_schedule_save(self._stored_data)
         _mains, source = self.mains_water_temperature_at(now)
         usage = self._appointment_usage()
         requirements, at_risk = self._appointment_requirements(
             usage, tank, readings.occupancy
         )
+        totals_today, totals_month = self.planner.ledger.current(now)
         return TankWiseData(
+            plan=self.planner.plan,
+            totals_today=replace(totals_today),
+            totals_month=replace(totals_month),
             readings=readings,
             tank=tank,
             shortages_7d=self._count_shortages(now),
@@ -516,13 +568,34 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
             )
             for appointment in self.appointments
         }
-        at_risk = []
-        if occupancy is not False:  # appointments are suspended with nobody home
-            at_risk = [
-                appointment.id
-                for appointment in self.appointments
-                if appointment.enabled and not requirements[appointment.id].feasible
-            ]
+        at_risk: list[str] = []
+        if occupancy is False or self.planner.mode is Mode.HOLIDAY:
+            return requirements, at_risk  # appointments are suspended
+        plan = self.planner.plan
+        if plan is not None:
+            # The plan knows the rescue recharge and the time left to heat.
+            at_risk = sorted(
+                {block.id.split("@", 1)[0] for block in plan.blocks if block.at_risk}
+            )
+            return requirements, at_risk
+        rescue = bool(self.parameters[CONF_RESCUE])
+        for appointment in self.appointments:
+            requirement = requirements[appointment.id]
+            if not appointment.enabled or requirement.feasible:
+                continue
+            # Beyond a full tank: the rescue recharge may cover the rest.
+            missing_kwh = params.heat_capacity * (
+                requirement.temperature - tank.cutoff_temperature
+            )
+            rescue_kwh = (
+                tank.capacity_factor
+                * tank.heater_power_w
+                / 1000
+                * appointment.duration.total_seconds()
+                / 3600
+            )
+            if not rescue or missing_kwh > rescue_kwh:
+                at_risk.append(appointment.id)
         return requirements, at_risk
 
     def _appointment_usage(self) -> dict[str, AppointmentUsage]:

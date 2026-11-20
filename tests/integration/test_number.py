@@ -86,6 +86,8 @@ async def test_settings_update_derived_values_at_once(
         "shower_temperature": 45.0,
         "comfort_min_temperature": 40.0,
         "mains_water_temperature": 0.0,
+        "reserve_liters": 10.0,
+        "surplus_value": 0.0,
     }
 
 

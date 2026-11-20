@@ -94,10 +94,12 @@
         "title": "Parámetros de la instalación",
         "data": {
           "volume": "Volumen del depósito",
-          "water_region": "Región del agua de red"
+          "water_region": "Región del agua de red",
+          "rescue": "Recarga de rescate dentro de los bloques de las citas"
         },
         "data_description": {
-          "water_region": "Se usa para estimar la temperatura del agua de red de cada día. Se puede fijar a mano con el número 'Temperatura del agua de red'."
+          "water_region": "Se usa para estimar la temperatura del agua de red de cada día. Se puede fijar a mano con el número 'Temperatura del agua de red'.",
+          "rescue": "Si los litros útiles que quedan no cubren la demanda habitual que queda en un bloque, calentar solo la energía que falta dentro del bloque. Desactivada: modo estricto, nunca se calienta dentro de un bloque."
         },
         "sections": {
           "advanced": {
@@ -416,6 +418,102 @@
             "name": "Alcanzable"
           }
         }
+      },
+      "plan": {
+        "name": "Plan de calentamiento",
+        "state_attributes": {
+          "mode": {
+            "name": "Modo"
+          },
+          "computed_at": {
+            "name": "Calculado a las"
+          },
+          "reason": {
+            "name": "Motivo"
+          },
+          "tomorrow_prices": {
+            "name": "Precios de mañana conocidos"
+          },
+          "deviations_today": {
+            "name": "Órdenes externas contra el plan hoy"
+          },
+          "grid_kwh": {
+            "name": "Energía de red"
+          },
+          "rescue_kwh": {
+            "name": "Energía de rescate"
+          },
+          "rescue_cost": {
+            "name": "Coste de rescate"
+          },
+          "at_risk": {
+            "name": "En riesgo"
+          }
+        }
+      },
+      "next_heating": {
+        "name": "Próximo calentamiento",
+        "state_attributes": {
+          "end": {
+            "name": "Fin"
+          },
+          "duration_min": {
+            "name": "Duración"
+          },
+          "energy_kwh": {
+            "name": "Energía"
+          },
+          "cost": {
+            "name": "Coste"
+          },
+          "rescue": {
+            "name": "Recarga de rescate"
+          }
+        }
+      },
+      "cost_today": {
+        "name": "Coste del termo hoy"
+      },
+      "cost_month": {
+        "name": "Coste del termo este mes"
+      },
+      "planned_cost_today": {
+        "name": "Coste planificado hoy"
+      },
+      "planned_cost_month": {
+        "name": "Coste planificado este mes"
+      },
+      "estimated_savings_month": {
+        "name": "Ahorro estimado este mes"
+      },
+      "rescue_cost_month": {
+        "name": "Coste de las recargas de rescate este mes"
+      },
+      "rescue_energy_month": {
+        "name": "Energía de las recargas de rescate este mes"
+      },
+      "appointment_predicted_temperature": {
+        "name": "{appointment} temperatura prevista",
+        "state_attributes": {
+          "start": {
+            "name": "Inicio del bloque"
+          },
+          "predicted_liters": {
+            "name": "Litros útiles previstos"
+          },
+          "required_temperature": {
+            "name": "Temperatura necesaria"
+          },
+          "rescue_kwh": {
+            "name": "Energía de rescate"
+          },
+          "rescue_cost": {
+            "name": "Coste de rescate"
+          },
+          "at_risk": {
+            "name": "En riesgo"
+          }
+        }
       }
     },
     "number": {
@@ -430,6 +528,12 @@
       },
       "appointment_liters": {
         "name": "{appointment} litros"
+      },
+      "reserve_liters": {
+        "name": "Reserva de agua caliente"
+      },
+      "surplus_value": {
+        "name": "Valor del excedente sin precio de inyección"
       }
     },
     "time": {
@@ -440,6 +544,9 @@
     "switch": {
       "appointment_enabled": {
         "name": "{appointment} activa"
+      },
+      "compensation_cap": {
+        "name": "Tope de compensación de excedentes alcanzado"
       }
     },
     "binary_sensor": {
@@ -453,6 +560,38 @@
             "name": "Corte del termostato"
           }
         }
+      },
+      "planned_grid_heating": {
+        "name": "Calentamiento de red planificado",
+        "state_attributes": {
+          "rescue": {
+            "name": "Recarga de rescate"
+          },
+          "solar_allowed": {
+            "name": "Excedente permitido"
+          },
+          "grid_kwh": {
+            "name": "Energía de red"
+          }
+        }
+      }
+    },
+    "select": {
+      "mode": {
+        "name": "Modo",
+        "state": {
+          "auto": "Auto",
+          "eco": "Eco",
+          "comfort": "Confort",
+          "holiday": "Vacaciones",
+          "shadow": "Sombra",
+          "off": "Desactivado"
+        }
+      }
+    },
+    "button": {
+      "replan": {
+        "name": "Replanificar"
       }
     }
   },
@@ -474,6 +613,16 @@
         "part": {
           "name": "Qué olvidar",
           "description": "Pérdidas de calor, perfil de uso o todo."
+        }
+      }
+    },
+    "replan": {
+      "name": "Replanificar",
+      "description": "Calcula ahora el plan de calentamiento.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Termo",
+          "description": "Instancia de TankWise. Todas si se deja vacío."
         }
       }
     }

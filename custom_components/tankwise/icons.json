@@ -55,6 +55,36 @@
       },
       "appointment_required_temperature": {
         "default": "mdi:thermometer-chevron-up"
+      },
+      "plan": {
+        "default": "mdi:calendar-clock"
+      },
+      "next_heating": {
+        "default": "mdi:clock-start"
+      },
+      "cost_today": {
+        "default": "mdi:cash"
+      },
+      "cost_month": {
+        "default": "mdi:cash-multiple"
+      },
+      "planned_cost_today": {
+        "default": "mdi:cash-clock"
+      },
+      "planned_cost_month": {
+        "default": "mdi:cash-clock"
+      },
+      "estimated_savings_month": {
+        "default": "mdi:piggy-bank-outline"
+      },
+      "rescue_cost_month": {
+        "default": "mdi:lifebuoy"
+      },
+      "rescue_energy_month": {
+        "default": "mdi:lifebuoy"
+      },
+      "appointment_predicted_temperature": {
+        "default": "mdi:thermometer-check"
       }
     },
     "number": {
@@ -69,6 +99,12 @@
       },
       "appointment_liters": {
         "default": "mdi:cup-water"
+      },
+      "reserve_liters": {
+        "default": "mdi:water-plus"
+      },
+      "surplus_value": {
+        "default": "mdi:solar-power"
       }
     },
     "time": {
@@ -82,6 +118,9 @@
         "state": {
           "off": "mdi:calendar-remove"
         }
+      },
+      "compensation_cap": {
+        "default": "mdi:cash-check"
       }
     },
     "binary_sensor": {
@@ -90,12 +129,39 @@
         "state": {
           "on": "mdi:water-alert"
         }
+      },
+      "planned_grid_heating": {
+        "default": "mdi:transmission-tower",
+        "state": {
+          "off": "mdi:transmission-tower-off"
+        }
+      }
+    },
+    "select": {
+      "mode": {
+        "default": "mdi:cog-outline",
+        "state": {
+          "auto": "mdi:auto-mode",
+          "eco": "mdi:leaf",
+          "comfort": "mdi:sofa-outline",
+          "holiday": "mdi:airplane",
+          "shadow": "mdi:eye-outline",
+          "off": "mdi:power"
+        }
+      }
+    },
+    "button": {
+      "replan": {
+        "default": "mdi:calendar-refresh"
       }
     }
   },
   "services": {
     "reset_learning": {
       "service": "mdi:restore"
+    },
+    "replan": {
+      "service": "mdi:calendar-refresh"
     }
   }
 }

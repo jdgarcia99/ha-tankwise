@@ -111,6 +111,77 @@ def _forecast_attributes(coordinator: TankWiseCoordinator) -> dict[str, Any]:
     }
 
 
+CURRENCY = "EUR"
+
+
+def _plan_attributes(coordinator: TankWiseCoordinator) -> dict[str, Any]:
+    planner = coordinator.planner
+    plan = coordinator.data.plan
+    attributes: dict[str, Any] = {
+        "mode": planner.mode.value,
+        "computed_at": planner.plan_computed.isoformat()
+        if planner.plan_computed
+        else None,
+        "reason": planner.plan_reason,
+        "tomorrow_prices": planner.prices.tomorrow_known if planner.prices else None,
+        "deviations_today": coordinator.data.totals_today.deviations,
+    }
+    if plan is None:
+        return attributes
+    return attributes | {
+        "grid_kwh": round(plan.grid_kwh, 3),
+        "rescue_kwh": round(plan.rescue_kwh, 3),
+        "rescue_cost": round(plan.rescue_cost, 3),
+        "at_risk": plan.at_risk,
+        "slots": [
+            {
+                "start": slot.start.isoformat(),
+                "grid_kwh": round(slot.grid_kwh, 3),
+                "solar_kwh": round(slot.solar_kwh, 3),
+                "solar_allowed": slot.solar_allowed,
+                "temperature": round(slot.temperature, 1),
+                "liters": round(slot.useful_liters),
+                "cost": round(slot.cost, 4),
+                "rescue": slot.rescue,
+            }
+            for slot in plan.slots
+        ],
+    }
+
+
+def _next_heating(data: TankWiseData) -> Any:
+    heating = data.plan.next_heating() if data.plan else None
+    return heating.start if heating else None
+
+
+def _next_heating_attributes(coordinator: TankWiseCoordinator) -> dict[str, Any]:
+    plan = coordinator.data.plan
+    heating = plan.next_heating() if plan else None
+    if heating is None:
+        return {}
+    return {
+        "end": heating.end.isoformat(),
+        "duration_min": round((heating.end - heating.start).total_seconds() / 60),
+        "energy_kwh": round(heating.energy_kwh, 3),
+        "cost": round(heating.cost, 3),
+        "rescue": heating.rescue,
+    }
+
+
+def _money(
+    description_key: str, value_fn: Callable[[TankWiseData], Any]
+) -> TankWiseSensorDescription:
+    return TankWiseSensorDescription(
+        key=description_key,
+        translation_key=description_key,
+        device_class=SensorDeviceClass.MONETARY,
+        native_unit_of_measurement=CURRENCY,
+        suggested_display_precision=2,
+        value_fn=value_fn,
+        requires_tank=False,
+    )
+
+
 SENSORS: tuple[TankWiseSensorDescription, ...] = (
     TankWiseSensorDescription(
         key="stored_energy",
@@ -215,6 +286,42 @@ SENSORS: tuple[TankWiseSensorDescription, ...] = (
         unrecorded=frozenset({"slots"}),
     ),
     TankWiseSensorDescription(
+        key="plan",
+        translation_key="plan",
+        device_class=SensorDeviceClass.MONETARY,
+        native_unit_of_measurement=CURRENCY,
+        suggested_display_precision=2,
+        value_fn=lambda data: data.plan.cost if data.plan else None,
+        attributes_fn=_plan_attributes,
+        requires_tank=False,
+        unrecorded=frozenset({"slots"}),
+    ),
+    TankWiseSensorDescription(
+        key="next_heating",
+        translation_key="next_heating",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        value_fn=_next_heating,
+        attributes_fn=_next_heating_attributes,
+        requires_tank=False,
+    ),
+    _money("cost_today", lambda data: data.totals_today.real_cost),
+    _money("cost_month", lambda data: data.totals_month.real_cost),
+    _money("planned_cost_today", lambda data: data.totals_today.planned_cost),
+    _money("planned_cost_month", lambda data: data.totals_month.planned_cost),
+    _money(
+        "estimated_savings_month",
+        lambda data: data.totals_month.real_cost - data.totals_month.planned_cost,
+    ),
+    _money("rescue_cost_month", lambda data: data.totals_month.rescue_cost),
+    TankWiseSensorDescription(
+        key="rescue_energy_month",
+        translation_key="rescue_energy_month",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        suggested_display_precision=2,
+        value_fn=lambda data: data.totals_month.rescue_kwh,
+        requires_tank=False,
+    ),
+    TankWiseSensorDescription(
         key="heat_loss_coefficient",
         translation_key="heat_loss_coefficient",
         entity_registry_enabled_default=False,
@@ -300,6 +407,12 @@ async def async_setup_entry(
             *(
                 RequiredTemperatureSensor(
                     coordinator, appointment, "required_temperature"
+                )
+                for appointment in coordinator.appointments
+            ),
+            *(
+                PredictedTemperatureSensor(
+                    coordinator, appointment, "predicted_temperature"
                 )
                 for appointment in coordinator.appointments
             ),
@@ -406,4 +519,48 @@ class RequiredTemperatureSensor(AppointmentEntity, SensorEntity):
                 self.coordinator.data.tank.cutoff_temperature, 1
             ),
             "feasible": requirement.feasible,
+        }
+
+
+class PredictedTemperatureSensor(AppointmentEntity, SensorEntity):
+    """Tank temperature the plan expects at the next start of the block."""
+
+    _platform = "sensor"
+    _attr_device_class = SensorDeviceClass.TEMPERATURE
+    _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 1
+
+    def _block(self) -> Any:
+        plan = self.coordinator.data.plan
+        if plan is None:
+            return None
+        return next(
+            (
+                block
+                for block in plan.blocks
+                if block.id.split("@", 1)[0] == self._appointment_id
+            ),
+            None,
+        )
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the planned temperature when the block starts."""
+        block = self._block()
+        return block.predicted_temperature if block else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return the block start, litres, rescue and risk."""
+        block = self._block()
+        if block is None:
+            return {}
+        return {
+            "start": block.start.isoformat(),
+            "predicted_liters": round(block.predicted_liters),
+            "required_temperature": round(block.required_temperature, 1),
+            "rescue_kwh": round(block.rescue_kwh, 3),
+            "rescue_cost": round(block.rescue_cost, 3),
+            "at_risk": block.at_risk,
         }

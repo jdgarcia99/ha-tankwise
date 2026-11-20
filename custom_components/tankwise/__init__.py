@@ -49,7 +49,9 @@ _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: list[Platform] = [
     Platform.BINARY_SENSOR,
+    Platform.BUTTON,
     Platform.NUMBER,
+    Platform.SELECT,
     Platform.SENSOR,
     Platform.SWITCH,
     Platform.TIME,
@@ -228,6 +230,7 @@ def _async_normalise_entity_ids(
             "enabled",
             "suggested_liters",
             "required_temperature",
+            "predicted_temperature",
         )
     }
     prefix = f"{entry.entry_id}_"
