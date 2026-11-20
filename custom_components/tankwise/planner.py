@@ -13,8 +13,10 @@ executes the plan in the modes that act.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timedelta
 import logging
+import math
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.core import HomeAssistant, State
@@ -24,6 +26,7 @@ from .const import (
     CONF_INJECTION_PRICE_SENSOR,
     CONF_PRICE_SENSOR,
     CONF_RESCUE,
+    CONF_SOLAR_FORECAST_ENTRIES,
     DEFAULT_MODE,
     REPLAN_DEVIATION,
     SETTING_MAX_TEMPERATURE,
@@ -33,9 +36,12 @@ from .const import (
 )
 from .messages import log
 from .model.ledger import Ledger
-from .model.optimizer import Plan, PlanSlot, optimise
+from .model.legionella import LegionellaTracker, choose_time, target_temperature
+from .model.optimizer import Plan, PlanInput, PlanSlot, optimise
 from .model.planning import HORIZON_SLOTS, Mode, build_plan_input
 from .model.prices import DayPrices, SlotPrices, parse_hourly_prices, slot_prices
+from .model.solar import SolarModel, slot_surplus
+from .solar_forecast import async_hourly_forecast
 
 if TYPE_CHECKING:
     from .coordinator import TankReadings, TankWiseCoordinator
@@ -45,6 +51,11 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 SLOT = timedelta(minutes=15)
+# Grid energy (kWh) the surplus must save for the request to be high priority.
+SOLAR_NEEDED_KWH = 0.1
+PRIORITY_HIGH = "high"
+PRIORITY_LOW = "low"
+PRIORITY_NONE = "none"
 
 
 def slot_start(moment: datetime) -> datetime:
@@ -69,6 +80,14 @@ class Planner:
         self.plan_reason: str | None = None
         self.prices: SlotPrices | None = None
         self.ledger = Ledger(dt_util.get_default_time_zone())
+        self.solar = SolarModel(dt_util.get_default_time_zone())
+        # Summed solar production forecast, kWh per local hour start.
+        self.solar_forecast: dict[datetime, float] | None = None
+        self.anti_legionella = True
+        self.legionella = LegionellaTracker()
+        self._legionella_impossible = False
+        # The plan needs the surplus for comfort (SolarSplit priority).
+        self.solar_needed = False
         self._requested: str | None = "start"
         self._tomorrow_known: bool | None = None
         self._draws = 0
@@ -93,6 +112,17 @@ class Planner:
                 self.ledger = Ledger.from_dict(ledger, self.ledger.tz)
             except ValueError as err:
                 _LOGGER.warning("Discarding stored cost accounting: %s", err)
+        self.anti_legionella = bool(data.get("anti_legionella", True))
+        if legionella := data.get("legionella"):
+            try:
+                self.legionella = LegionellaTracker.from_dict(legionella)
+            except ValueError as err:
+                _LOGGER.warning("Discarding stored anti-legionella state: %s", err)
+        if solar := data.get("solar"):
+            try:
+                self.solar = SolarModel.from_dict(solar, self.ledger.tz)
+            except ValueError as err:
+                _LOGGER.warning("Discarding stored solar model: %s", err)
 
     def as_dict(self) -> dict[str, Any]:
         """Return the persistent control state."""
@@ -100,6 +130,9 @@ class Planner:
             "mode": self.mode.value,
             "compensation_cap": self.compensation_cap,
             "ledger": self.ledger.as_dict(),
+            "solar": self.solar.as_dict(),
+            "anti_legionella": self.anti_legionella,
+            "legionella": self.legionella.as_dict(),
         }
 
     # ------------------------------------------------------------------
@@ -175,7 +208,11 @@ class Planner:
         """Account the real cost and replan when needed."""
         start = slot_start(now)
         self.prices = self._slot_prices(start)
-        self._account_real(now, readings)
+        energy, from_surplus = self._account_real(now, readings)
+        await self._async_update_solar(now, readings, energy if from_surplus else 0.0)
+        if self.legionella.update(now, readings.temperature):
+            self.log("anti_legionella_done")
+            self.request("legionella")
 
         reason = self._replan_reason(start, tank)
         if self.mode is Mode.OFF:
@@ -256,18 +293,136 @@ class Planner:
             occupied=readings.occupancy,
             reserve_liters=coordinator.settings[SETTING_RESERVE_LITERS],
             rescue=bool(coordinator.parameters[CONF_RESCUE]),
+            solar_kwh=self.expected_surplus(start, tank.heater_power_w),
         )
         if data is None:
             self.plan = None
             return
+        if (legionella := self._legionella_target(start, tank, data)) is not None:
+            data = replace(data, legionella=legionella)
+        manual_since = coordinator.controller.state.manual_since
+        if manual_since is not None and readings.manual_mode:
+            data = replace(
+                data,
+                initial_run_slots=math.ceil((dt_util.utcnow() - manual_since) / SLOT),
+            )
         self.plan = await self.hass.async_add_executor_job(optimise, data)
+        self.solar_needed = await self._async_solar_needed(data)
         self.plan_computed = dt_util.utcnow()
         self.plan_reason = reason
         self._requested = None
         self._tomorrow_known = self.prices.tomorrow_known
         self._log_rescues()
 
-    def _account_real(self, now: datetime, readings: TankReadings) -> None:
+    async def _async_update_solar(
+        self, now: datetime, readings: TankReadings, heater_solar_kwh: float
+    ) -> None:
+        """Read the solar forecast and learn the base load of each hour."""
+        entries = self.coordinator.config_entry.options.get(
+            CONF_SOLAR_FORECAST_ENTRIES, []
+        )
+        tz = self.ledger.tz
+        previous = self.solar_forecast
+        self.solar_forecast = (
+            await async_hourly_forecast(self.hass, entries, tz) if entries else None
+        )
+        if self.solar_forecast is None:
+            if previous is not None:
+                self.request("solar")
+            return
+        if previous is None:
+            self.request("solar")
+        hour = dt_util.as_local(now).replace(minute=0, second=0, microsecond=0)
+        self.solar.observe(
+            now,
+            forecast_kwh=self.solar_forecast.get(hour, 0.0),
+            export_total_kwh=readings.grid_export,
+            heater_solar_kwh=heater_solar_kwh,
+        )
+
+    def expected_surplus(self, start: datetime, heater_power_w: float) -> list[float]:
+        """Expected solar surplus (kWh) per plan slot from ``start``."""
+        if self.solar_forecast is None:
+            return [0.0] * HORIZON_SLOTS
+        return slot_surplus(
+            self.solar.surplus(self.solar_forecast),
+            start,
+            HORIZON_SLOTS,
+            slot_minutes=15,
+            max_kwh=heater_power_w / 1000 * 0.25,
+        )
+
+    async def _async_solar_needed(self, data: PlanInput) -> bool:
+        """Return True if, without the surplus, the plan heats more from the grid.
+
+        Compared until the next appointment block starts (or the whole
+        horizon without blocks): the surplus then replaces grid energy that
+        comfort needs, not only fills the tank.
+        """
+        plan = self.plan
+        if plan is None or not any(data.solar_kwh or []):
+            return False
+        without = await self.hass.async_add_executor_job(
+            optimise, replace(data, solar_kwh=None)
+        )
+        starts = [block.start for block in plan.blocks if block.start > data.start]
+        until = min(starts) if starts else plan.slots[-1].start
+        grid = sum(slot.grid_kwh for slot in plan.slots if slot.start < until)
+        grid_without = sum(
+            slot.grid_kwh for slot in without.slots if slot.start < until
+        )
+        return grid_without > grid + SOLAR_NEEDED_KWH
+
+    def power_request(self, now: datetime, tank: TankState) -> tuple[float, str]:
+        """Return the surplus power TankWise wants now (W) and its priority."""
+        slot = self.current_slot(now)
+        if (
+            self.mode is Mode.OFF
+            or slot is None
+            or not slot.solar_allowed
+            or slot.solar_kwh <= 0
+        ):
+            return 0.0, PRIORITY_NONE
+        power = min(tank.heater_power_w, slot.solar_kwh / 0.25 * 1000)
+        return round(power), PRIORITY_HIGH if self.solar_needed else PRIORITY_LOW
+
+    def _legionella_target(
+        self, start: datetime, tank: TankState, data: PlanInput
+    ) -> tuple[int, float] | None:
+        """Return the anti-legionella (slot, temperature) of the plan, if due."""
+        if not self.anti_legionella or not self.legionella.due(start):
+            return None
+        target = target_temperature(
+            tank.cutoff_temperature,
+            self.coordinator.settings[SETTING_MAX_TEMPERATURE],
+        )
+        if target is None:
+            if not self._legionella_impossible:
+                self._legionella_impossible = True
+                self.log(
+                    "anti_legionella_impossible",
+                    cutoff=f"{tank.cutoff_temperature:.1f}",
+                )
+            return None
+        self._legionella_impossible = False
+        moment = choose_time(
+            start,
+            self.legionella.deadline(start),
+            slot_minutes=data.slot_minutes,
+            buy=data.buy,
+            surplus_value=data.surplus_value,
+            solar_kwh=data.solar_kwh or [0.0] * data.slots,
+            heater_slot_kwh=tank.heater_power_w / 1000 * data.slot_minutes / 60,
+        )
+        if moment is None:
+            # Deadline already past: as soon as possible (in an hour).
+            moment = start + timedelta(hours=1)
+        index = int((moment - start) / SLOT)
+        return (index, target) if 0 <= index < data.slots else None
+
+    def _account_real(
+        self, now: datetime, readings: TankReadings
+    ) -> tuple[float, bool]:
         """Value the energy the water heater took since the last update."""
         energy = 0.0
         if readings.energy is not None:
@@ -284,15 +439,24 @@ class Planner:
         self._last_power = readings.power
         self._last_time = now
         prices = self.prices
+        # The diverter in automatic mode heats only with surplus, and it
+        # keeps the export close to zero while it does: exporting is not a
+        # requirement then. In manual mode it is surplus only if still
+        # exporting.
+        from_surplus = (
+            readings.manual_mode is False
+            or (readings.export_power or 0.0) > SURPLUS_EXPORT_W
+        )
         self.ledger.add_real(
             now,
             energy,
-            from_surplus=(readings.export_power or 0.0) > SURPLUS_EXPORT_W,
+            from_surplus=from_surplus,
             buy_price=readings.price
             if readings.price is not None
             else (prices.buy[0] if prices else None),
             surplus_value=prices.surplus[0] if prices else 0.0,
         )
+        return energy, from_surplus
 
     # ------------------------------------------------------------------
     # Logbook

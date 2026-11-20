@@ -25,6 +25,8 @@ night heating costs when the injection price is high.
     after the block.
   Comfort limits are soft (a large penalty per kWh missing), so a plan is
   always produced; any shortfall flags the plan at risk.
+* Anti-legionella: optionally the tank must be at a target temperature at
+  the start of one slot (a soft target that does not flag the plan at risk).
 
 This module is pure Python and must not import Home Assistant.
 """
@@ -45,6 +47,11 @@ TARGET_PENALTY = (
     5.0  # € per kWh below a block target (full tank) that is not a shortfall
 )
 RISK_TOLERANCE_KWH = 0.05
+# Letting the expected surplus go to the grid must pay at least this much
+# per kWh: the forecast is uncertain, and taking the surplus when it comes
+# is safer than counting on it (or on the grid) later. Without it the plan
+# would sell for the small loss difference of heating an hour later.
+SELL_MARGIN = 0.03  # € per kWh of surplus let go
 # The regulator stays in manual mode at most two hours in a row (safety of
 # the controller): longer grid heating runs are split with a pause.
 MAX_RUN_SLOTS = 8
@@ -97,6 +104,11 @@ class PlanInput:
     slot_minutes: int = 15
     # Slots where grid heating is not allowed (pauses between long runs).
     no_grid_slots: frozenset[int] = frozenset()
+    # Anti-legionella: (slot, temperature) the tank must reach at that slot.
+    legionella: tuple[int, float] | None = None
+    # Slots already heated from the grid in a row before ``start``: the
+    # two-hour limit counts them.
+    initial_run_slots: int = 0
 
     @property
     def slots(self) -> int:
@@ -163,6 +175,8 @@ class Plan:
 
     slots: list[PlanSlot]
     blocks: list[BlockResult] = field(default_factory=list)
+    # Anti-legionella: when, the target and the temperature the plan reaches.
+    legionella: tuple[datetime, float, float] | None = None
 
     @property
     def cost(self) -> float:
@@ -338,6 +352,8 @@ class _Model:
         )
         nxt = energy + self.k_cap * (grid + solar) - self.k_cap * demand - loss
         cost = grid * data.buy[slot] + solar * data.surplus_value[slot]
+        if not take_solar:
+            cost += SELL_MARGIN * min(self.solar[slot], max(0.0, room - grid))
 
         shortfall = 0.0
         block = self.block_of[slot]
@@ -349,6 +365,13 @@ class _Model:
             else:
                 # More than a full tank: arrive full, the rescue does the rest.
                 cost += TARGET_PENALTY * max(0.0, target - energy)
+        legionella = data.legionella
+        if legionella is not None and slot == legionella[0]:
+            target = min(
+                self.e_max,
+                self.capacity * (legionella[1] - data.mains_temperature),
+            )
+            cost += TARGET_PENALTY * max(0.0, target - energy)
         if block is not None:
             # Inside a block (rescue counts): never below the comfort level.
             shortfall += max(0.0, self.e_comfort - nxt) * self.k_use
@@ -379,7 +402,7 @@ def optimise(data: PlanInput) -> Plan:
     plan = _optimise(data)
     for _ in range(MAX_SPLIT_ROUNDS):
         pauses = set(data.no_grid_slots)
-        run = 0
+        run = data.initial_run_slots
         for index, slot in enumerate(plan.slots):
             run = run + 1 if slot.grid_kwh > 0 else 0
             if run > MAX_RUN_SLOTS:
@@ -477,7 +500,11 @@ def _optimise(data: PlanInput) -> Plan:
                 shortfall_kwh=sum(item.shortfall_kwh for item in inside),
             )
         )
-    return Plan(plan_slots, results)
+    legionella = None
+    if data.legionella is not None and 0 <= data.legionella[0] < slots:
+        index, target = data.legionella
+        legionella = (plan_slots[index].start, target, plan_slots[index].temperature)
+    return Plan(plan_slots, results, legionella)
 
 
 def slot_index(start: datetime, moment: datetime, slot_minutes: int = 15) -> int:

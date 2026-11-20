@@ -349,3 +349,85 @@ def test_meter_reset_adds_no_energy() -> None:
     assert after <= before + 0.05
     assert isinstance(sample, TankSample)
     assert sample.timestamp - sim.time == timedelta(0)
+
+
+def test_slow_draws_do_not_inflate_the_losses() -> None:
+    """Slow draws during rest windows (0.12 kW for 90 min, hot tank) are not
+    losses: the learned UA stays close to the real one (2026-11-20: a live
+    model reached 1.86 W/K against 0.94 W/K learned before)."""
+    true_ua = 0.9
+    sim = TankSimulator(temperature=66.0, ua=true_ua, cutoff=68.0)
+    model = TankModel()
+    params = replace(PARAMS, cutoff_temperature=68)
+    drive(model, sim, 6 * 60, params=params)  # a clean start
+    for _ in range(8):
+        drive(model, sim, 150, params=params)
+        drive(model, sim, 90, draw_kw=0.12, params=params)
+        drive(model, sim, 150, params=params)
+        if sim.temperature < 55:
+            drive(model, sim, 60, regulator=100, params=params)
+    state = drive(model, sim, 60, params=params)
+    assert state.ua_w_per_k == pytest.approx(true_ua, rel=0.25)
+
+
+def test_merge_keeps_evidence_but_not_incoherent_estimates() -> None:
+    base = {
+        "format": 2,
+        "equivalent_temperature": 55.0,
+        "ua_covariance": 0.01,
+        "capacity_samples": [],
+        "usable_samples": [],
+        "uncertain": False,
+        "calibration_count": 0,
+        "last_calibration": None,
+        "last_valid_time": None,
+        "last_energy": None,
+        "consumptions": [],
+        "cutoff_samples": [],
+    }
+    imported = TankModel.from_dict(
+        {
+            **base,
+            "ua": 0.95,
+            "loss_windows": 5,
+            "heater_power_w": 1490.0,
+            "heater_power_samples": 100,
+            "cutoff_samples": [62.0],
+        }
+    )
+    running = TankModel.from_dict(
+        {
+            **base,
+            "ua": 1.86,
+            "loss_windows": 30,
+            "heater_power_w": 1505.0,
+            "heater_power_samples": 900,
+            "cutoff_samples": [68.5, 69.1, 68.8],
+        }
+    )
+    imported.merge_learning(running)
+    data = imported.as_dict()
+    assert data["ua"] == 0.95 and data["loss_windows"] == 5  # incoherent: history
+    assert data["heater_power_w"] == 1505.0  # coherent, more evidence
+    assert data["cutoff_samples"] == [68.5, 69.1, 68.8]  # more measurements
+
+    coherent = TankModel.from_dict(
+        {
+            **base,
+            "ua": 1.05,
+            "loss_windows": 30,
+            "heater_power_w": None,
+            "heater_power_samples": 0,
+        }
+    )
+    fresh = TankModel.from_dict(
+        {
+            **base,
+            "ua": 0.95,
+            "loss_windows": 5,
+            "heater_power_w": None,
+            "heater_power_samples": 0,
+        }
+    )
+    fresh.merge_learning(coherent)
+    assert fresh.as_dict()["ua"] == 1.05

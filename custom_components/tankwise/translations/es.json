@@ -32,9 +32,10 @@
           "grid_import_sensor": "Energía importada de la red",
           "grid_export_sensor": "Energía exportada a la red",
           "export_power_sensor": "Potencia exportada a la red ahora",
-          "solar_forecast_sensor": "Previsión solar",
           "ambient_sensor": "Temperatura ambiente junto al termo",
-          "workday_entity": "Sensor de días laborables"
+          "workday_entity": "Sensor de días laborables",
+          "solar_forecast_entries": "Previsión de producción solar",
+          "regulator_output_switch": "Interruptor de salida del regulador"
         },
         "data_description": {
           "energy_sensor": "Recomendada. Energía acumulada del termo (total o total creciente). Sin ella se integra la potencia.",
@@ -45,9 +46,10 @@
           "grid_import_sensor": "Recomendada. Energía total importada de la red.",
           "grid_export_sensor": "Recomendada. Energía total exportada a la red.",
           "export_power_sensor": "Recomendada. Potencia que se está inyectando a la red ahora.",
-          "solar_forecast_sensor": "Previsión horaria de Forecast.Solar o Solcast.",
           "ambient_sensor": "Temperatura de la estancia donde está el termo. Sin ella se usa el valor fijo de las opciones.",
-          "workday_entity": "Sensor binario de la integración Workday. Con él, los festivos se aprenden aparte de los laborables y las citas se pueden fijar para laborables o festivos."
+          "workday_entity": "Sensor binario de la integración Workday. Con él, los festivos se aprenden aparte de los laborables y las citas se pueden fijar para laborables o festivos.",
+          "solar_forecast_entries": "Entradas de Forecast.Solar, Solcast u Open-Meteo Solar Forecast (varias se suman, p. ej. una por cada orientación del tejado). El plan cuenta con el excedente esperado: la previsión menos lo que consume la casa en cada hora, aprendido de la exportación a red.",
+          "regulator_output_switch": "Interruptor que habilita la salida del regulador ('PWM enabled' de FreeDS). Con él, cuando la inyección se paga más de lo que cuesta calentar después, TankWise lo apaga para vender el excedente; se vuelve a encender antes de cualquier calentamiento."
         }
       },
       "reconfigure": {
@@ -136,16 +138,19 @@
           "grid_import_sensor": "Energía importada de la red",
           "grid_export_sensor": "Energía exportada a la red",
           "export_power_sensor": "Potencia exportada a la red ahora",
-          "solar_forecast_sensor": "Previsión solar",
           "ambient_sensor": "Temperatura ambiente junto al termo",
-          "workday_entity": "Sensor de días laborables"
+          "workday_entity": "Sensor de días laborables",
+          "solar_forecast_entries": "Previsión de producción solar",
+          "regulator_output_switch": "Interruptor de salida del regulador"
         },
         "data_description": {
           "energy_sensor": "Recomendada. Energía acumulada del termo (total o total creciente). Sin ella se integra la potencia.",
           "regulator_sensor": "Salida PWM del regulador (p. ej. FreeDS). Ayuda a distinguir un corte del termostato de una parada del regulador.",
           "occupancy_entity": "Apagada, no se espera demanda y esos días no se aprenden.",
           "ambient_sensor": "Temperatura de la estancia donde está el termo. Sin ella se usa el valor fijo de los parámetros.",
-          "workday_entity": "Sensor binario de la integración Workday. Con él, los festivos se aprenden aparte de los laborables y las citas se pueden fijar para laborables o festivos."
+          "workday_entity": "Sensor binario de la integración Workday. Con él, los festivos se aprenden aparte de los laborables y las citas se pueden fijar para laborables o festivos.",
+          "solar_forecast_entries": "Entradas de Forecast.Solar, Solcast u Open-Meteo Solar Forecast (varias se suman, p. ej. una por cada orientación del tejado). El plan cuenta con el excedente esperado: la previsión menos lo que consume la casa en cada hora, aprendido de la exportación a red.",
+          "regulator_output_switch": "Interruptor que habilita la salida del regulador ('PWM enabled' de FreeDS). Con él, cuando la inyección se paga más de lo que cuesta calentar después, TankWise lo apaga para vender el excedente; se vuelve a encender antes de cualquier calentamiento."
         }
       },
       "appointments": {
@@ -527,6 +532,36 @@
             "name": "En riesgo"
           }
         }
+      },
+      "power_request": {
+        "name": "Potencia de excedente pedida",
+        "state_attributes": {
+          "priority": {
+            "name": "Prioridad",
+            "state": {
+              "high": "Alta (la necesita el confort)",
+              "low": "Baja (llena el depósito)",
+              "none": "Ninguna"
+            }
+          }
+        }
+      },
+      "last_anti_legionella": {
+        "name": "Último ciclo antilegionela",
+        "state_attributes": {
+          "enabled": {
+            "name": "Activado"
+          },
+          "deadline": {
+            "name": "Fecha límite"
+          },
+          "planned_at": {
+            "name": "Previsto a las"
+          },
+          "planned_temperature": {
+            "name": "Temperatura prevista"
+          }
+        }
       }
     },
     "number": {
@@ -569,6 +604,9 @@
       },
       "compensation_cap": {
         "name": "Tope de compensación de excedentes alcanzado"
+      },
+      "anti_legionella": {
+        "name": "Ciclo antilegionela"
       }
     },
     "binary_sensor": {

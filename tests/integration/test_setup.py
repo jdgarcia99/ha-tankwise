@@ -28,8 +28,8 @@ from custom_components.tankwise.const import (
     CONF_INJECTION_PRICE_SENSOR,
     CONF_MASTER_ENTITY,
     CONF_OCCUPANCY_ENTITY,
+    CONF_REGULATOR_OUTPUT_SWITCH,
     CONF_REGULATOR_SENSOR,
-    CONF_SOLAR_FORECAST_SENSOR,
     DEFAULT_PARAMETERS,
     DOMAIN,
     UPDATE_INTERVAL,
@@ -45,8 +45,8 @@ from .conftest import (
     INJECTION,
     MASTER,
     OCCUPANCY,
+    OUTPUT,
     REGULATOR,
-    SOLAR,
     TEMPERATURE,
     set_input_states,
     set_optional_states,
@@ -183,7 +183,7 @@ def all_options() -> dict[str, Any]:
         CONF_GRID_IMPORT_SENSOR: GRID_IMPORT,
         CONF_GRID_EXPORT_SENSOR: GRID_EXPORT,
         CONF_EXPORT_POWER_SENSOR: EXPORT_POWER,
-        CONF_SOLAR_FORECAST_SENSOR: SOLAR,
+        CONF_REGULATOR_OUTPUT_SWITCH: OUTPUT,
         CONF_AMBIENT_SENSOR: AMBIENT,
     }
 
@@ -210,7 +210,7 @@ async def test_reads_optional_inputs(
     assert readings.grid_import == 1500.5
     assert readings.grid_export == 800.25
     assert readings.export_power == pytest.approx(800.0)
-    assert readings.solar_forecast == 6.4
+    assert readings.regulator_output is True
     assert readings.ambient_temperature == 18.0
 
 

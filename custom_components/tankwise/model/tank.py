@@ -144,6 +144,16 @@ LOSS_MIN_WINDOW = timedelta(hours=2)
 LOSS_MAX_WINDOW = timedelta(hours=4)
 MIN_LOSS_EXCESS = 10.0  # °C above ambient
 MAX_LOSS_SCATTER = 1.0  # °C, median absolute residual
+# Once UA is learned, a rest window that implies a UA outside this range of
+# the current value is a slow draw (or a sensor glitch), not losses: a slow
+# draw cannot be told apart from losses inside one window.
+LOSS_PLAUSIBLE_RATIO = (0.5, 1.8)
+# Merging an imported history with a running model: beyond these relative
+# differences an estimated parameter of the running model is not coherent
+# with the history and the history wins. Lists of measurements (cut-offs,
+# capacity and usable factors) keep the source with more of them: each one
+# is a real measurement, and the cut-off really varies from day to day.
+MERGE_TOLERANCE = {"ua": 0.30, "power": 0.10}
 MIN_LOSS_WINDOWS = 3
 RLS_FORGETTING = 0.95
 RLS_INITIAL_COVARIANCE = 0.002
@@ -507,6 +517,7 @@ class _UsableObservation:
 class _LossWindow:
     points: list[tuple[datetime, float]] = field(default_factory=list)
     ambient_sum: float = 0.0
+    ambients: list[float] = field(default_factory=list)
 
 
 class TankModel:
@@ -518,6 +529,7 @@ class TankModel:
         self._ua = DEFAULT_UA
         self._ua_covariance = RLS_INITIAL_COVARIANCE
         self._loss_windows = 0
+        self._loss_rejected = 0  # runtime: windows rejected as implausible
         self._capacity_samples: list[float] = []
         self._heater_power_w: float | None = None
         self._heater_power_samples = 0
@@ -660,23 +672,69 @@ class TankModel:
     def merge_learning(self, other: TankModel) -> None:
         """Keep, parameter by parameter, what is better learned in ``other``.
 
-        Used after a history import: the imported model keeps its state, and
-        every learned parameter with more evidence in the model that was
-        already running is taken from it, so an import never loses learning.
-        Draws are joined (the imported ones win where both overlap).
+        Used after a history import (``self`` is the imported model, ``other``
+        the model that was running): every learned parameter with more
+        evidence in the running model is taken from it, so an import never
+        loses learning. But when both learned a parameter and the running
+        value is not coherent with the history (beyond a tolerance), the
+        history wins whatever the evidence: e.g. a heat loss coefficient
+        inflated by slow draws. Draws are joined (the imported ones win where
+        both overlap).
         """
-        if other._loss_windows > self._loss_windows:
+
+        def keep_running(
+            own_evidence: int,
+            running_evidence: int,
+            own: float,
+            running: float,
+            tolerance: float,
+        ) -> bool:
+            if running_evidence <= own_evidence:
+                return False
+            return own_evidence == 0 or abs(running - own) <= tolerance
+
+        if keep_running(
+            self._loss_windows,
+            other._loss_windows,
+            self._ua,
+            other._ua,
+            MERGE_TOLERANCE["ua"] * self._ua,
+        ):
             self._ua = other._ua
             self._ua_covariance = other._ua_covariance
             self._loss_windows = other._loss_windows
-        if len(other._capacity_samples) > len(self._capacity_samples):
+        if keep_running(
+            len(self._capacity_samples),
+            len(other._capacity_samples),
+            median(self._capacity_samples or [0.0]),
+            median(other._capacity_samples or [0.0]),
+            math.inf,
+        ):
             self._capacity_samples = list(other._capacity_samples)
-        if len(other._usable_samples) > len(self._usable_samples):
+        if keep_running(
+            len(self._usable_samples),
+            len(other._usable_samples),
+            median(self._usable_samples or [0.0]),
+            median(other._usable_samples or [0.0]),
+            math.inf,
+        ):
             self._usable_samples = list(other._usable_samples)
-        if other._heater_power_samples > self._heater_power_samples:
+        if keep_running(
+            self._heater_power_samples,
+            other._heater_power_samples,
+            self._heater_power_w or 0.0,
+            other._heater_power_w or 0.0,
+            MERGE_TOLERANCE["power"] * (self._heater_power_w or 0.0),
+        ):
             self._heater_power_w = other._heater_power_w
             self._heater_power_samples = other._heater_power_samples
-        if len(other._cutoff_samples) > len(self._cutoff_samples):
+        if keep_running(
+            len(self._cutoff_samples),
+            len(other._cutoff_samples),
+            median(self._cutoff_samples or [0.0]),
+            median(other._cutoff_samples or [0.0]),
+            math.inf,
+        ):
             self._cutoff_samples = list(other._cutoff_samples)
         # Draws of the running model that the import did not see (or that
         # are older than the imported period) are kept; overlapping ones are
@@ -1436,8 +1494,20 @@ class TankModel:
         if quiet:
             window.points.append((now, sample.temperature))
             window.ambient_sum += ambient
+            window.ambients.append(ambient)
             if now - window.points[0][0] < LOSS_MAX_WINDOW:
                 return
+        if not quiet and self._event is not None and window.points:
+            # A draw ended the window. It was detected late (the slow draw
+            # detector looks an hour back): its beginning is still in the
+            # window and would look like losses. Drop that part.
+            limit = self._event.start - SLOW_WINDOW
+            kept = [
+                index for index, point in enumerate(window.points) if point[0] < limit
+            ]
+            window.points = window.points[: len(kept)]
+            window.ambients = window.ambients[: len(kept)]
+            window.ambient_sum = sum(window.ambients)
         if window.points and window.points[-1][0] - window.points[0][0] >= (
             LOSS_MIN_WINDOW
         ):
@@ -1456,6 +1526,11 @@ class TankModel:
         if slope >= 0 or excess < MIN_LOSS_EXCESS or scatter > MAX_LOSS_SCATTER:
             return
         observed_w = -slope * params.heat_capacity * 1000  # W
+        if self._loss_windows >= MIN_LOSS_WINDOWS:
+            low, high = LOSS_PLAUSIBLE_RATIO
+            if not low * self._ua <= observed_w / excess <= high * self._ua:
+                self._loss_rejected += 1
+                return
         covariance = self._ua_covariance
         gain = covariance * excess / (RLS_FORGETTING + excess * covariance * excess)
         self._ua = _clamp(

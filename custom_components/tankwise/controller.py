@@ -26,6 +26,7 @@ from .const import (
     CONF_HEATER_SWITCH,
     CONF_MANUAL_MODE_SWITCH,
     CONF_REGULATOR_MARGIN,
+    CONF_REGULATOR_OUTPUT_SWITCH,
     DOMAIN,
     EVENT_BOOST_FINISHED,
     EVENT_BOOST_STARTED,
@@ -218,6 +219,8 @@ class TankWiseController:
                 ),
                 regulator_margin=self.regulator_margin,
                 boost=self.boost is not None,
+                sell_surplus=self._sell_surplus(now, tank),
+                output=readings.regulator_output,
             )
         )
         for order in decision.orders:
@@ -240,6 +243,14 @@ class TankWiseController:
         if updated is not None and now - updated > PROBE_TIMEOUT:
             return None
         return readings.temperature
+
+    def _sell_surplus(self, now: datetime, tank: TankState) -> bool:
+        """Return True if the plan lets the surplus go to the grid now."""
+        planner = self.coordinator.planner
+        if planner.plan is None or not tank.available:
+            return False
+        slot = planner.current_slot(now)
+        return slot is not None and not slot.solar_allowed
 
     def _plan_heat(self, now: datetime, tank: TankState) -> bool | None:
         """Return whether the plan heats from the grid now (None: no plan)."""
@@ -455,11 +466,15 @@ class TankWiseController:
         data = self.coordinator.config_entry.data
         if order.action in (Action.MANUAL_ON, Action.MANUAL_OFF):
             entity_id = data.get(CONF_MANUAL_MODE_SWITCH)
+        elif order.action in (Action.OUTPUT_ON, Action.OUTPUT_OFF):
+            entity_id = self.coordinator.config_entry.options.get(
+                CONF_REGULATOR_OUTPUT_SWITCH
+            )
         else:
             entity_id = data.get(CONF_HEATER_SWITCH)
         if not entity_id:
             return
-        on = order.action in (Action.MANUAL_ON, Action.HEATER_ON)
+        on = order.action in (Action.MANUAL_ON, Action.HEATER_ON, Action.OUTPUT_ON)
         try:
             await self.hass.services.async_call(
                 entity_id.split(".", 1)[0],
@@ -481,8 +496,10 @@ class TankWiseController:
         reason = order.reason
         if reason is Reason.REGULATOR_BACK and order.action is Action.MANUAL_OFF:
             return  # one entry for both orders
-        if reason in (Reason.BOOST, Reason.BOOST_DONE):
-            return  # the boost has its own entries
+        if reason in (Reason.BOOST, Reason.BOOST_DONE, Reason.HEAT):
+            return  # the boost has its own entries; output on before heating
+        if order.action is Action.OUTPUT_ON and reason is Reason.MODE:
+            return  # one entry for the mode change
         values: dict[str, Any] = {}
         key = reason.value
         temperature = readings.temperature
@@ -507,6 +524,11 @@ class TankWiseController:
             }
         elif reason is Reason.MODE:
             values = {"mode": self.coordinator.planner.mode.value}
+        elif reason is Reason.SELL:
+            slot = self.coordinator.planner.current_slot(now)
+            prices = self.coordinator.planner.prices
+            values = {"price": f"{prices.surplus[0]:.3f}" if prices else "?"}
+            del slot
         elif reason is Reason.REGULATOR_LOST:
             lost = self.state.lost_since or now
             values = {"minutes": round((now - lost).total_seconds() / 60)}

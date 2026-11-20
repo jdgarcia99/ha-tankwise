@@ -103,15 +103,22 @@ def test_price_peak_at_18_preheats_before_17() -> None:
 
 
 def test_high_injection_price_sells_and_heats_at_night() -> None:
-    """Surplus worth 0.20 €/kWh at noon, night grid at 0.09: sell, heat at night."""
+    """Surplus worth 0.20 €/kWh at noon, grid at 0.09: sell, heat with the grid."""
     solar = [0.0] * SLOTS
     for index in range(_slot(11), _slot(15)):
         solar[index] = 0.375
-    prices = _prices(0.20, h1=0.09, h2=0.09, h3=0.09, h4=0.09)
+    prices = _prices(0.20, h1=0.09, h2=0.09, h3=0.09, h4=0.09, h15=0.09, h16=0.09)
     plan = optimise(_input(buy=prices, surplus_value=[0.20] * SLOTS, solar_kwh=solar))
     assert sum(slot.solar_kwh for slot in plan.slots) == pytest.approx(0.0)
     assert all(not slot.solar_allowed for slot in plan.slots[_slot(11) : _slot(15)])
     assert _grid_between(plan, _slot(1), _slot(5)) > 0
+    assert _grid_between(plan, _slot(15), _slot(17)) > 0
+
+    # Selling must pay more than the risk margin: at the same price as the
+    # grid later, the plan takes the sun.
+    even = _prices(0.20, h1=0.09, h2=0.09, h3=0.09, h4=0.09)
+    plan = optimise(_input(buy=even, surplus_value=[0.20] * SLOTS, solar_kwh=solar))
+    assert sum(slot.solar_kwh for slot in plan.slots) > 0
 
     # With cheap surplus (0.05 €/kWh) the plan takes the sun instead.
     cheap = optimise(_input(buy=prices, surplus_value=[0.05] * SLOTS, solar_kwh=solar))
@@ -256,3 +263,44 @@ def test_grid_heating_runs_are_at_most_two_hours() -> None:
         longest = max(longest, run)
     assert plan.grid_kwh > 0.375 * 8  # more than two hours of heating
     assert longest <= 8
+
+
+def test_anti_legionella_target_is_reached_cheaply() -> None:
+    """61.5 °C at 15:00: heated in the cheap 13:00-15:00 hours, not at risk."""
+    # No demand and no value for the energy left at the end: without the
+    # cycle nothing is heated.
+    quiet = {"demand_kwh": [0.0] * SLOTS, "terminal_price": 0.0}
+    data = _input(
+        buy=_prices(0.20, h13=0.08, h14=0.08),
+        legionella=(_slot(15), 61.5),
+        **quiet,
+    )
+    plan = optimise(data)
+    assert plan.legionella is not None
+    moment, target, reached = plan.legionella
+    assert moment.hour == 15 and target == 61.5
+    assert reached >= 61.0
+    assert not plan.at_risk
+    assert _grid_between(plan, _slot(13), _slot(15)) > 1.5
+    without = optimise(_input(buy=_prices(0.20, h13=0.08, h14=0.08), **quiet))
+    assert without.legionella is None
+    assert without.grid_kwh == 0
+    assert _grid_between(plan, 0, _slot(13)) == 0  # not earlier than needed
+
+
+def test_heating_already_done_counts_for_the_two_hour_limit() -> None:
+    """After 90 minutes of heating, at most 30 more before a pause."""
+    cold = _input(
+        initial_temperature=30.0,
+        buy=[0.05] * 8 + [0.30] * (SLOTS - 8),
+        demand_kwh=[0.0] * 8 + [1.0] + [0.0] * (SLOTS - 9),
+    )
+    fresh = optimise(cold)
+    assert all(slot.grid_kwh > 0 for slot in fresh.slots[:8])
+    late = optimise(replace(cold, initial_run_slots=6))
+    run = 0
+    for slot in late.slots[:8]:
+        if slot.grid_kwh <= 0:
+            break
+        run += 1
+    assert run <= 2

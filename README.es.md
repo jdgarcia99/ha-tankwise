@@ -17,7 +17,7 @@ PVPC de compra más el valor del excedente solar).
 
 ## Estado del proyecto
 
-> **En desarrollo (0.8.0, fase 5 de 7).** TankWise aprende el depósito y el
+> **En desarrollo (0.9.0, fase 6 de 7).** TankWise aprende el depósito y el
 > uso de la casa, calcula el plan de calentamiento y, en los modos Auto, Eco,
 > Confort y Vacaciones, **controla el regulador** con sus seguridades. Sigue
 > empezando en modo Sombra (publica el plan sin actuar): compara el coste
@@ -31,7 +31,7 @@ PVPC de compra más el valor del excedente solar).
 | 3 | Precios, valor del excedente y optimizador; modo Sombra con el plan | ✅ Hecha |
 | 4 | Controlador, seguridades y modo degradado; modo Auto | ✅ Hecha |
 | 5 | Boost con blueprint para pulsadores externos | ✅ Hecha |
-| 6 | Previsión solar, coordinación con SolarSplit y antilegionela | Prevista |
+| 6 | Previsión solar, coordinación con SolarSplit y antilegionela | ✅ Hecha |
 | 7 | Migración desde las automatizaciones y documentación completa | Prevista |
 
 ## Instalación
@@ -63,7 +63,10 @@ ningún `entity_id` está fijado en el código.
 - Entidad que indica si el regulador es maestro del termo.
 - Casa ocupada.
 - Precio de inyección, energía importada y exportada, potencia exportada ahora.
-- Previsión solar (Forecast.Solar o Solcast).
+- Previsión de producción solar: una o varias entradas de Forecast.Solar,
+  Solcast u Open-Meteo Solar Forecast (sumadas).
+- Interruptor de salida del regulador (p. ej. "PWM enabled" de FreeDS), para
+  vender el excedente.
 - Temperatura ambiente donde está el termo.
 - Sensor de días laborables (integración Workday): los festivos se aprenden
   aparte y las citas se pueden fijar para laborables o festivos.
@@ -265,6 +268,41 @@ dispositivo de un pulsador ZHA, Zigbee2MQTT, Z-Wave o Shelly, un evento...),
 la acción (alternar, solo activar o solo cancelar) y, si quieres, una
 temperatura y una duración. Se importa desde **Ajustes → Automatizaciones y
 escenas → Blueprints → Importar blueprint** con su URL de GitHub.
+
+## Excedente solar y antilegionela
+
+**Previsión solar.** En las entradas se eligen una o varias entradas de
+previsión (Forecast.Solar, Solcast u Open-Meteo Solar Forecast: la misma
+previsión horaria que usa el panel de Energía; varias, p. ej. una por
+orientación del tejado, se suman). El plan cuenta con el excedente esperado:
+la previsión menos lo que consume la casa en cada hora. Esa parte se aprende
+para cada hora del día a partir de la exportación a red y de lo que el termo
+tomó del excedente, así que también corrige el sesgo de la previsión. Hasta
+aprender una hora se suponen 0,25 kWh de consumo de la casa.
+
+**Vender el excedente.** Con el interruptor de salida del regulador ("PWM
+enabled" de FreeDS) entre las entradas, cuando la inyección se paga más de
+lo que cuesta calentar después (al menos 0,03 €/kWh más, por la
+incertidumbre de la previsión), el plan deja el excedente para la red: se
+apaga la salida, y se vuelve a encender después y antes de cualquier
+calentamiento. Queda registrado en el logbook.
+
+**Coordinación con otras cargas (SolarSplit).** El sensor **Potencia de
+excedente pedida** (W) indica cuánto excedente quiere TankWise ahora, con
+una prioridad (`priority`): `high` cuando el plan necesita ese excedente
+para el agua caliente (sin él calentaría más de red antes de la siguiente
+cita), `low` cuando solo llena el depósito. El evento
+`tankwise_power_request` se lanza cuando cambia cualquiera de los dos, para
+que un gestor de excedentes lo reparta entre cargas.
+
+**Antilegionela** (interruptor, activado por defecto). Un ciclo es estar a
+60 °C o más durante una hora, medido por la sonda; el sensor **Último ciclo
+antilegionela** muestra cuándo fue y la fecha límite (7 días después). Dos
+días antes de la fecha límite, el plan añade un objetivo de 61,5 °C
+(limitado por debajo del corte del termostato) tras la hora en la que
+calentar es más barato: con excedente primero y, si no, al precio de compra
+más bajo. Si el depósito pasa una hora a 60 °C por sí solo (p. ej. en días
+de sol), no se calienta nada de más.
 
 ## Servicios
 

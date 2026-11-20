@@ -32,3 +32,25 @@ def test_plan_against_reality() -> None:
     assert max(item.longest_heating_min for item in full) <= 120
     # The plan costs less than what really happened.
     assert sum(item.plan_cost for item in full) < sum(item.real_cost for item in full)
+
+
+@pytest.mark.parametrize("solar", ["yesterday", "hindsight"])
+def test_plan_with_a_solar_forecast(solar: str) -> None:
+    """The plan with a surplus forecast: naive (yesterday) and perfect."""
+    assert EXPORT is not None
+    history = load(EXPORT)
+    start = datetime(2026, 11, 13, tzinfo=history.tz)
+    results = run_bench(history, start=start, solar=solar)
+    print(f"\nsolar forecast: {solar}\n" + report(results))
+    full = [item for item in results if item.real_grid_kwh + item.real_solar_kwh > 0.5]
+    assert sum(len(item.plan_shortages) for item in full) == 0
+    assert max(item.longest_heating_min for item in full) <= 120
+    baseline = run_bench(history, start=start)
+    full_base = [
+        item for item in baseline if item.real_grid_kwh + item.real_solar_kwh > 0.5
+    ]
+    # A forecast never makes the plan more expensive than without one.
+    assert (
+        sum(item.plan_cost for item in full)
+        <= sum(item.plan_cost for item in full_base) * 1.02
+    )

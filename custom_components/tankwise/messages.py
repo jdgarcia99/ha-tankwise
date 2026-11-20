@@ -54,6 +54,16 @@ MESSAGES: dict[str, dict[str, str]] = {
             "simple rule before each appointment"
         ),
         "degraded_off": "Degraded mode over: back to the plan",
+        "anti_legionella_done": "Anti-legionella cycle done: 60 °C or more for an hour",
+        "anti_legionella_impossible": (
+            "The anti-legionella cycle cannot be planned: the thermostat cuts off "
+            "at {cutoff} °C, below 60 °C"
+        ),
+        "sell": (
+            "Selling the solar surplus ({price} €/kWh pays more than heating "
+            "later): regulator output off"
+        ),
+        "sell_done": "Regulator output on again: the surplus heats the water",
         "boost_started": "Boost: heating to {target} °C{limit}",
         "boost_limit": " (at most until {time})",
         "boost_not_needed": (
@@ -115,6 +125,18 @@ MESSAGES: dict[str, dict[str, str]] = {
             "regla simple antes de cada cita"
         ),
         "degraded_off": "Fin del modo degradado: se vuelve al plan",
+        "anti_legionella_done": (
+            "Ciclo antilegionela hecho: 60 °C o más durante una hora"
+        ),
+        "anti_legionella_impossible": (
+            "No se puede planificar el ciclo antilegionela: el termostato corta a "
+            "{cutoff} °C, por debajo de 60 °C"
+        ),
+        "sell": (
+            "Vendiendo el excedente solar ({price} €/kWh paga más que calentar "
+            "después): salida del regulador apagada"
+        ),
+        "sell_done": "Salida del regulador encendida: el excedente calienta el agua",
         "boost_started": "Boost: calentando hasta {target} °C{limit}",
         "boost_limit": " (como mucho hasta las {time})",
         "boost_not_needed": (

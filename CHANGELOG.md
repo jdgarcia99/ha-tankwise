@@ -7,6 +7,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-20
+
+Sixth phase: solar forecast, selling the surplus, coordination with other
+loads and the anti-legionella cycle.
+
+### Added
+
+- Solar production forecast from one or more config entries of
+  Forecast.Solar, Solcast or Open-Meteo Solar Forecast (their hourly Energy
+  dashboard forecast), summed. The plan counts on the expected surplus: the
+  forecast minus the house consumption of each hour, learned from the grid
+  export and the energy the water heater took from the surplus (which also
+  corrects the bias of the forecast).
+- Selling the surplus: with the new regulator output switch input (FreeDS
+  "PWM enabled"), the output is switched off when the plan lets the surplus
+  go to the grid (the injection pays at least 0.03 €/kWh more than heating
+  later), and on again afterwards and before any heating.
+- Requested surplus power sensor with a `high`/`low` priority and the
+  `tankwise_power_request` event, for surplus managers such as SolarSplit.
+- Anti-legionella cycle (switch, on by default): 60 °C or more for an hour at
+  least once a week. Cycles are measured by the probe; when the deadline is
+  two days away the plan adds a 61.5 °C target after the cheapest hour to
+  heat (surplus first). Last anti-legionella cycle sensor with the deadline
+  and the planned time.
+- Diagnostics: learned house consumption per hour, forecast, power request
+  and anti-legionella state.
+- Simulation bench with a surplus forecast (naive and perfect) to measure
+  what the forecast is worth.
+
+### Fixed
+
+- Real cost: heating with the regulator in automatic mode counts as surplus
+  even when the export is close to zero (the diverter keeps it there while
+  it heats); before, it was counted as grid energy at the purchase price.
+- Heat losses inflated by slow draws (a live model reached 1.86 W/K against
+  0.94 W/K): a rest window ended by a draw drops its last hour (the slow
+  draw detector looks an hour back, so the beginning of the draw was taken
+  as losses), and once UA is learned a window implying less than half or
+  more than 1.8 times the current value is rejected.
+- History import merge: an estimate of the running model that is not
+  coherent with the history (UA more than 30 % apart, heater power more
+  than 10 %) gives way to the history, whatever its evidence. Lists of
+  measurements (cut-offs, capacity and usable factors) still keep the source
+  with more of them. The history is imported again on upgrade (bootstrap
+  version 4), also from 0.6.
+- The two-hour limit of grid heating runs now counts the heating already
+  done before each replan (found by the simulation bench: a run of 151
+  minutes with the solar forecast; the controller safety would have cut it
+  at two hours).
+
+### Changed
+
+- The daily solar forecast sensor input is replaced by the forecast entries
+  (a daily total cannot place the surplus in the day). Choose the entries in
+  the options after upgrading.
+- The plan lets the surplus go to the grid only when it pays at least
+  0.03 €/kWh more than heating later.
+
 ## [0.8.0] - 2026-11-20
 
 Fifth phase: boost (hot water now) and a blueprint for push buttons.
@@ -413,7 +471,8 @@ and the heating plan will follow.
 - The output contract entities (energy needed, deadline, grid allowed,
   requested power and urgency) arrive in a later release.
 
-[Unreleased]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.5.0...v0.6.0

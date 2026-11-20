@@ -20,7 +20,7 @@ from __future__ import annotations
 from bisect import bisect_right
 from collections import defaultdict
 import csv
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime, time, timedelta
 import json
 from pathlib import Path
@@ -43,6 +43,7 @@ from custom_components.tankwise.model.replay import (
     ROLE_OCCUPANCY,
     ROLE_POWER,
     ROLE_WORKDAY,
+    StateChange,
     replay,
 )
 from custom_components.tankwise.model.tank import (
@@ -137,8 +138,15 @@ def run_bench(
     mode: Mode = Mode.AUTO,
     rescue: bool = True,
     reserve_liters: float = 10.0,
+    solar: str = "none",
 ) -> list[DayResult]:
-    """Simulate the plan from ``start`` to the end of the history."""
+    """Simulate the plan from ``start`` to the end of the history.
+
+    ``solar`` is the surplus forecast the plan gets: "none" (reactive solar
+    only, as without a forecast), "hindsight" (the real surplus of each
+    slot: the best a forecast could do) or "yesterday" (the real surplus of
+    the same slot the day before: a naive forecast).
+    """
     tz = history.tz
     params_at = _params_at(history)
     draws = real_draws(history)
@@ -159,6 +167,23 @@ def run_bench(
                 draw.energy_kwh / minutes,
                 index,
             )
+
+    surplus_slots = _surplus_per_slot(history, export, tz)
+
+    def solar_forecast(slot_begin: datetime, heater_w: float) -> list[float] | None:
+        if solar == "none":
+            return None
+        shift = timedelta(days=1) if solar == "yesterday" else timedelta(0)
+        cap = heater_w / 1000 * 0.25
+        return [
+            min(
+                cap,
+                surplus_slots.get(
+                    slot_begin + timedelta(minutes=15 * index) - shift, 0.0
+                ),
+            )
+            for index in range(144)
+        ]
 
     model = TankModel()
     demand = DemandModel(tz)
@@ -258,7 +283,11 @@ def run_bench(
                 occupied=occupancy if isinstance(occupancy, bool) else None,
                 reserve_liters=reserve_liters,
                 rescue=rescue,
+                solar_kwh=solar_forecast(slot_begin, tank_state.heater_power_w),
             )
+            if data is not None:
+                # Grid heating already done in a row counts for the limit.
+                data = replace(data, initial_run_slots=-(-state["run"] // 15))
             state["plan"] = optimise(data) if data is not None else None
 
         plan: Plan | None = state["plan"]
@@ -314,6 +343,41 @@ def run_bench(
                 draw.start.astimezone(tz).strftime("%H:%M")
             )
     return [results[day] for day in sorted(results)]
+
+
+def _surplus_per_slot(
+    history: History, export: list[tuple[datetime, float | None]], tz
+) -> dict[datetime, float]:
+    """Real solar surplus (kWh) of each local 15-minute slot of the history.
+
+    Exported power plus what the diverter really took in automatic mode, as
+    in the simulation itself (one value a minute, walked with pointers).
+    """
+    series = {
+        "power": history.series[ROLE_POWER],
+        "manual": history.series.get(ROLE_MANUAL_MODE, []),
+        "export": [StateChange(moment, value) for moment, value in export],
+    }
+    pointers = dict.fromkeys(series, -1)
+    values: dict[str, float | bool | None] = dict.fromkeys(series)
+    moment = series["power"][0].timestamp.replace(second=0, microsecond=0)
+    end = series["power"][-1].timestamp
+    slots: dict[datetime, float] = defaultdict(float)
+    while moment <= end:
+        for key, changes in series.items():
+            index = pointers[key]
+            while index + 1 < len(changes) and changes[index + 1].timestamp <= moment:
+                index += 1
+            pointers[key] = index
+            values[key] = changes[index].value if index >= 0 else None
+        power = values["power"] if isinstance(values["power"], float) else 0.0
+        exported = values["export"] if isinstance(values["export"], float) else 0.0
+        surplus_w = exported + (power if not values["manual"] else 0.0)
+        local = moment.astimezone(tz)
+        begin = local.replace(minute=local.minute - local.minute % 15)
+        slots[begin] += max(0.0, surplus_w) / 1000 / 60
+        moment += timedelta(minutes=1)
+    return dict(slots)
 
 
 def _load_numeric(path: Path) -> list[tuple[datetime, float | None]]:

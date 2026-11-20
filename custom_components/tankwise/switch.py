@@ -25,6 +25,7 @@ async def async_setup_entry(
     async_add_entities(
         [
             CompensationCapSwitch(coordinator, "compensation_cap"),
+            AntiLegionellaSwitch(coordinator, "anti_legionella"),
             *(
                 AppointmentSwitch(coordinator, appointment, "enabled")
                 for appointment in coordinator.appointments
@@ -74,3 +75,24 @@ class CompensationCapSwitch(TankWiseEntity, SwitchEntity):
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Mark the cap as not reached."""
         await self.coordinator.async_set_compensation_cap(False)
+
+
+class AntiLegionellaSwitch(TankWiseEntity, SwitchEntity):
+    """Weekly anti-legionella cycle: 60 °C or more for an hour."""
+
+    _platform = "switch"
+    _attr_translation_key = "anti_legionella"
+    _attr_entity_category = EntityCategory.CONFIG
+
+    @property
+    def is_on(self) -> bool:
+        """Return True when the cycle is planned."""
+        return self.coordinator.planner.anti_legionella
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Plan the weekly cycle."""
+        await self.coordinator.async_set_anti_legionella(True)
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Do not plan it."""
+        await self.coordinator.async_set_anti_legionella(False)

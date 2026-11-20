@@ -340,3 +340,42 @@ def test_boost_ends_while_the_plan_heats_keeps_heating() -> None:
     heating = {"manual": True, "power": 1500, "plan_heat": True}
     assert _orders(controller, _input(1, boost=True, **heating)) == []
     assert _orders(controller, _input(2, **heating)) == []  # the plan goes on
+
+
+# ----------------------------------------------------------------------
+# Selling the surplus
+# ----------------------------------------------------------------------
+
+
+def test_surplus_is_sold_and_the_output_restored() -> None:
+    controller = Controller()
+    assert _orders(controller, _input(0, sell_surplus=True, output=True)) == [
+        Order(Action.OUTPUT_OFF, Reason.SELL)
+    ]
+    assert _orders(controller, _input(1, sell_surplus=True, output=False)) == []
+    assert _orders(controller, _input(2, output=False)) == [
+        Order(Action.OUTPUT_ON, Reason.SELL_DONE)
+    ]
+    assert _orders(controller, _input(3, output=True)) == []
+
+
+def test_output_is_switched_on_before_heating() -> None:
+    controller = Controller()
+    _orders(controller, _input(0, sell_surplus=True, output=True))
+    assert _orders(
+        controller, _input(1, sell_surplus=True, output=False, plan_heat=True)
+    ) == [Order(Action.OUTPUT_ON, Reason.HEAT), *ON]
+
+
+def test_output_given_back_in_shadow_mode_and_untouched_without_switch() -> None:
+    controller = Controller()
+    _orders(controller, _input(0, sell_surplus=True, output=True))
+    assert _orders(controller, _input(1, active=False, output=False)) == [
+        Order(Action.OUTPUT_ON, Reason.MODE)
+    ]
+    assert _orders(controller, _input(2, sell_surplus=True)) == []  # no switch
+    # Shadow mode never sells.
+    assert (
+        _orders(controller, _input(3, active=False, sell_surplus=True, output=True))
+        == []
+    )
