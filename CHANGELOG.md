@@ -7,6 +7,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-20
+
+First phase of the full control of the water heater: TankWise learns the
+tank and the draws with the inputs it will use to control it. It still does
+not act on any device.
+
+### Added
+
+- New required inputs: water heater power switch, regulator manual mode
+  switch (e.g. FreeDS manual mode) and electricity purchase price.
+- New optional inputs: regulator master entity, home occupied, grid
+  injection price, grid import and export energy, current export power and
+  ambient temperature around the tank.
+- History import: on the first start the last 10 days of the recorder are
+  replayed through the tank model, so losses, cut-offs and draws are known
+  from day one.
+- Sensors: stored energy, hot water available (litres at the shower
+  temperature), modelled temperature, last draw (with energy, minimum
+  temperature and shortage), hot water shortages in the last 7 days, and the
+  diagnostic sensors heat loss coefficient (UA), learned heating power,
+  thermostat cut-off temperature, effective capacity factor and mains water
+  temperature.
+- Number entities: shower temperature (40 °C), minimum comfort temperature
+  (38 °C) and mains water temperature (0 = automatic).
+- Repair issue when required inputs are missing (e.g. after upgrading).
+- `tools/export_history.py` to export the history of the inputs through the
+  Home Assistant REST API for the simulation bench.
+
+### Changed
+
+- Standing losses are modelled as `UA · (T − T_ambient)` and UA is learned by
+  recursive least squares over rest windows of at least two hours.
+- The effective capacity factor (share of the heating energy seen by the
+  upper probe) is learned from heatings without draws.
+- Draws are detected from the residual between the observed and the predicted
+  probe change; each draw records its minimum temperature and whether it left
+  the water below the minimum comfort temperature.
+- The thermostat cut-off is detected with the manual mode switch as well as
+  the regulator output, and the last 20 cut-offs are kept.
+- The water heater energy sensor is now optional: without it the power is
+  integrated.
+- The mains water temperature of the region is interpolated day by day.
+- Defaults follow the reference installation: 1500 W and 68 °C cut-off.
+- Useful energy and charge are measured above the minimum comfort
+  temperature.
+
+### Removed
+
+- The "showers available" sensor and the energy per shower, minimum useful
+  temperature and comfort level options (replaced by the litres available and
+  the comfort settings). Existing entries are migrated automatically.
+- The bottom temperature probe input.
+
 ## [0.2.3] - 2026-11-17
 
 ### Added
@@ -86,7 +139,8 @@ and the heating plan will follow.
 - The output contract entities (energy needed, deadline, grid allowed,
   requested power and urgency) arrive in a later release.
 
-[Unreleased]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.2.3...HEAD
+[Unreleased]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.2.3...v0.3.0
 [0.2.3]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.2.0...v0.2.1
