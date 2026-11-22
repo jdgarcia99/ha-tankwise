@@ -9,6 +9,9 @@ import json
 import pytest
 from tankwise_model.tank import (
     DEFAULT_UA,
+    REASON_DATA_GAP,
+    REASON_FEW_LOSS_WINDOWS,
+    REASON_NEVER_CALIBRATED,
     HeaterState,
     ModelStatus,
     TankModel,
@@ -37,6 +40,8 @@ def test_full_heat_up(report_regulator: bool) -> None:
     model = TankModel()
     state = drive(model, sim, 10)
     assert state.status is ModelStatus.UNCERTAIN
+    assert state.status_reason == REASON_NEVER_CALIBRATED
+    assert state.uncertain_since is not None
 
     state = drive(model, sim, 60, regulator=100)
     assert state.heater_state is HeaterState.HEATING
@@ -54,6 +59,9 @@ def test_full_heat_up(report_regulator: bool) -> None:
     assert state.equivalent_temperature == pytest.approx(47.0, abs=0.2)
     assert error_kwh(state, sim) < 0.1
     assert state.status is ModelStatus.LEARNING
+    assert state.status_reason == REASON_FEW_LOSS_WINDOWS
+    assert state.uncertain_since is None
+    assert state.heater_power_samples > 0
     assert state.charge_percent == pytest.approx(100.0, abs=2)
     assert state.useful_energy_kwh == pytest.approx(0.1163 * 15, rel=0.02)
     assert model.consumptions == []
@@ -193,6 +201,9 @@ def test_restart_with_six_hour_gap() -> None:
 
     state = drive(restored, sim, 1)
     assert state.status is ModelStatus.UNCERTAIN
+    assert state.status_reason == REASON_DATA_GAP
+    # The reason survives a restart.
+    assert _restart(restored).status_reason() == REASON_DATA_GAP
     assert error_kwh(state, sim) < 0.15
     assert len(restored.consumptions) == 1  # nothing invented
     assert state.calibration_count == 1
@@ -431,3 +442,14 @@ def test_merge_keeps_evidence_but_not_incoherent_estimates() -> None:
     )
     fresh.merge_learning(coherent)
     assert fresh.as_dict()["ua"] == 1.05
+
+
+def test_status_reason_of_a_store_without_it() -> None:
+    """Stores saved before 0.10.2 have no reason: derived from the counts."""
+    model, _sim = _calibrated_model_after_shower()
+    data = model.as_dict()
+    data |= {"uncertain": True}
+    del data["uncertain_reason"], data["uncertain_since"]
+    assert TankModel.from_dict(data).status_reason() == REASON_DATA_GAP
+    data["calibration_count"] = 0
+    assert TankModel.from_dict(data).status_reason() == REASON_NEVER_CALIBRATED

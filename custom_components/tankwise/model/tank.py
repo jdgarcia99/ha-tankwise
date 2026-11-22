@@ -174,6 +174,15 @@ class ModelStatus(StrEnum):
     LEARNING = "learning"
 
 
+# Why the model is not calibrated (``TankState.status_reason``).
+REASON_CALIBRATED = "calibrated"
+# Uncertain: the stored energy is not anchored to a heating to the cut-off.
+REASON_NEVER_CALIBRATED = "never_calibrated"
+REASON_DATA_GAP = "data_gap"  # readings missing for more than LONG_GAP
+# Learning: not enough rest windows to trust the heat losses.
+REASON_FEW_LOSS_WINDOWS = "few_loss_windows"
+
+
 class HeaterState(StrEnum):
     """Heating element state machine."""
 
@@ -411,6 +420,10 @@ class TankState:
     calibration_count: int
     last_calibration: datetime | None
     last_consumption: ConsumptionEvent | None
+    # Why the status is not "calibrated", and the evidence of each parameter.
+    status_reason: str = REASON_CALIBRATED
+    uncertain_since: datetime | None = None
+    heater_power_samples: int = 0
 
     def loss_power_w(self, ambient_temperature: float) -> float | None:
         """Return the current standing loss in W."""
@@ -535,6 +548,8 @@ class TankModel:
         self._heater_power_samples = 0
         self._cutoff_samples: list[float] = []
         self._uncertain = True
+        self._uncertain_reason = REASON_NEVER_CALIBRATED
+        self._uncertain_since: datetime | None = None
         self._calibration_count = 0
         self._last_calibration: datetime | None = None
         self._last_valid_time: datetime | None = None
@@ -614,6 +629,25 @@ class TankModel:
         if self._loss_windows < MIN_LOSS_WINDOWS:
             return ModelStatus.LEARNING
         return ModelStatus.CALIBRATED
+
+    def status_reason(self) -> str:
+        """Return why the status is what it is (``REASON_*``).
+
+        Uncertain until a heating reaches the thermostat cut-off (never
+        calibrated, or readings missing for a while); then learning until
+        ``MIN_LOSS_WINDOWS`` rest windows have measured the heat losses.
+        """
+        if self._uncertain:
+            return self._uncertain_reason
+        if self._loss_windows < MIN_LOSS_WINDOWS:
+            return REASON_FEW_LOSS_WINDOWS
+        return REASON_CALIBRATED
+
+    def _set_uncertain(self, reason: str, now: datetime) -> None:
+        if not self._uncertain or self._uncertain_since is None:
+            self._uncertain_since = now
+        self._uncertain = True
+        self._uncertain_reason = reason
 
     def update(self, sample: TankSample, params: TankParams) -> TankState:
         """Process one sample and return the new state."""
@@ -764,6 +798,8 @@ class TankModel:
             "heater_power_samples": self._heater_power_samples,
             "cutoff_samples": list(self._cutoff_samples),
             "uncertain": self._uncertain,
+            "uncertain_reason": self._uncertain_reason,
+            "uncertain_since": _iso(self._uncertain_since),
             "calibration_count": self._calibration_count,
             "last_calibration": _iso(self._last_calibration),
             "last_valid_time": _iso(self._last_valid_time),
@@ -812,6 +848,15 @@ class TankModel:
             ]
             model._uncertain = bool(data["uncertain"])
             model._calibration_count = int(data["calibration_count"])
+            model._uncertain_reason = str(
+                data.get("uncertain_reason")
+                or (
+                    REASON_NEVER_CALIBRATED
+                    if model._calibration_count == 0
+                    else REASON_DATA_GAP
+                )
+            )
+            model._uncertain_since = _from_iso(data.get("uncertain_since"))
             model._last_calibration = _from_iso(data["last_calibration"])
             model._last_valid_time = _from_iso(data["last_valid_time"])
             last_energy = data["last_energy"]
@@ -831,7 +876,12 @@ class TankModel:
         self._filter.reset()
         self._probe = self._filter.update(sample.timestamp, sample.temperature)
         self._equivalent = self._clamp_temperature(self._probe, params)
-        self._uncertain = True
+        self._set_uncertain(
+            REASON_NEVER_CALIBRATED
+            if self._calibration_count == 0
+            else REASON_DATA_GAP,
+            sample.timestamp,
+        )
         self._last_valid_time = sample.timestamp
         self._last_energy = sample.energy
         self._last_power = sample.power
@@ -857,7 +907,7 @@ class TankModel:
         self._equivalent = self._clamp_temperature(predicted, params)
 
         if elapsed > LONG_GAP:
-            self._uncertain = True
+            self._set_uncertain(REASON_DATA_GAP, now)
         self._reset_runtime(now)
         self._last_valid_time = now
 
@@ -1122,6 +1172,7 @@ class TankModel:
             self._probe if regulator_confirmed else self.cutoff_temperature(params)
         )
         self._uncertain = False
+        self._uncertain_since = None
         self._calibration_count += 1
         self._last_calibration = now
         self._heater.episode_energy = 0.0
@@ -1614,6 +1665,9 @@ class TankModel:
             calibration_count=self._calibration_count,
             last_calibration=self._last_calibration,
             last_consumption=self._consumptions[-1] if self._consumptions else None,
+            status_reason=self.status_reason(),
+            uncertain_since=self._uncertain_since if self._uncertain else None,
+            heater_power_samples=self._heater_power_samples,
         )
 
 

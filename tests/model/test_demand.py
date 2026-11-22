@@ -124,9 +124,11 @@ def test_morning_shower_is_forecast_at_0630() -> None:
     assert morning == pytest.approx(MORNING_KWH, rel=0.05)
     # Nothing between 08:00 and 16:00.
     assert forecast.window(_at(day, 8), _at(day, 16), 0.9) == 0
-    # The P50 of the slots also adds up to one shower (no jitter loss).
+    # The slots share the mean shape (no jitter loss), scaled to the daily
+    # quantiles: the P90 of the slots covers the shower, the P50 is below.
     slots = [s for s in forecast.slots if _at(day, 6) <= s.start < _at(day, 7)]
-    assert sum(s.p50 for s in slots) == pytest.approx(MORNING_KWH, rel=0.05)
+    assert sum(s.p90 for s in slots) >= MORNING_KWH
+    assert 0 < sum(s.p50 for s in slots) <= sum(s.p90 for s in slots)
 
 
 def test_evening_block_p50_is_a_normal_day_and_p90_a_strong_day() -> None:
@@ -338,3 +340,101 @@ def test_reset() -> None:
     model, _ = _trained(days=3)
     model.reset()
     assert model.observations == []
+
+
+# ---------------------------------------------------------------------------
+# 0.10.2: slot quantiles from the mean shape (P90 never below P50)
+# ---------------------------------------------------------------------------
+
+
+def _profile_heavy_days_shower_earlier() -> tuple[DemandModel, datetime]:
+    """Light days shower at 19:30, heavy days at 18:00 and 18:30 (and more)."""
+    days = []
+    for offset in range(12):
+        day = FIRST + timedelta(days=offset)
+        slots = [0.0] * SLOTS_PER_DAY
+        slots[_index(6, 30)] = 0.6
+        if offset % 3 == 0:  # heavy: two early showers
+            slots[_index(18)] = 1.4
+            slots[_index(18, 30)] = 1.4
+        else:  # light: one late shower
+            slots[_index(19, 30)] = 1.2
+        days.append({"day": day.isoformat(), "workday": None, "slots": slots})
+    model = DemandModel.from_dict(
+        {
+            "format": 1,
+            "observations": days,
+            "marks": [],
+            "coverage": {},
+            "last_update": None,
+            "last_draw_start": None,
+        },
+        TZ,
+    )
+    return model, _at(FIRST + timedelta(days=12), 0)
+
+
+def _index(hour: int, minute: int = 0) -> int:
+    return hour * 4 + minute // 15
+
+
+def _old_daily_totals(model: DemandModel, now: datetime) -> tuple[float, float]:
+    """0.10.1: the end point of the quantile of the cumulative curves."""
+    day = now.date()
+    rows = [list(obs.slots) for obs in model.similar_days(day, PARAMS)]
+    weights = [
+        model.weight(obs, now, PARAMS) for obs in model.similar_days(day, PARAMS)
+    ]
+    totals = [sum(row) for row in rows]
+    return (
+        weighted_quantile(totals, weights, 0.5),
+        weighted_quantile(totals, weights, 0.9),
+    )
+
+
+def test_p90_is_never_below_p50() -> None:
+    model, now = _profile_heavy_days_shower_earlier()
+    forecast = model.forecast(now, PARAMS, hours=24)
+    for slot in forecast.slots:
+        assert slot.p90 >= slot.p50 - 1e-12, slot.start
+    p50 = [slot.p50 for slot in forecast.slots]
+    p90 = [slot.p90 for slot in forecast.slots]
+    for first in range(0, SLOTS_PER_DAY, 4):
+        for last in range(first + 1, SLOTS_PER_DAY + 1, 3):
+            assert sum(p90[first:last]) >= sum(p50[first:last]) - 1e-9
+    # The case of the report: 19:30 had P50 > 0 and P90 = 0.
+    assert p90[_index(19, 30)] > 0
+    evening = slice(_index(17), SLOTS_PER_DAY)
+    assert sum(p90[evening]) >= sum(p50[evening])
+
+
+def test_daily_totals_are_unchanged() -> None:
+    model, now = _profile_heavy_days_shower_earlier()
+    p50, p90 = model.day_totals(now.date(), now, PARAMS)
+    old = _old_daily_totals(model, now)
+    assert (p50, p90) == pytest.approx(old)
+    forecast = model.forecast(now, PARAMS, hours=24)
+    assert sum(slot.p50 for slot in forecast.slots) == pytest.approx(p50)
+    assert sum(slot.p90 for slot in forecast.slots) == pytest.approx(p90)
+    # A window of the whole day gives the same totals.
+    end = now + timedelta(days=1)
+    assert forecast.window(now, end, 0.5) == pytest.approx(p50)
+    assert forecast.window(now, end, 0.9) == pytest.approx(p90)
+
+
+def test_p90_peaks_when_p50_peaks() -> None:
+    model, now = _profile_heavy_days_shower_earlier()
+    forecast = model.forecast(now, PARAMS, hours=24)
+    p50 = [slot.p50 for slot in forecast.slots]
+    p90 = [slot.p90 for slot in forecast.slots]
+    assert p50.index(max(p50)) == p90.index(max(p90))
+
+
+def test_windows_keep_p90_above_p50() -> None:
+    """Demand left today and appointment blocks: quantiles of window totals."""
+    model, now = _profile_heavy_days_shower_earlier()
+    forecast = model.forecast(now, PARAMS, hours=24)
+    for hour in range(0, 24, 2):
+        start = now + timedelta(hours=hour)
+        end = now + timedelta(days=1)
+        assert forecast.window(start, end, 0.9) >= forecast.window(start, end, 0.5)

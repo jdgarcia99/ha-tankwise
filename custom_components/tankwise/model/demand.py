@@ -9,14 +9,17 @@ Days are grouped by type: per weekday, workday/weekend, or all alike. With a
 workday sensor, holidays are grouped with the weekend (or with Sundays in
 the per-weekday grouping) whatever the day of the week.
 
-Forecasts use quantiles of the **cumulative** demand curves of past days of
-the same type:
+Forecasts of the days of the same type:
 
-* the P50/P90 of a slot is the increment of the P50/P90 cumulative curve, so
-  the slots of a day add up to the P50/P90 of the daily total. Summing
-  per-slot quantiles instead would put a shower in every slot where one ever
-  happened (showers move by 15 to 30 minutes) and would count every possible
-  shower of a "strong" day on every day;
+* the P50/P90 of a slot is the weighted mean shape of the days (the mean
+  demand of each slot) scaled so that the day adds up to the P50/P90 of the
+  daily total: ``slot = shape · Q(total) / mean(total)``. Both quantiles
+  share the shape, so the P90 is never below the P50 in any slot or window
+  and peaks at the same time. Summing per-slot quantiles instead would put a
+  shower in every slot where one ever happened (showers move by 15 to 30
+  minutes); taking increments of a quantile of the cumulative curve is not
+  a quantile either (it can give a P90 below the P50 when the heavy days
+  shower earlier);
 * the demand of a window (e.g. until the next price valley) is the quantile
   of that window across past days, which keeps the correlation between the
   slots of a day.
@@ -154,11 +157,20 @@ class _DayCurves:
 
     rows: list[list[float]]
     weights: list[float]
+    slots_p50: list[float] = field(default_factory=list)
+    slots_p90: list[float] = field(default_factory=list)
+    # Rebuilt from the slots: cumulative[i] is the demand before slot i.
     cumulative_p50: list[float] = field(default_factory=list)
     cumulative_p90: list[float] = field(default_factory=list)
 
     def window(self, first: int, last: int, quantile: float) -> float:
-        """Quantile of the demand between slots ``first`` and ``last`` (excl.)."""
+        """Quantile of the demand between slots ``first`` and ``last`` (excl.).
+
+        The quantile of the window totals of the past days, not a difference
+        of cumulative points: monotone in the quantile (P90 >= P50), and the
+        whole day gives the same totals as :meth:`DemandModel.day_totals`.
+        Used for appointment blocks and the demand left today.
+        """
         if not self.rows or last <= first:
             return 0.0
         totals = [sum(row[first:last]) for row in self.rows]
@@ -451,19 +463,28 @@ class DemandModel:
         ]
         weights = [self.weight(obs, now, params) for obs in candidates]
         curves = _DayCurves(rows, weights)
-        if not rows:
+        weight_total = sum(weights)
+        if not rows or weight_total <= 0:
             return curves
-        cumulative = [list(_accumulate(row)) for row in rows]
-        for quantile, target in (
-            (Q50, curves.cumulative_p50),
-            (Q90, curves.cumulative_p90),
+        # Weighted mean shape of the days, and the quantiles of the totals.
+        shape = [
+            sum(row[index] * weight for row, weight in zip(rows, weights, strict=True))
+            / weight_total
+            for index in range(SLOTS_PER_DAY)
+        ]
+        mean_total = sum(shape)
+        totals = [sum(row) for row in rows]
+        for quantile, slots, cumulative in (
+            (Q50, curves.slots_p50, curves.cumulative_p50),
+            (Q90, curves.slots_p90, curves.cumulative_p90),
         ):
-            for index in range(SLOTS_PER_DAY + 1):
-                target.append(
-                    weighted_quantile(
-                        [row[index] for row in cumulative], weights, quantile
-                    )
-                )
+            scale = (
+                weighted_quantile(totals, weights, quantile) / mean_total
+                if mean_total > 0
+                else 0.0
+            )
+            slots.extend(value * scale for value in shape)
+            cumulative.extend(_accumulate(slots))
         return curves
 
     def slot_factors(self, now: datetime) -> list[float]:
@@ -516,9 +537,9 @@ class DemandModel:
                 curves = self._curves(day, local, params, workdays.get(day))
                 result.days[day] = curves
             index = _slot_index(moment)
-            if result.occupied and curves.rows:
-                p50 = curves.cumulative_p50[index + 1] - curves.cumulative_p50[index]
-                p90 = curves.cumulative_p90[index + 1] - curves.cumulative_p90[index]
+            if result.occupied and curves.slots_p50:
+                p50 = curves.slots_p50[index]
+                p90 = curves.slots_p90[index]
             else:
                 p50 = p90 = 0.0
             result.slots.append(ForecastSlot(moment, max(0.0, p50), max(0.0, p90)))
@@ -534,7 +555,7 @@ class DemandModel:
     ) -> tuple[float, float]:
         """Return the P50 and P90 of the total demand of a local day."""
         curves = self._curves(day, now, params, workday)
-        if not curves.rows:
+        if not curves.cumulative_p50:
             return 0.0, 0.0
         return curves.cumulative_p50[-1], curves.cumulative_p90[-1]
 
