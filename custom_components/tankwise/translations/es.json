@@ -279,6 +279,35 @@
           "calibrated": "Calibrado",
           "uncertain": "Incierto",
           "learning": "Aprendiendo"
+        },
+        "state_attributes": {
+          "reason": {
+            "name": "Motivo",
+            "state": {
+              "calibrated": "Calibrado",
+              "never_calibrated": "Nunca ha calentado hasta el corte del termostato",
+              "data_gap": "Faltaron lecturas un tiempo: esperando un calentamiento hasta el corte",
+              "few_loss_windows": "Aún no hay suficientes reposos para medir las pérdidas"
+            }
+          },
+          "missing": {
+            "name": "Falta"
+          },
+          "samples": {
+            "name": "Muestras"
+          },
+          "samples_needed": {
+            "name": "Muestras necesarias"
+          },
+          "uncertain_since": {
+            "name": "Incierto desde"
+          },
+          "last_calibration": {
+            "name": "Última calibración"
+          },
+          "calibration_count": {
+            "name": "Calibraciones"
+          }
         }
       },
       "last_draw": {

@@ -29,8 +29,8 @@ from .const import CONF_AMBIENT_TEMPERATURE
 from .coordinator import TankWiseConfigEntry, TankWiseCoordinator, TankWiseData
 from .diagnostics import risk_report
 from .entity import AppointmentEntity, TankWiseEntity
-from .model.demand import day_type
-from .model.tank import ModelStatus
+from .model.demand import MIN_READY_DAYS, day_type
+from .model.tank import MIN_CUTOFF_SAMPLES, MIN_LOSS_WINDOWS, ModelStatus
 
 PARALLEL_UPDATES = 0
 
@@ -90,6 +90,42 @@ def _demand_today_attributes(coordinator: TankWiseCoordinator) -> dict[str, Any]
         "day_type": day_type(today, params.mode, data.readings.workday),
         "observed_days": len(coordinator.demand.observations),
         "profile_status": coordinator.demand.status().value,
+    }
+
+
+def _model_status_attributes(coordinator: TankWiseCoordinator) -> dict[str, Any]:
+    """Why the model is uncertain or learning, and what it has learned."""
+    tank = coordinator.data.tank
+    missing = []
+    if tank.status is ModelStatus.UNCERTAIN:
+        # A heating to the thermostat cut-off anchors the stored energy.
+        missing.append("heating_to_cutoff")
+    if tank.loss_windows < MIN_LOSS_WINDOWS:
+        missing.append("loss_windows")
+    demand = coordinator.demand
+    return {
+        "reason": tank.status_reason,
+        "missing": missing,
+        "uncertain_since": tank.uncertain_since.isoformat()
+        if tank.uncertain_since
+        else None,
+        "last_calibration": tank.last_calibration.isoformat()
+        if tank.last_calibration
+        else None,
+        "calibration_count": tank.calibration_count,
+        "samples": {
+            "cutoff": len(tank.cutoff_samples),
+            "heater_power": tank.heater_power_samples,
+            "loss_windows": tank.loss_windows,
+            "capacity_factor": tank.capacity_samples,
+            "usable_factor": tank.usable_samples,
+            "profile_days": len(demand.observations),
+        },
+        "samples_needed": {
+            "cutoff": MIN_CUTOFF_SAMPLES,
+            "loss_windows": MIN_LOSS_WINDOWS,
+            "profile_days": MIN_READY_DAYS,
+        },
     }
 
 
@@ -270,6 +306,7 @@ SENSORS: tuple[TankWiseSensorDescription, ...] = (
         device_class=SensorDeviceClass.ENUM,
         options=[status.value for status in ModelStatus],
         value_fn=lambda data: data.tank.status.value,
+        attributes_fn=_model_status_attributes,
     ),
     TankWiseSensorDescription(
         key="last_draw",

@@ -134,7 +134,7 @@ are translated.
 | Hot water available | Useful litres at the shower temperature before the water runs below the comfort temperature (theoretical litres as an attribute) |
 | Plan at risk (binary) | On when hot water cannot be guaranteed: an appointment needs more than a full tank gives, the usual demand is not covered, or the regulator or the probe is unavailable before an appointment (`reasons` attribute) |
 | Modelled temperature | Equivalent tank temperature tracked by the model |
-| Model status | `calibrated`, `learning` or `uncertain` |
+| Model status | `calibrated`, `learning` or `uncertain`; attributes `reason`, `missing` (what is needed to calibrate) and the `samples` of each learned parameter |
 | Last draw | Start of the last hot water draw, with its energy, minimum temperature and whether there was a shortage |
 | Hot water shortages (7 days) | Draws that took the water at least 1.5 °C below the minimum comfort temperature |
 | Hot water demand today | Energy a strong day needs (P90), with the usual day (P50) and the rest of today as attributes |

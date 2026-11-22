@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.2] - 2026-11-22
+
+### Fixed
+
+- The demand forecast could give a slot a P90 below its P50 (e.g. 19:30:
+  P50 1.22 kWh, P90 0), and a P90 evening below the P50 one: slots were
+  increments of the quantile of the cumulative curve, which are not
+  quantiles (wrong when the heavy days shower earlier). Each slot is now the
+  weighted mean shape of the days scaled to the P50/P90 of the daily total,
+  so the P90 is never below the P50 in any slot or window and peaks at the
+  same time. Daily totals, appointment blocks and the demand left today
+  (quantiles of window totals) do not change.
+
+### Added
+
+- `sensor.tankwise_model_status` attributes: `reason` (`never_calibrated`,
+  `data_gap`, `few_loss_windows` or `calibrated`), `missing` (a heating to
+  the cut-off, loss windows), `uncertain_since`, the last calibration and the
+  samples of each learned parameter (cut-off, heater power, heat losses,
+  capacity and usable factors, profile days) with the samples needed.
+
 ## [0.10.1] - 2026-11-20
 
 ### Fixed
@@ -522,7 +543,8 @@ and the heating plan will follow.
 - The output contract entities (energy needed, deadline, grid allowed,
   requested power and urgency) arrive in a later release.
 
-[Unreleased]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.10.1...HEAD
+[Unreleased]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.10.2...HEAD
+[0.10.2]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.10.1...v0.10.2
 [0.10.1]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.8.0...v0.9.0

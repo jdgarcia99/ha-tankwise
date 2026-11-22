@@ -279,6 +279,35 @@
           "calibrated": "Calibrated",
           "uncertain": "Uncertain",
           "learning": "Learning"
+        },
+        "state_attributes": {
+          "reason": {
+            "name": "Reason",
+            "state": {
+              "calibrated": "Calibrated",
+              "never_calibrated": "Never heated to the thermostat cut-off",
+              "data_gap": "Readings missing for a while: waiting for a heating to the cut-off",
+              "few_loss_windows": "Not enough rest periods to measure the heat losses"
+            }
+          },
+          "missing": {
+            "name": "Missing"
+          },
+          "samples": {
+            "name": "Samples"
+          },
+          "samples_needed": {
+            "name": "Samples needed"
+          },
+          "uncertain_since": {
+            "name": "Uncertain since"
+          },
+          "last_calibration": {
+            "name": "Last calibration"
+          },
+          "calibration_count": {
+            "name": "Calibrations"
+          }
         }
       },
       "last_draw": {

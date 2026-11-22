@@ -53,6 +53,10 @@ balance, one sample per minute:
   learned a window implying less than half or more than 1.8 times the current
   value is rejected: a slow draw cannot be told apart from losses inside one
   window.
+- **Status**: `uncertain` until a heating reaches the thermostat cut-off
+  (never calibrated, or readings missing for more than 30 minutes), then
+  `learning` until three rest windows have measured the losses, then
+  `calibrated`. The status sensor says why (`reason`) and what is missing.
 - **Thermostat cut-off**: the regulator asks for power and the element draws
   none for three minutes. The regulator state is captured at the instant the
   power falls, from state change events, because an external order may switch
@@ -80,10 +84,14 @@ of data with the house occupied). For each day type (weekday, workday and
 weekend, or all alike; holidays from the Workday integration count as
 non-working days) the last N days are kept with a three-week half-life.
 
-Quantiles are taken on the **cumulative curve** of each day, never slot by
-slot: the P90 of a window is the P90 of the energy drawn in that window across
-the past days. A per-slot P90 would put a shower in every slot where there ever
-was one. Shortages raise the forecast around their time by up to 20 %, fading
+Quantiles are never taken slot by slot: a per-slot P90 would put a shower in
+every slot where there ever was one. Each slot is the weighted mean shape of
+the days (recent days weigh more) scaled so the day adds up to the quantile
+of the daily total: `slot = shape · Q(total) / mean(total)`. P50 and P90 share
+the shape, so the P90 is never below the P50 in any slot or window and peaks
+at the same time. The demand of a window (an appointment block, the rest of
+today) is the quantile of the energy drawn in that window across the past
+days, which keeps the correlation between the slots of a day. Shortages raise the forecast around their time by up to 20 %, fading
 out over two weeks; several shortages at the same time do not compound.
 
 **Appointments** are hard constraints: at the start of the block, the useful

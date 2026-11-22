@@ -269,6 +269,11 @@ async def test_sensors_from_first_reading(
     assert liters.attributes["shower_temperature"] == 40.0
     assert float(hass.states.get(TANK_TEMPERATURE).state) == 60.0
     assert hass.states.get(STATUS).state == "uncertain"
+    status = hass.states.get(STATUS).attributes
+    assert status["reason"] == "never_calibrated"
+    assert status["missing"] == ["heating_to_cutoff", "loss_windows"]
+    assert status["samples"]["profile_days"] == 0
+    assert status["samples_needed"]["loss_windows"] == 3
     assert hass.states.get(LAST_DRAW).state == "unknown"
     assert hass.states.get(SHORTAGES).state == "0"
     assert float(hass.states.get(UA).state) == 1.0
@@ -417,6 +422,11 @@ async def test_restores_state_after_short_restart(
     await _setup(hass, mock_entry)
 
     assert hass.states.get(STATUS).state == "calibrated"
+    status = hass.states.get(STATUS).attributes
+    assert status["reason"] == "calibrated"
+    assert status["missing"] == []
+    assert status["samples"]["cutoff"] == 3
+    assert status["calibration_count"] == 3
     assert float(hass.states.get(UA).state) == 0.9
     assert float(hass.states.get(HEATER_POWER).state) == 1490.0
     assert float(hass.states.get(CUTOFF).state) == 67.0

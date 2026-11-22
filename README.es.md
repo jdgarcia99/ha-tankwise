@@ -135,7 +135,7 @@ nombres visibles están traducidos.
 | Agua caliente disponible | Litros útiles a la temperatura de ducha antes de que el agua baje de la temperatura de confort (litros teóricos como atributo) |
 | Plan en riesgo (binario) | Encendido cuando no se puede garantizar el agua caliente: una cita necesita más de lo que da el depósito lleno, la demanda habitual no se cubre, o el regulador o la sonda no están disponibles antes de una cita (atributo `reasons`) |
 | Temperatura modelada | Temperatura equivalente del depósito según el modelo |
-| Estado del modelo | `calibrated`, `learning` o `uncertain` |
+| Estado del modelo | `calibrated`, `learning` o `uncertain`; atributos `reason`, `missing` (lo que falta para calibrar) y las muestras (`samples`) de cada parámetro aprendido |
 | Última extracción | Inicio de la última extracción, con su energía, temperatura mínima y si hubo falta de agua |
 | Faltas de agua caliente (7 días) | Extracciones que dejaron el agua al menos 1,5 °C por debajo de la temperatura mínima de confort |
 | Demanda de agua caliente hoy | Energía que necesita un día fuerte (P90), con el día habitual (P50) y el resto de hoy como atributos |
