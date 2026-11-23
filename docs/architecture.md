@@ -112,6 +112,19 @@ L_useful = k_use · V · (T − T_comfort) / (T_shower − T_mains)
 heating until the probe crossed the comfort temperature, over the litres
 predicted then). The inverse gives the temperature an appointment needs.
 
+In a **stratified** tank (learned with a hot water meter: at least
+`MIN_STRATIFICATION_SAMPLES` samples and a ratio at most
+`STRATIFIED_MAX_RATIO`, 0.8) the cold water stays at the bottom and the water
+leaves hot until the hot layer is used up, so the useful floor is the mains
+water instead of the comfort temperature: useful energy `k_use · C · (T − T_mains)`
+(the mixing zone is lost), `L = k_use · V · (T − T_mains) / (T_shower − T_mains)`.
+The modelled temperature stays the mixed equivalent of the stored energy;
+the estimated outlet temperature (modelled plus the stratification offset)
+is the hot layer the probe sees. The useful floor (`TankState.useful_floor_temperature`)
+is what the appointments, the boost by litres and the optimiser use as their
+comfort level, so the plan compares useful energy needed with useful energy
+available on the same basis.
+
 ## Demand
 
 Draws are spread over 15-minute slots of each observed day (at least 20 hours

@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.1] - 2026-11-23
+
+### Fixed
+
+- With the stratification learned, the available litres, the temperature an
+  appointment needs and the plan treated the tank as mixed: only the heat
+  above the comfort temperature of the mixed equivalent was useful. On 23/11
+  at 20:45 (about 3.6 kWh above the mains water, 44.3 °C mixed, 56.9 °C at
+  the probe) TankWise showed 21 L available, asked 70.3 °C for the evening
+  appointment and planned a grid heating at 21:00. Once the stratification
+  is learned (at least 3 samples, the probe falling at most 80 % of a mixed
+  tank) the useful energy is `k_use` times the energy above the mains water:
+  about 104 L available, 45.8 °C for the evening appointment, and no grid
+  heating before midnight. The appointments, the boost by litres, the plan
+  and its risk use the same useful floor. Without learned stratification
+  nothing changes.
+
+### Added
+
+- `sensor.tankwise_outlet_temperature` (estimated outlet temperature): the
+  hot layer at the outlet, consistent with the probe, next to the modelled
+  (mixed) temperature. `stratified` and `useful_floor_temperature` attributes
+  in the available litres sensor.
+
 ## [0.12.0] - 2026-11-23
 
 ### Added
@@ -650,7 +674,8 @@ and the heating plan will follow.
 - The output contract entities (energy needed, deadline, grid allowed,
   requested power and urgency) arrive in a later release.
 
-[Unreleased]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.12.1...HEAD
+[0.12.1]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.12.0...v0.12.1
 [0.12.0]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.11.1...v0.12.0
 [0.11.1]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.10.2...v0.11.0

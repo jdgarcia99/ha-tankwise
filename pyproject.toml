@@ -1,6 +1,6 @@
 [project]
 name = "ha-tankwise"
-version = "0.12.0"
+version = "0.12.1"
 description = "Home Assistant integration that plans the energy needs of an electric hot water tank."
 license = "MIT"
 requires-python = ">=3.14"

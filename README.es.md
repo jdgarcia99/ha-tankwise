@@ -146,9 +146,10 @@ nombres visibles están traducidos.
 | Energía almacenada | kWh almacenados por encima de la temperatura del agua de red |
 | Energía útil | kWh almacenados por encima de la temperatura mínima de confort |
 | Carga | Energía útil en porcentaje de un depósito lleno |
-| Agua caliente disponible | Litros útiles a la temperatura de ducha antes de que el agua baje de la temperatura de confort (litros teóricos como atributo) |
+| Agua caliente disponible | Litros útiles a la temperatura de ducha antes de que el agua baje de la temperatura de confort; en un depósito estratificado, `k_use` por la energía sobre la red (atributos: litros teóricos, `stratified`, `useful_floor_temperature`) |
 | Plan en riesgo (binario) | Encendido cuando no se puede garantizar el agua caliente: una cita necesita más de lo que da el depósito lleno, la demanda habitual no se cubre, o el regulador o la sonda no están disponibles antes de una cita (atributo `reasons`) |
-| Temperatura modelada | Temperatura equivalente del depósito según el modelo |
+| Temperatura modelada | Temperatura equivalente (mezclada) del depósito según el modelo: la energía almacenada expresada como temperatura |
+| Temperatura de salida estimada | Temperatura de la capa caliente a la salida, la que ve la sonda: la temperatura modelada más la estratificación esperada (igual a ella en un depósito mezclado) |
 | Estado del modelo | `calibrated`, `learning` o `uncertain`; atributos `reason`, `missing` (lo que falta para calibrar) y las muestras (`samples`) de cada parámetro aprendido |
 | Última extracción | Inicio de la última extracción, con su energía, sus litros (con caudalímetro), temperatura mínima y si hubo falta de agua |
 | Faltas de agua caliente (7 días) | Extracciones que dejaron el agua al menos 1,5 °C por debajo de la temperatura mínima de confort |
@@ -341,7 +342,12 @@ de sol), no se calienta nada de más.
   que solo se aprovecha el calor por encima de la temperatura de confort:
   litros útiles a la temperatura de ducha
   `L = k_use · V · (T − T_confort) / (T_ducha − T_red)`, con `k_use` aprendido
-  de las faltas reales.
+  de las faltas reales. Cuando el caudalímetro ha enseñado la estratificación
+  (al menos 3 muestras y la sonda bajando como mucho el 80 % de un depósito
+  mezclado), el agua sale caliente mientras el agua fría llena el fondo, así
+  que es útil la energía sobre el **agua de red**, por `k_use` (se pierde la
+  zona de mezcla): `L = k_use · V · (T − T_red) / (T_ducha − T_red)`. El mismo
+  límite se usa en las citas, el plan y su riesgo.
 - **Pérdidas.** `P = UA · (T − T_ambiente)`. UA se aprende por mínimos
   cuadrados recursivos con la pendiente de la sonda en ventanas de reposo de
   al menos dos horas (sin calentar ni extracciones), entre 0,3 y 3 W/K.

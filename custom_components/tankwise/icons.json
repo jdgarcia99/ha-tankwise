@@ -16,6 +16,9 @@
       "tank_temperature": {
         "default": "mdi:thermometer-water"
       },
+      "outlet_temperature": {
+        "default": "mdi:water-thermometer-outline"
+      },
       "model_status": {
         "default": "mdi:check-circle-outline",
         "state": {

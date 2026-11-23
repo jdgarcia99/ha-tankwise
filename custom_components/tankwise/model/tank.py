@@ -181,6 +181,9 @@ MAX_STRATIFICATION_RATIO = 1.5
 MAX_STRATIFICATION_SAMPLES = 20
 MIN_STRATIFICATION_SAMPLES = 3
 STRATIFICATION_BAND = 5.0  # °C, samples this close to a temperature are used
+# The tank is treated as stratified (useful energy down to the mains water,
+# times k_use) once the ratio is learned and clearly below a mixed tank's.
+STRATIFIED_MAX_RATIO = 0.8
 # With a meter the energy balance is trusted: the probe only corrects the
 # model beyond this difference (resolution and noise of the probe).
 METERED_PROBE_DEADBAND = 1.0  # °C
@@ -587,6 +590,15 @@ class TankState:
     # Hot water meter: probe drop per litre against a mixed tank (1: mixed).
     stratification_ratio: float = 1.0
     stratification_samples: int = 0
+    # Stratification learned: the useful energy is k_use times the energy
+    # above the mains water, not the energy above the comfort temperature of
+    # a mixed tank. ``useful_floor_temperature`` is that lower limit (the
+    # comfort temperature, or the mains water when stratified).
+    stratified: bool = False
+    useful_floor_temperature: float = 38.0
+    # Temperature of the hot layer at the outlet (what the probe sees), as
+    # opposed to the equivalent (mixed) temperature.
+    outlet_temperature: float | None = None
 
     def loss_power_w(self, ambient_temperature: float) -> float | None:
         """Return the current standing loss in W."""
@@ -826,6 +838,30 @@ class TankModel:
         if len(samples) >= MIN_STRATIFICATION_SAMPLES:
             return median(ratio for _, ratio in samples)
         return 1.0
+
+    @property
+    def stratified(self) -> bool:
+        """Return True when the tank is known to be stratified.
+
+        Enough metered draws showed the probe falling clearly less than a
+        mixed tank would.
+        """
+        return (
+            len(self._stratification) >= MIN_STRATIFICATION_SAMPLES
+            and self.stratification_ratio() <= STRATIFIED_MAX_RATIO
+        )
+
+    def useful_floor_temperature(self, params: TankParams) -> float:
+        """Return the temperature down to which the stored energy is useful.
+
+        In a mixed tank only the heat above the comfort temperature is
+        usable. In a stratified tank the water leaves hot while cold water
+        fills the bottom: the energy above the mains water is usable, times
+        the learned ``k_use`` (the mixing zone is lost).
+        """
+        if self.stratified:
+            return params.mains_temperature
+        return params.comfort_min_temperature
 
     @property
     def stratification_samples(self) -> list[tuple[float, float]]:
@@ -2173,14 +2209,20 @@ class TankModel:
     ) -> TankState:
         cutoff = self.cutoff_temperature(params)
         equivalent = self._equivalent if available else None
-        stored = useful = charge = liters = theoretical = None
+        stored = useful = charge = liters = theoretical = outlet = None
+        stratified = self.stratified
+        floor = self.useful_floor_temperature(params)
         if equivalent is not None:
             capacity = params.heat_capacity
             mains = params.mains_temperature
             stored = max(0.0, capacity * (equivalent - mains))
-            comfort = params.comfort_min_temperature
-            useful = max(0.0, capacity * (equivalent - comfort))
-            full_useful = capacity * (cutoff - comfort)
+            # Stratified: k_use times the energy above the mains water.
+            share = self.usable_factor if stratified else 1.0
+            useful = max(0.0, share * capacity * (equivalent - floor))
+            full_useful = share * capacity * (cutoff - floor)
+            outlet = self._clamp_temperature(
+                equivalent + self._stratification_offset, params
+            )
             charge = (
                 _clamp(100 * useful / full_useful, 0.0, 100.0)
                 if full_useful > 0
@@ -2191,10 +2233,7 @@ class TankModel:
                 theoretical = max(0.0, params.volume_l * (equivalent - mains) / span)
                 liters = max(
                     0.0,
-                    self.usable_factor
-                    * params.volume_l
-                    * (equivalent - comfort)
-                    / span,
+                    self.usable_factor * params.volume_l * (equivalent - floor) / span,
                 )
             else:
                 theoretical = liters = 0.0
@@ -2231,6 +2270,9 @@ class TankModel:
                 self._probe if available else None
             ),
             stratification_samples=len(self._stratification),
+            stratified=stratified,
+            useful_floor_temperature=floor,
+            outlet_temperature=outlet,
         )
 
 
