@@ -56,6 +56,13 @@ def parse_measurement(value: str, unit: str | None, kind: str) -> float:
     return converter.convert(number, unit, target)
 
 
+def parse_text(value: str) -> str:
+    """Return a text state (a mode, a reason) or raise InputError if unusable."""
+    if value in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+        raise InputError(value)
+    return value
+
+
 def parse_bool(value: str) -> bool:
     """Return an on/off state or raise InputError."""
     if value in ON_STATES:

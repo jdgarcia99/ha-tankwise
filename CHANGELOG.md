@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-11-23
+
+### Fixed
+
+- A power cut of the diverter was learned as a thermostat cut-off: the
+  element stops drawing power, but the regulator entities keep their last
+  state (100 %, manual off) for about two minutes before they are reported
+  unavailable. On 23/11 a cut at 11:47:56 became a 60.9 °C sample. A power
+  drop is no longer a cut-off when, from one minute before it to two minutes
+  after it, the regulator was unavailable, restarted (lower uptime or a new
+  restart reason), was in a mode that does not heat, or asked for 0 %. The
+  history import applies the same rule.
+- Once a cut-off is known, a new sample must be within 4 °C of it (it was
+  12 °C below the configured cut-off). Until the first sample the old rule
+  applies.
+
+### Added
+
+- Optional inputs for the regulator health: mode entity and the modes that
+  heat (Auto and Manual by default), uptime sensor and restart reason sensor.
+  The regulator output switch, if configured, also counts when unavailable.
+- Services `tankwise.discard_last_cutoff_sample` and
+  `tankwise.discard_cutoff_sample` (by `value` or `index`) to forget a wrong
+  cut-off sample; the cut-off, the model status and the plan are computed
+  again. Both return the sample removed and the samples left.
+
 ## [0.10.2] - 2026-11-22
 
 ### Fixed
@@ -543,7 +569,8 @@ and the heating plan will follow.
 - The output contract entities (energy needed, deadline, grid allowed,
   requested power and urgency) arrive in a later release.
 
-[Unreleased]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.10.2...HEAD
+[Unreleased]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.10.2...v0.11.0
 [0.10.2]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.10.1...v0.10.2
 [0.10.1]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.9.0...v0.10.0

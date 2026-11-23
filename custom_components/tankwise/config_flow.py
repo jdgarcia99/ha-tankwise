@@ -10,7 +10,9 @@ from uuid import uuid4
 from homeassistant.components.binary_sensor import DOMAIN as BINARY_SENSOR_DOMAIN
 from homeassistant.components.input_boolean import DOMAIN as INPUT_BOOLEAN_DOMAIN
 from homeassistant.components.input_number import DOMAIN as INPUT_NUMBER_DOMAIN
+from homeassistant.components.input_select import DOMAIN as INPUT_SELECT_DOMAIN
 from homeassistant.components.number import DOMAIN as NUMBER_DOMAIN
+from homeassistant.components.select import DOMAIN as SELECT_DOMAIN
 from homeassistant.components.sensor import (
     ATTR_STATE_CLASS,
     DOMAIN as SENSOR_DOMAIN,
@@ -78,9 +80,13 @@ from .const import (
     CONF_PROFILE_DAYS,
     CONF_PROFILE_MODE,
     CONF_RATED_POWER,
+    CONF_REGULATOR_ACTIVE_MODES,
     CONF_REGULATOR_MARGIN,
+    CONF_REGULATOR_MODE_ENTITY,
     CONF_REGULATOR_OUTPUT_SWITCH,
+    CONF_REGULATOR_RESTART_REASON_SENSOR,
     CONF_REGULATOR_SENSOR,
+    CONF_REGULATOR_UPTIME_SENSOR,
     CONF_RESCUE,
     CONF_SOLAR_FORECAST_ENTRIES,
     CONF_TEMPERATURE_SENSOR,
@@ -104,6 +110,7 @@ from .model.appointments import (
     Appointment,
 )
 from .model.demand import WEEKDAY_NAMES, DayTypeMode
+from .model.tank import DEFAULT_REGULATOR_ACTIVE_MODES
 from .model.water import REGIONS
 from .solar_forecast import async_forecast_entries
 
@@ -198,6 +205,19 @@ OPTIONAL_INPUTS_SCHEMA = vol.Schema(
         vol.Optional(CONF_REGULATOR_OUTPUT_SWITCH): _entity_selector(
             [SWITCH_DOMAIN, INPUT_BOOLEAN_DOMAIN]
         ),
+        vol.Optional(CONF_REGULATOR_MODE_ENTITY): _entity_selector(
+            [SELECT_DOMAIN, INPUT_SELECT_DOMAIN]
+        ),
+        vol.Optional(CONF_REGULATOR_ACTIVE_MODES): SelectSelector(
+            SelectSelectorConfig(
+                options=list(DEFAULT_REGULATOR_ACTIVE_MODES),
+                multiple=True,
+                custom_value=True,
+                mode=SelectSelectorMode.DROPDOWN,
+            )
+        ),
+        vol.Optional(CONF_REGULATOR_UPTIME_SENSOR): _sensor_selector(),
+        vol.Optional(CONF_REGULATOR_RESTART_REASON_SENSOR): _sensor_selector(),
     }
 )
 
@@ -388,6 +408,9 @@ def _validate_optional_inputs(
         CONF_OCCUPANCY_ENTITY,
         CONF_WORKDAY_ENTITY,
         CONF_REGULATOR_OUTPUT_SWITCH,
+        CONF_REGULATOR_MODE_ENTITY,
+        CONF_REGULATOR_UPTIME_SENSOR,
+        CONF_REGULATOR_RESTART_REASON_SENSOR,
     ):
         if (entity_id := user_input.get(key)) and (
             error := _validate_exists(hass, entity_id)

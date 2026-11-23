@@ -216,6 +216,12 @@
     },
     "cancel_boost": {
       "service": "mdi:fire-off"
+    },
+    "discard_last_cutoff_sample": {
+      "service": "mdi:thermometer-off"
+    },
+    "discard_cutoff_sample": {
+      "service": "mdi:thermometer-minus"
     }
   }
 }

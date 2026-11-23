@@ -35,7 +35,11 @@
           "ambient_sensor": "Ambient temperature around the tank",
           "workday_entity": "Workday sensor",
           "solar_forecast_entries": "Solar production forecast",
-          "regulator_output_switch": "Regulator output switch"
+          "regulator_output_switch": "Regulator output switch",
+          "regulator_mode_entity": "Regulator mode",
+          "regulator_active_modes": "Regulator heating modes",
+          "regulator_uptime_sensor": "Regulator uptime",
+          "regulator_restart_reason_sensor": "Regulator restart reason"
         },
         "data_description": {
           "energy_sensor": "Recommended. Cumulative energy of the water heater (total or total increasing). Without it, the power is integrated.",
@@ -49,7 +53,11 @@
           "ambient_sensor": "Temperature of the room where the tank is. Without it, the fixed value of the options is used.",
           "workday_entity": "Binary sensor of the Workday integration. With it, holidays are learned apart from workdays and appointments can be set for workdays or holidays.",
           "solar_forecast_entries": "Forecast.Solar, Solcast or Open-Meteo Solar Forecast entries (several are summed, e.g. one per roof plane). The plan counts on the expected surplus: the forecast minus what the house uses at each hour, learned from the grid export.",
-          "regulator_output_switch": "Switch that enables the regulator output (FreeDS 'PWM enabled'). With it, when the injection price pays more than heating later costs, TankWise switches it off so the surplus is sold; it is switched on again before any heating."
+          "regulator_output_switch": "Switch that enables the regulator output (FreeDS 'PWM enabled'). With it, when the injection price pays more than heating later costs, TankWise switches it off so the surplus is sold; it is switched on again before any heating.",
+          "regulator_mode_entity": "Select with the regulator mode. A power drop while it is in a mode that does not heat (or unavailable) is not a thermostat cut-off.",
+          "regulator_active_modes": "Modes of the regulator that heat. Default: Auto and Manual.",
+          "regulator_uptime_sensor": "Uptime of the regulator (s). A lower value means it restarted: a power drop around a restart is not a thermostat cut-off.",
+          "regulator_restart_reason_sensor": "Reason of the regulator's last restart. A new reason means it restarted."
         }
       },
       "reconfigure": {
@@ -141,7 +149,11 @@
           "ambient_sensor": "Ambient temperature around the tank",
           "workday_entity": "Workday sensor",
           "solar_forecast_entries": "Solar production forecast",
-          "regulator_output_switch": "Regulator output switch"
+          "regulator_output_switch": "Regulator output switch",
+          "regulator_mode_entity": "Regulator mode",
+          "regulator_active_modes": "Regulator heating modes",
+          "regulator_uptime_sensor": "Regulator uptime",
+          "regulator_restart_reason_sensor": "Regulator restart reason"
         },
         "data_description": {
           "energy_sensor": "Recommended. Cumulative energy of the water heater (total or total increasing). Without it, the power is integrated.",
@@ -150,7 +162,11 @@
           "ambient_sensor": "Temperature of the room where the tank is. Without it, the fixed value of the parameters is used.",
           "workday_entity": "Binary sensor of the Workday integration. With it, holidays are learned apart from workdays and appointments can be set for workdays or holidays.",
           "solar_forecast_entries": "Forecast.Solar, Solcast or Open-Meteo Solar Forecast entries (several are summed, e.g. one per roof plane). The plan counts on the expected surplus: the forecast minus what the house uses at each hour, learned from the grid export.",
-          "regulator_output_switch": "Switch that enables the regulator output (FreeDS 'PWM enabled'). With it, when the injection price pays more than heating later costs, TankWise switches it off so the surplus is sold; it is switched on again before any heating."
+          "regulator_output_switch": "Switch that enables the regulator output (FreeDS 'PWM enabled'). With it, when the injection price pays more than heating later costs, TankWise switches it off so the surplus is sold; it is switched on again before any heating.",
+          "regulator_mode_entity": "Select with the regulator mode. A power drop while it is in a mode that does not heat (or unavailable) is not a thermostat cut-off.",
+          "regulator_active_modes": "Modes of the regulator that heat. Default: Auto and Manual.",
+          "regulator_uptime_sensor": "Uptime of the regulator (s). A lower value means it restarted: a power drop around a restart is not a thermostat cut-off.",
+          "regulator_restart_reason_sensor": "Reason of the regulator's last restart. A new reason means it restarted."
         }
       },
       "appointments": {
@@ -837,6 +853,34 @@
           "description": "TankWise instance. All of them if empty."
         }
       }
+    },
+    "discard_last_cutoff_sample": {
+      "name": "Discard the last cut-off sample",
+      "description": "Forgets the last learned thermostat cut-off temperature (for example one caused by a power cut) and computes the cut-off again.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Water heater",
+          "description": "TankWise instance. All of them if empty."
+        }
+      }
+    },
+    "discard_cutoff_sample": {
+      "name": "Discard a cut-off sample",
+      "description": "Forgets one learned thermostat cut-off temperature, given by its value or its position, and computes the cut-off again. The samples are listed in the diagnostics.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Water heater",
+          "description": "TankWise instance. All of them if empty."
+        },
+        "value": {
+          "name": "Value",
+          "description": "Temperature of the sample to discard; the closest one within 0.5 °C."
+        },
+        "index": {
+          "name": "Position",
+          "description": "Position of the sample, 0 being the oldest and -1 the newest."
+        }
+      }
     }
   },
   "exceptions": {
@@ -845,6 +889,9 @@
     },
     "boost_mode_off": {
       "message": "A boost cannot start while TankWise is off."
+    },
+    "cutoff_sample_not_found": {
+      "message": "No cut-off sample of {name} matches. Learned samples: {samples} °C."
     }
   }
 }

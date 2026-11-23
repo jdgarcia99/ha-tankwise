@@ -35,7 +35,11 @@
           "ambient_sensor": "Temperatura ambiente junto al termo",
           "workday_entity": "Sensor de días laborables",
           "solar_forecast_entries": "Previsión de producción solar",
-          "regulator_output_switch": "Interruptor de salida del regulador"
+          "regulator_output_switch": "Interruptor de salida del regulador",
+          "regulator_mode_entity": "Modo del regulador",
+          "regulator_active_modes": "Modos del regulador que calientan",
+          "regulator_uptime_sensor": "Tiempo encendido del regulador",
+          "regulator_restart_reason_sensor": "Motivo del último reinicio del regulador"
         },
         "data_description": {
           "energy_sensor": "Recomendada. Energía acumulada del termo (total o total creciente). Sin ella se integra la potencia.",
@@ -49,7 +53,11 @@
           "ambient_sensor": "Temperatura de la estancia donde está el termo. Sin ella se usa el valor fijo de las opciones.",
           "workday_entity": "Sensor binario de la integración Workday. Con él, los festivos se aprenden aparte de los laborables y las citas se pueden fijar para laborables o festivos.",
           "solar_forecast_entries": "Entradas de Forecast.Solar, Solcast u Open-Meteo Solar Forecast (varias se suman, p. ej. una por cada orientación del tejado). El plan cuenta con el excedente esperado: la previsión menos lo que consume la casa en cada hora, aprendido de la exportación a red.",
-          "regulator_output_switch": "Interruptor que habilita la salida del regulador ('PWM enabled' de FreeDS). Con él, cuando la inyección se paga más de lo que cuesta calentar después, TankWise lo apaga para vender el excedente; se vuelve a encender antes de cualquier calentamiento."
+          "regulator_output_switch": "Interruptor que habilita la salida del regulador ('PWM enabled' de FreeDS). Con él, cuando la inyección se paga más de lo que cuesta calentar después, TankWise lo apaga para vender el excedente; se vuelve a encender antes de cualquier calentamiento.",
+          "regulator_mode_entity": "Selector con el modo del regulador. Una caída de potencia mientras está en un modo que no calienta (o no disponible) no es un corte del termostato.",
+          "regulator_active_modes": "Modos del regulador que calientan. Por defecto, Auto y Manual.",
+          "regulator_uptime_sensor": "Tiempo encendido del regulador (s). Si baja, se ha reiniciado: una caída de potencia cerca de un reinicio no es un corte del termostato.",
+          "regulator_restart_reason_sensor": "Motivo del último reinicio del regulador. Si cambia, se ha reiniciado."
         }
       },
       "reconfigure": {
@@ -141,7 +149,11 @@
           "ambient_sensor": "Temperatura ambiente junto al termo",
           "workday_entity": "Sensor de días laborables",
           "solar_forecast_entries": "Previsión de producción solar",
-          "regulator_output_switch": "Interruptor de salida del regulador"
+          "regulator_output_switch": "Interruptor de salida del regulador",
+          "regulator_mode_entity": "Modo del regulador",
+          "regulator_active_modes": "Modos del regulador que calientan",
+          "regulator_uptime_sensor": "Tiempo encendido del regulador",
+          "regulator_restart_reason_sensor": "Motivo del último reinicio del regulador"
         },
         "data_description": {
           "energy_sensor": "Recomendada. Energía acumulada del termo (total o total creciente). Sin ella se integra la potencia.",
@@ -150,7 +162,11 @@
           "ambient_sensor": "Temperatura de la estancia donde está el termo. Sin ella se usa el valor fijo de los parámetros.",
           "workday_entity": "Sensor binario de la integración Workday. Con él, los festivos se aprenden aparte de los laborables y las citas se pueden fijar para laborables o festivos.",
           "solar_forecast_entries": "Entradas de Forecast.Solar, Solcast u Open-Meteo Solar Forecast (varias se suman, p. ej. una por cada orientación del tejado). El plan cuenta con el excedente esperado: la previsión menos lo que consume la casa en cada hora, aprendido de la exportación a red.",
-          "regulator_output_switch": "Interruptor que habilita la salida del regulador ('PWM enabled' de FreeDS). Con él, cuando la inyección se paga más de lo que cuesta calentar después, TankWise lo apaga para vender el excedente; se vuelve a encender antes de cualquier calentamiento."
+          "regulator_output_switch": "Interruptor que habilita la salida del regulador ('PWM enabled' de FreeDS). Con él, cuando la inyección se paga más de lo que cuesta calentar después, TankWise lo apaga para vender el excedente; se vuelve a encender antes de cualquier calentamiento.",
+          "regulator_mode_entity": "Selector con el modo del regulador. Una caída de potencia mientras está en un modo que no calienta (o no disponible) no es un corte del termostato.",
+          "regulator_active_modes": "Modos del regulador que calientan. Por defecto, Auto y Manual.",
+          "regulator_uptime_sensor": "Tiempo encendido del regulador (s). Si baja, se ha reiniciado: una caída de potencia cerca de un reinicio no es un corte del termostato.",
+          "regulator_restart_reason_sensor": "Motivo del último reinicio del regulador. Si cambia, se ha reiniciado."
         }
       },
       "appointments": {
@@ -837,6 +853,34 @@
           "description": "Instancia de TankWise. Todas si se deja vacío."
         }
       }
+    },
+    "discard_last_cutoff_sample": {
+      "name": "Descartar la última muestra de corte",
+      "description": "Olvida la última temperatura de corte del termostato aprendida (por ejemplo, una causada por un corte de alimentación) y vuelve a calcular el corte.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Termo",
+          "description": "Instancia de TankWise. Todas si se deja vacío."
+        }
+      }
+    },
+    "discard_cutoff_sample": {
+      "name": "Descartar una muestra de corte",
+      "description": "Olvida una temperatura de corte del termostato aprendida, indicada por su valor o su posición, y vuelve a calcular el corte. Las muestras aparecen en los diagnósticos.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Termo",
+          "description": "Instancia de TankWise. Todas si se deja vacío."
+        },
+        "value": {
+          "name": "Valor",
+          "description": "Temperatura de la muestra que se descarta; la más cercana, a menos de 0,5 °C."
+        },
+        "index": {
+          "name": "Posición",
+          "description": "Posición de la muestra: 0 es la más antigua y -1 la más reciente."
+        }
+      }
     }
   },
   "exceptions": {
@@ -845,6 +889,9 @@
     },
     "boost_mode_off": {
       "message": "No se puede iniciar un Boost con TankWise desactivado."
+    },
+    "cutoff_sample_not_found": {
+      "message": "Ninguna muestra de corte de {name} coincide. Muestras aprendidas: {samples} °C."
     }
   }
 }

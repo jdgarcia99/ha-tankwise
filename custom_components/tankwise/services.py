@@ -17,14 +17,18 @@ import voluptuous as vol
 from .const import (
     ATTR_CONFIG_ENTRY_ID,
     ATTR_DURATION,
+    ATTR_INDEX,
     ATTR_LITERS,
     ATTR_PART,
     ATTR_TEMPERATURE,
+    ATTR_VALUE,
     DOMAIN,
     PART_ALL,
     RESET_PARTS,
     SERVICE_BOOST,
     SERVICE_CANCEL_BOOST,
+    SERVICE_DISCARD_CUTOFF_SAMPLE,
+    SERVICE_DISCARD_LAST_CUTOFF_SAMPLE,
     SERVICE_GET_PLAN,
     SERVICE_REIMPORT_HISTORY,
     SERVICE_REPLAN,
@@ -56,6 +60,18 @@ BOOST_SCHEMA = vol.Schema(
             vol.Coerce(float), vol.Range(min=0, max=480)
         ),
     }
+)
+
+
+DISCARD_CUTOFF_SAMPLE_SCHEMA = vol.All(
+    vol.Schema(
+        {
+            vol.Optional(ATTR_CONFIG_ENTRY_ID): cv.string,
+            vol.Exclusive(ATTR_INDEX, "sample"): vol.Coerce(int),
+            vol.Exclusive(ATTR_VALUE, "sample"): vol.Coerce(float),
+        }
+    ),
+    cv.has_at_least_one_key(ATTR_INDEX, ATTR_VALUE),
 )
 
 
@@ -134,6 +150,63 @@ def async_setup_services(hass: HomeAssistant) -> None:
             )
 
     hass.services.async_register(DOMAIN, SERVICE_BOOST, _boost, BOOST_SCHEMA)
+
+    async def _discard(
+        call: ServiceCall, *, index: int | None, value: float | None
+    ) -> ServiceResponse:
+        results = []
+        for entry in _loaded_entries(hass, call):
+            coordinator = entry.runtime_data
+            try:
+                removed = await coordinator.async_discard_cutoff_sample(
+                    index=index, value=value
+                )
+            except ValueError as err:
+                samples = coordinator.model.cutoff_samples
+                raise ServiceValidationError(
+                    translation_domain=DOMAIN,
+                    translation_key="cutoff_sample_not_found",
+                    translation_placeholders={
+                        "name": entry.title,
+                        "samples": ", ".join(f"{sample:.1f}" for sample in samples)
+                        or "-",
+                    },
+                ) from err
+            results.append(
+                {
+                    "config_entry_id": entry.entry_id,
+                    "name": entry.title,
+                    "removed": round(removed, 2),
+                    "cutoff_samples": [
+                        round(sample, 2) for sample in coordinator.model.cutoff_samples
+                    ],
+                }
+            )
+        return {"results": results}
+
+    async def _discard_last(call: ServiceCall) -> ServiceResponse:
+        return await _discard(call, index=-1, value=None)
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_DISCARD_LAST_CUTOFF_SAMPLE,
+        _discard_last,
+        REPLAN_SCHEMA,
+        supports_response=SupportsResponse.OPTIONAL,
+    )
+
+    async def _discard_sample(call: ServiceCall) -> ServiceResponse:
+        return await _discard(
+            call, index=call.data.get(ATTR_INDEX), value=call.data.get(ATTR_VALUE)
+        )
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_DISCARD_CUTOFF_SAMPLE,
+        _discard_sample,
+        DISCARD_CUTOFF_SAMPLE_SCHEMA,
+        supports_response=SupportsResponse.OPTIONAL,
+    )
 
     async def _cancel_boost(call: ServiceCall) -> None:
         for entry in _loaded_entries(hass, call):

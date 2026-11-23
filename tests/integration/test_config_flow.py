@@ -31,8 +31,12 @@ from custom_components.tankwise.const import (
     CONF_PROFILE_DAYS,
     CONF_PROFILE_MODE,
     CONF_RATED_POWER,
+    CONF_REGULATOR_ACTIVE_MODES,
+    CONF_REGULATOR_MODE_ENTITY,
     CONF_REGULATOR_OUTPUT_SWITCH,
+    CONF_REGULATOR_RESTART_REASON_SENSOR,
     CONF_REGULATOR_SENSOR,
+    CONF_REGULATOR_UPTIME_SENSOR,
     CONF_TEMPERATURE_SENSOR,
     CONF_VOLUME,
     CONF_WATER_REGION,
@@ -361,6 +365,29 @@ async def test_options_inputs(
         CONF_AMBIENT_SENSOR: AMBIENT,
         CONF_WORKDAY_ENTITY: "binary_sensor.workday_sensor",
     }
+
+
+async def test_options_regulator_health_inputs(
+    hass: HomeAssistant, mock_setup_entry: AsyncMock, mock_entry: MockConfigEntry
+) -> None:
+    """Mode, heating modes, uptime and restart reason of the regulator."""
+    mock_entry.add_to_hass(hass)
+    set_input_states(hass)
+    hass.states.async_set("select.diverter_mode", "Auto")
+    hass.states.async_set("sensor.diverter_uptime", "120", {"unit_of_measurement": "s"})
+    hass.states.async_set("sensor.diverter_restart_reason", "power-on event")
+    result = await _options_menu(hass, mock_entry, "inputs")
+    health = {
+        CONF_REGULATOR_MODE_ENTITY: "select.diverter_mode",
+        CONF_REGULATOR_ACTIVE_MODES: ["Auto", "Manual", "Boost"],
+        CONF_REGULATOR_UPTIME_SENSOR: "sensor.diverter_uptime",
+        CONF_REGULATOR_RESTART_REASON_SENSOR: "sensor.diverter_restart_reason",
+    }
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], health
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert mock_entry.options == {**DEFAULT_PARAMETERS, **health}
 
 
 async def test_options_inputs_invalid(

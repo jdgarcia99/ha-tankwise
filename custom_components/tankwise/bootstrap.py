@@ -12,7 +12,7 @@ learning.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta, tzinfo
 from enum import StrEnum
@@ -23,7 +23,14 @@ from typing import Any
 from homeassistant.core import HomeAssistant, State
 from homeassistant.util import dt as dt_util
 
-from .inputs import InputError, parse_bool, parse_measurement, parse_numeric, state_unit
+from .inputs import (
+    InputError,
+    parse_bool,
+    parse_measurement,
+    parse_numeric,
+    parse_text,
+    state_unit,
+)
 from .model.demand import DemandModel
 from .model.replay import (
     ROLE_AMBIENT,
@@ -32,6 +39,10 @@ from .model.replay import (
     ROLE_OCCUPANCY,
     ROLE_POWER,
     ROLE_REGULATOR,
+    ROLE_REGULATOR_MODE,
+    ROLE_REGULATOR_OUTPUT,
+    ROLE_REGULATOR_RESTART_REASON,
+    ROLE_REGULATOR_UPTIME,
     ROLE_TEMPERATURE,
     ROLE_WORKDAY,
     ReplayResult,
@@ -39,7 +50,13 @@ from .model.replay import (
     Value,
     replay,
 )
-from .model.tank import TankModel, TankParams, TankSample, TankState
+from .model.tank import (
+    DEFAULT_REGULATOR_ACTIVE_MODES,
+    TankModel,
+    TankParams,
+    TankSample,
+    TankState,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -122,12 +139,19 @@ def states_to_changes(
     """Convert recorded states of one role to state changes in °C/W/kWh/%."""
     result: list[StateChange] = []
     for state in states:
-        value: float | bool | None
+        value: Value
         try:
-            if role in (ROLE_MANUAL_MODE, ROLE_OCCUPANCY, ROLE_WORKDAY):
+            if role in (
+                ROLE_MANUAL_MODE,
+                ROLE_OCCUPANCY,
+                ROLE_WORKDAY,
+                ROLE_REGULATOR_OUTPUT,
+            ):
                 value = parse_bool(state.state)
-            elif role == ROLE_REGULATOR:
+            elif role in (ROLE_REGULATOR, ROLE_REGULATOR_UPTIME):
                 value = parse_numeric(state.state)
+            elif role in (ROLE_REGULATOR_MODE, ROLE_REGULATOR_RESTART_REASON):
+                value = parse_text(state.state)
             else:
                 value = parse_measurement(state.state, unit, _MEASUREMENT_KIND[role])
         except InputError:
@@ -167,6 +191,7 @@ async def async_bootstrap(
     *,
     days: int,
     tz: tzinfo,
+    active_modes: Iterable[str] = DEFAULT_REGULATOR_ACTIVE_MODES,
 ) -> tuple[BootstrapInfo, ReplayResult | None, DemandModel | None]:
     """Replay the recorder history of the given roles through new models.
 
@@ -219,6 +244,7 @@ async def async_bootstrap(
                 model=model,
                 end=end,
                 on_sample=_feed_demand,
+                active_modes=active_modes,
             )
         )
     except Exception as err:

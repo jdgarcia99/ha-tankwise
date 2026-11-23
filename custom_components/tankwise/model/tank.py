@@ -32,6 +32,7 @@ This module is pure Python and must not import Home Assistant.
 from __future__ import annotations
 
 from collections import deque
+from collections.abc import Iterable
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from enum import StrEnum
@@ -74,7 +75,21 @@ REGULATOR_FALLING_WINDOW = timedelta(seconds=30)
 REGULATOR_STOP_AFTER = timedelta(seconds=60)
 # A cut-off this far below the configured cut-off temperature is not a
 # thermostat cut-off (e.g. an automation stopping the heating at 45 °C).
+# Used while no cut-off has been learned yet.
 CUTOFF_PLAUSIBLE_BELOW = 12.0
+# Once a cut-off is known, a new one must be this close to it.
+CUTOFF_PLAUSIBLE_NEAR = 4.0
+# A power drop is not a thermostat cut-off when, from this long before it to
+# this long after it, the regulator was unavailable, restarted, was in a mode
+# that does not heat, or asked for no power: the regulator (or its own power
+# supply) stopped the heating. The regulator entities take up to about two
+# minutes to be reported unavailable after a power cut.
+REGULATOR_DISTURBED_BEFORE = timedelta(minutes=1)
+REGULATOR_DISTURBED_AFTER = timedelta(minutes=2)
+# Regulator modes that heat (``Auto``: surplus, ``Manual``: full power).
+DEFAULT_REGULATOR_ACTIVE_MODES = ("Auto", "Manual")
+# A sample to discard given by value matches within this margin.
+CUTOFF_MATCH_MARGIN = 0.5
 MIN_EPISODE_ENERGY_KWH = 0.02
 BACKUP_FULL_MARGIN = 2.5  # °C below the cut-off temperature
 CUTOFF_LEARN_MARGIN = 1.0  # °C, backup cut-offs closer than this are learned
@@ -221,24 +236,101 @@ class PowerDrop:
     # above 10 %) and had not just been lowered: the thermostat, not the
     # regulator, stopped the heating.
     demand: bool
+    # The regulator was unavailable, restarted, did not heat in its mode or
+    # asked for no power around the drop: never a thermostat cut-off.
+    disturbed: bool = False
 
 
 class PowerDropDetector:
     """Capture the regulator state at the instant the power falls.
 
     Fed with every state change of the power, regulator output and manual
-    mode, in the order they happen. The last drop is kept until the power
-    rises again.
+    mode, in the order they happen, and of the regulator's health entities
+    (mode, uptime, restart reason, output switch) when configured. The last
+    drop is kept until the power rises again.
     """
 
-    def __init__(self, threshold_w: float) -> None:
+    def __init__(
+        self,
+        threshold_w: float,
+        active_modes: Iterable[str] = DEFAULT_REGULATOR_ACTIVE_MODES,
+    ) -> None:
         """Initialise the detector."""
         self._threshold_w = threshold_w
+        self._active_modes = frozenset(active_modes)
         self._regulator: float | None = None
         self._manual: bool | None = None
         self._falls: list[datetime] = []
         self._heating: bool | None = None
         self.drop: PowerDrop | None = None
+        # Regulator health: sources in an abnormal state now, the recent
+        # moments it was disturbed, and the last known uptime and restart
+        # reason (kept while unavailable, to see a restart when it returns).
+        self._abnormal: set[str] = set()
+        self._disturbances: list[datetime] = []
+        self._uptime: float | None = None
+        self._restart_reason: str | None = None
+
+    def _disturb(self, timestamp: datetime) -> None:
+        """Record a moment the regulator was disturbed."""
+        self._disturbances = [
+            moment
+            for moment in self._disturbances
+            if timestamp - moment <= REGULATOR_DISTURBED_BEFORE
+        ]
+        self._disturbances.append(timestamp)
+        drop = self.drop
+        if (
+            drop is not None
+            and not drop.disturbed
+            and timedelta(0) <= timestamp - drop.timestamp <= REGULATOR_DISTURBED_AFTER
+        ):
+            self.drop = replace(drop, disturbed=True)
+
+    def _set_abnormal(self, timestamp: datetime, source: str, abnormal: bool) -> None:
+        """Track a source entering, staying in or leaving an abnormal state."""
+        was = source in self._abnormal
+        if abnormal:
+            self._abnormal.add(source)
+        else:
+            self._abnormal.discard(source)
+        if abnormal or was:
+            self._disturb(timestamp)
+
+    def _disturbed_at(self, timestamp: datetime) -> bool:
+        """Return True if the regulator was disturbed shortly before ``timestamp``."""
+        return bool(self._abnormal) or any(
+            timedelta(0) <= timestamp - moment <= REGULATOR_DISTURBED_BEFORE
+            for moment in self._disturbances
+        )
+
+    def update_mode(self, timestamp: datetime, value: str | None) -> None:
+        """Record a regulator mode change (None: unavailable)."""
+        self._set_abnormal(
+            timestamp, "mode", value is None or value not in self._active_modes
+        )
+
+    def update_uptime(self, timestamp: datetime, value: float | None) -> None:
+        """Record the regulator uptime (s); a lower value is a restart."""
+        self._set_abnormal(timestamp, "uptime", value is None)
+        if value is None:
+            return
+        if self._uptime is not None and value < self._uptime:
+            self._disturb(timestamp)
+        self._uptime = value
+
+    def update_restart_reason(self, timestamp: datetime, value: str | None) -> None:
+        """Record the regulator's last restart reason; a new one is a restart."""
+        self._set_abnormal(timestamp, "restart_reason", value is None)
+        if value is None:
+            return
+        if self._restart_reason is not None and value != self._restart_reason:
+            self._disturb(timestamp)
+        self._restart_reason = value
+
+    def update_output(self, timestamp: datetime, value: bool | None) -> None:
+        """Record the regulator output switch (only its availability matters)."""
+        self._set_abnormal(timestamp, "output", value is None)
 
     def _record_fall(self, timestamp: datetime) -> None:
         self._falls.append(timestamp)
@@ -256,10 +348,10 @@ class PowerDropDetector:
             and drop.demand
             and timedelta(0) <= timestamp - drop.timestamp <= REGULATOR_STOP_AFTER
         ):
-            self.drop = PowerDrop(timestamp=drop.timestamp, demand=False)
+            self.drop = replace(drop, demand=False)
 
     def update_regulator(self, timestamp: datetime, value: float | None) -> None:
-        """Record a regulator output change (%)."""
+        """Record a regulator output change (%; None: unavailable)."""
         if (
             value is not None
             and self._regulator is not None
@@ -269,6 +361,7 @@ class PowerDropDetector:
             if value <= REGULATOR_DEMAND_PERCENT:
                 self._withdraw(timestamp)
         self._regulator = value
+        self._set_abnormal(timestamp, "regulator", value is None or value <= 0)
 
     def update_manual(self, timestamp: datetime, value: bool | None) -> None:
         """Record a manual mode change (full power requested when on)."""
@@ -276,6 +369,7 @@ class PowerDropDetector:
             self._record_fall(timestamp)
             self._withdraw(timestamp)
         self._manual = value
+        self._set_abnormal(timestamp, "manual", value is None)
 
     @property
     def demand(self) -> bool:
@@ -297,7 +391,9 @@ class PowerDropDetector:
                 for moment in self._falls
             )
             self.drop = PowerDrop(
-                timestamp=timestamp, demand=self.demand and not falling
+                timestamp=timestamp,
+                demand=self.demand and not falling,
+                disturbed=self._disturbed_at(timestamp),
             )
         self._heating = heating
 
@@ -1095,6 +1191,12 @@ class TankModel:
             tracker.below_since = drop.timestamp
             tracker.last_heating_end = drop.timestamp
             tracker.drop_demand = drop.demand
+            if drop.disturbed:
+                # The regulator (or its power supply) stopped the heating:
+                # the episode ends without a cut-off.
+                tracker.state = HeaterState.IDLE
+                tracker.drop_demand = None
+                return None
 
         if tracker.state is not HeaterState.CHECKING:
             return None
@@ -1143,9 +1245,45 @@ class TankModel:
         return None
 
     def _plausible_cutoff(self, params: TankParams) -> bool:
-        """Return True if the probe is high enough for a thermostat cut-off."""
+        """Return True if the probe is plausible for a thermostat cut-off.
+
+        Until a cut-off has been learned, high enough compared with the
+        configured cut-off; afterwards, close to the known cut-off.
+        """
         assert self._probe is not None
+        if self._cutoff_samples:
+            known = self.cutoff_temperature(params)
+            return abs(self._probe - known) <= CUTOFF_PLAUSIBLE_NEAR
         return self._probe >= params.cutoff_temperature - CUTOFF_PLAUSIBLE_BELOW
+
+    @property
+    def cutoff_samples(self) -> tuple[float, ...]:
+        """Return the learned cut-off samples, oldest first."""
+        return tuple(self._cutoff_samples)
+
+    def discard_cutoff_sample(
+        self, *, index: int | None = None, value: float | None = None
+    ) -> float:
+        """Forget one learned cut-off sample and return it.
+
+        ``index`` counts from the oldest (0; negative values from the newest,
+        -1 being the last); ``value`` removes the sample closest to it, within
+        :data:`CUTOFF_MATCH_MARGIN`. Raises ValueError if nothing matches.
+        """
+        samples = self._cutoff_samples
+        if not samples:
+            raise ValueError("no cut-off samples")
+        if value is not None:
+            position = min(range(len(samples)), key=lambda i: abs(samples[i] - value))
+            if abs(samples[position] - value) > CUTOFF_MATCH_MARGIN:
+                raise ValueError(f"no cut-off sample near {value}")
+        elif index is not None:
+            if not -len(samples) <= index < len(samples):
+                raise ValueError(f"index {index} out of range")
+            position = index % len(samples)
+        else:
+            raise ValueError("an index or a value is required")
+        return samples.pop(position)
 
     def purge_cutoffs(self, params: TankParams) -> int:
         """Forget learned cut-offs that cannot be thermostat cut-offs.
