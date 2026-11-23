@@ -9,9 +9,11 @@ import json
 import pytest
 from tankwise_model.tank import (
     DEFAULT_UA,
+    REASON_CALIBRATED,
     REASON_DATA_GAP,
     REASON_FEW_LOSS_WINDOWS,
     REASON_NEVER_CALIBRATED,
+    ConsumptionEvent,
     HeaterState,
     ModelStatus,
     TankModel,
@@ -213,7 +215,7 @@ def test_restart_with_six_hour_gap() -> None:
 
 
 def test_restart_gap_with_unseen_draw() -> None:
-    """A draw during the outage is followed but not recorded."""
+    """A draw during the outage is followed and recorded as an estimate."""
     sim = TankSimulator(temperature=30.0)
     model = TankModel()
     drive(model, sim, 10)
@@ -226,7 +228,10 @@ def test_restart_gap_with_unseen_draw() -> None:
     sim.skip(288)
 
     state = drive(restored, sim, 1)
-    assert restored.consumptions == []
+    [draw] = restored.consumptions
+    assert draw.estimated
+    assert draw.energy_kwh == pytest.approx(SHOWER_KW * 12 / 60, rel=0.15)
+    assert draw.end - draw.start == timedelta(hours=6, minutes=1)
     assert state.status is ModelStatus.UNCERTAIN
     assert error_kwh(state, sim) < 0.15
 
@@ -453,3 +458,71 @@ def test_status_reason_of_a_store_without_it() -> None:
     assert TankModel.from_dict(data).status_reason() == REASON_DATA_GAP
     data["calibration_count"] = 0
     assert TankModel.from_dict(data).status_reason() == REASON_NEVER_CALIBRATED
+
+
+# ---------------------------------------------------------------------------
+# 23/11: the diverter off for an hour, a shower, 68 -> 59 °C
+# ---------------------------------------------------------------------------
+
+HOT = replace(PARAMS, cutoff_temperature=68.0)
+SHOWER_23_11_KW = 9.0 * HOT.heat_capacity * 6  # 9 K in 10 minutes
+
+
+def _calibrated_at_68() -> tuple[TankModel, TankSimulator]:
+    """A tank full at 68 °C with the heat losses already learned."""
+    sim = TankSimulator(temperature=60.0, cutoff=68.0, noise=0.2)
+    model = TankModel()
+    feed(model, sim.run(10), HOT)
+    for _ in range(240):
+        feed(model, sim.run(1, regulator=100), HOT)
+        if model.as_dict()["calibration_count"]:
+            break
+    feed(model, sim.run(20), HOT)
+    data = model.as_dict() | {"loss_windows": 5}
+    model = TankModel.from_dict(json.loads(json.dumps(data)))
+    feed(model, sim.run(2), HOT)
+    assert model.status() is ModelStatus.CALIBRATED
+    return model, sim
+
+
+def test_diverter_off_with_probe_and_meter_keeps_the_calibration() -> None:
+    """Regulator gone for 1 h, probe and Shelly fine, 0 W: a normal draw."""
+    model, sim = _calibrated_at_68()
+    sim.report_regulator = False
+    samples = sim.run(20) + sim.run(10, draw_kw=SHOWER_23_11_KW) + sim.run(30)
+    assert {sample.power for sample in samples} == {0.0}
+    state = feed(model, samples, HOT)
+    assert sim.temperature == pytest.approx(59, abs=0.6)
+    assert state.status is ModelStatus.CALIBRATED
+    assert state.status_reason == REASON_CALIBRATED
+    [draw] = model.consumptions
+    assert not draw.estimated
+    assert draw.energy_kwh == pytest.approx(1.05, abs=0.15)
+
+
+def test_probe_gap_records_the_draw_but_loses_the_calibration() -> None:
+    """The real 23/11: the probe unavailable 78 min, the meter fine, a shower."""
+    model, sim = _calibrated_at_68()
+    before = sim.time
+    samples = sim.run(20) + sim.run(10, draw_kw=SHOWER_23_11_KW) + sim.run(48)
+    gap = [replace(sample, temperature=None) for sample in samples]
+    state = feed(model, gap, HOT)
+    assert not state.available
+    state = feed(model, sim.run(1), HOT)
+    assert state.status is ModelStatus.UNCERTAIN
+    assert state.status_reason == REASON_DATA_GAP
+    [draw] = model.consumptions
+    assert draw.estimated
+    assert draw.energy_kwh == pytest.approx(1.05, abs=0.15)
+    assert draw.start == before  # the last reading before the gap
+    assert draw.end == sim.time
+    assert ConsumptionEvent.from_dict(draw.as_dict()).as_dict() == draw.as_dict()
+
+
+def test_drift_over_a_long_gap_is_not_a_draw() -> None:
+    """Six hours without readings and no draw: losses drift, nothing recorded."""
+    model, sim = _calibrated_at_68()
+    sim.ua = 1.4  # the model believes 1.0: about 2 °C more lost in 6 h
+    sim.skip(360)
+    feed(model, sim.run(1), HOT)
+    assert model.consumptions == []

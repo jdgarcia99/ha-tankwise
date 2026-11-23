@@ -379,7 +379,10 @@ de sol), no se calienta nada de más.
 - **Modo seguro.** Sin sonda o sin potencia el modelo se congela y los
   sensores del depósito quedan no disponibles; no se inventa nada. Tras una
   interrupción de más de 30 minutos el estado es incierto hasta el siguiente
-  llenado.
+  llenado. Una bajada de la sonda durante la interrupción que no explican las
+  pérdidas se registra como extracción estimada (`estimated` en
+  `sensor.tankwise_last_draw`). Que el regulador no esté disponible no es una
+  interrupción del modelo del depósito.
 
 ## Documentación
 

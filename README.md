@@ -366,7 +366,10 @@ hour by itself (e.g. on sunny days), nothing extra is heated.
   profile are known from day one.
 - **Safe mode.** Without the probe or the power, the model freezes and the
   tank sensors become unavailable; nothing is invented. After an outage longer
-  than 30 minutes the state is uncertain until the next full tank.
+  than 30 minutes the state is uncertain until the next full tank. A drop of
+  the probe across the outage that the losses do not explain is recorded as
+  an estimated draw (`estimated` in `sensor.tankwise_last_draw`). The regulator
+  being unavailable is not an outage of the tank model.
 
 ## Documentation
 
