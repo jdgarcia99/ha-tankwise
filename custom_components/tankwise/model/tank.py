@@ -156,6 +156,13 @@ SLOW_CORRECTION_TAU = timedelta(minutes=50)
 # Gaps (restarts, unavailable sensors)
 FILTER_RESET_GAP = timedelta(minutes=5)
 LONG_GAP = timedelta(minutes=30)
+# A drop of the probe across a gap of readings up to this long is recorded as
+# a draw spread over the gap; beyond it the time is too vague for the profile.
+MAX_GAP_DRAW = timedelta(hours=12)
+# The prediction across a gap drifts (losses, metered heat): a drop is a draw
+# only beyond 1 °C plus this much per hour of gap and share of the heat.
+GAP_DRAW_DRIFT_PER_HOUR = 0.25  # °C
+GAP_DRAW_HEAT_SHARE = 0.1
 
 # Loss learning (rest windows)
 LOSS_SETTLE = timedelta(minutes=30)  # after heating, draws or meter activity
@@ -466,6 +473,9 @@ class ConsumptionEvent:
     slow: bool = False
     # Factor applied by the energy reconciliation (None: not reconciled).
     reconciled: float | None = None
+    # Not observed: inferred from the probe drop across a gap of readings
+    # (start and end are the bounds of the gap).
+    estimated: bool = False
 
     def as_dict(self) -> dict[str, Any]:
         """Return a JSON-serialisable representation."""
@@ -481,6 +491,7 @@ class ConsumptionEvent:
             "reconciled": (
                 round(self.reconciled, 3) if self.reconciled is not None else None
             ),
+            "estimated": self.estimated,
         }
 
     @classmethod
@@ -498,6 +509,7 @@ class ConsumptionEvent:
             while_heating=bool(data["while_heating"]),
             shortage=bool(data.get("shortage", False)),
             slow=bool(data.get("slow", False)),
+            estimated=bool(data.get("estimated", False)),
             reconciled=(
                 None if data.get("reconciled") is None else float(data["reconciled"])
             ),
@@ -1011,11 +1023,24 @@ class TankModel:
         ambient = self._ambient(sample, params)
         predicted = self._predict(self._equivalent, heat, elapsed, params, ambient)
 
+        before = self._probe
+        gap_start = self._last_valid_time
         self._filter.reset()
         self._probe = self._filter.update(now, sample.temperature)
-        if abs(self._probe - predicted) > -IDLE_DRAW_THRESHOLD:
+        drop = predicted - self._probe
+        if abs(drop) > -IDLE_DRAW_THRESHOLD:
             # Water was drawn (or heat added without a meter) during the gap:
-            # follow the probe, but do not record a draw we did not observe.
+            # follow the probe.
+            hours = elapsed.total_seconds() / 3600
+            tolerance = (
+                -IDLE_DRAW_THRESHOLD
+                + GAP_DRAW_DRIFT_PER_HOUR * hours
+                + GAP_DRAW_HEAT_SHARE * heat / params.heat_capacity
+            )
+            if drop > tolerance and gap_start is not None and elapsed <= MAX_GAP_DRAW:
+                self._record_gap_draw(
+                    gap_start, now, drop, before, predicted, heat, params
+                )
             predicted = self._probe
         self._equivalent = self._clamp_temperature(predicted, params)
 
@@ -1023,6 +1048,38 @@ class TankModel:
             self._set_uncertain(REASON_DATA_GAP, now)
         self._reset_runtime(now)
         self._last_valid_time = now
+
+    def _record_gap_draw(
+        self,
+        start: datetime,
+        end: datetime,
+        drop: float,
+        before: float | None,
+        predicted: float,
+        heat: float,
+        params: TankParams,
+    ) -> None:
+        """Record the draw that explains a probe drop across a gap.
+
+        The drop is below what the losses (and the metered heat) explain;
+        unknown heat could only hide part of the draw, so this is a lower
+        bound. The energy is spread over the gap for the demand profile.
+        """
+        assert self._probe is not None
+        self._consumptions.append(
+            ConsumptionEvent(
+                start=start,
+                end=end,
+                energy_kwh=drop * params.heat_capacity / self.capacity_factor(params),
+                start_temperature=before if before is not None else predicted,
+                min_temperature=self._probe,
+                while_heating=heat > 0,
+                shortage=(
+                    self._probe <= params.comfort_min_temperature - SHORTAGE_MARGIN
+                ),
+                estimated=True,
+            )
+        )
 
     def _step(self, sample: TankSample, params: TankParams, elapsed: timedelta) -> None:
         assert sample.temperature is not None

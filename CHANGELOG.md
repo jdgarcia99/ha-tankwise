@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-11-23
+
+### Fixed
+
+- A draw during a gap of the probe readings was followed but not recorded:
+  on 23/11 the probe was unavailable for 78 minutes while the diverter was
+  dismounted, and a shower (68 → 59 °C, about 1 kWh) never reached the demand
+  profile. When the readings come back (gaps up to 12 hours), a drop beyond
+  what the losses and the metered heat explain (1 °C plus 0.25 °C per hour of
+  gap and 10 % of the heat, for the drift of the prediction) is recorded as an
+  estimated draw spread over the gap: `estimated` in the draw, in
+  `sensor.tankwise_last_draw` and in the diagnostics. Unknown heat can only
+  hide part of a draw, so the energy is a lower bound.
+
+### Notes
+
+- Only a gap of the probe or the heater power makes the state uncertain
+  (`data_gap`). The diverter being unavailable with the probe and the meter
+  working is not one: the model keeps its calibration and detects the draws
+  as usual (now covered by a test).
+
 ## [0.11.0] - 2026-11-23
 
 ### Fixed
@@ -572,7 +593,8 @@ and the heating plan will follow.
 - The output contract entities (energy needed, deadline, grid allowed,
   requested power and urgency) arrive in a later release.
 
-[Unreleased]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.11.1...HEAD
+[0.11.1]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.10.2...v0.11.0
 [0.10.2]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.10.1...v0.10.2
 [0.10.1]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.10.0...v0.10.1

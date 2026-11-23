@@ -77,6 +77,11 @@ balance, one sample per minute:
   filtered probe. A fast detector (10-minute window) catches showers, a slow
   one (60-minute window) taps left running. After each settled heating the
   energy balance between two heatings reconciles the energy of the draws.
+  When the probe or the power comes back after a gap (up to 12 hours), a drop
+  beyond what the losses and the metered heat explain is recorded as an
+  `estimated` draw spread over the gap, so it reaches the demand profile.
+  Only a gap of the probe or the power makes the state uncertain: the
+  regulator is not needed to follow the tank.
 
 **Useful litres.** The cold water entering mixes with the hot water, so only
 the heat above the comfort temperature can be used:
