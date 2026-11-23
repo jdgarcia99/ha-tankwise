@@ -61,6 +61,18 @@ balance, one sample per minute:
   none for three minutes. The regulator state is captured at the instant the
   power falls, from state change events, because an external order may switch
   it off seconds later. The cut-off temperature is the median of the last 20.
+  A drop is discarded when the regulator, or its own power supply, stopped
+  the element: from one minute before it to three minutes after it, the
+  regulator was unavailable or restarted (uptime lower, new restart reason),
+  or, from one minute before to two minutes after it, it was in a mode that
+  does not heat or asked for 0 %. Its entities are reported unavailable up to
+  about two minutes after a power cut, and the cut-off is only confirmed
+  after three, so the longer window delays nothing. A mode or setpoint change
+  is reported at once; later than two minutes it is usually an automation
+  reacting to a real cut-off (`REGULATOR_DISTURBED_AFTER`,
+  `REGULATOR_UNAVAILABLE_AFTER`). A sample must be within 4 °C of the known
+  cut-off (within 12 °C below the configured one until the first sample).
+  Single samples can be discarded with a service.
 - **Draws**: the residual between the observed and the predicted change of the
   filtered probe. A fast detector (10-minute window) catches showers, a slow
   one (60-minute window) taps left running. After each settled heating the

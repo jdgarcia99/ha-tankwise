@@ -3,7 +3,8 @@
 Home Assistant (and the CSV exports used by the simulation bench) store the
 inputs as state changes, not as regular samples. The replay merges the
 changes of every input, feeds the power, regulator and manual mode changes to
-a :class:`PowerDropDetector` in the exact order they happened, and samples the
+a :class:`PowerDropDetector` in the exact order they happened (with the
+regulator health roles: mode, uptime, restart reason, output switch), and samples the
 latest value of each input on a regular grid (one minute by default), just as
 the coordinator does live.
 
@@ -17,7 +18,14 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Final
 
-from .tank import PowerDropDetector, TankModel, TankParams, TankSample, TankState
+from .tank import (
+    DEFAULT_REGULATOR_ACTIVE_MODES,
+    PowerDropDetector,
+    TankModel,
+    TankParams,
+    TankSample,
+    TankState,
+)
 
 ROLE_TEMPERATURE: Final = "temperature"
 ROLE_POWER: Final = "power"
@@ -28,6 +36,11 @@ ROLE_AMBIENT: Final = "ambient"
 # Not used by the tank model; passed to ``on_sample`` (demand profile).
 ROLE_OCCUPANCY: Final = "occupancy"
 ROLE_WORKDAY: Final = "workday"
+# Regulator health, only fed to the power drop detector.
+ROLE_REGULATOR_MODE: Final = "regulator_mode"
+ROLE_REGULATOR_UPTIME: Final = "regulator_uptime"
+ROLE_REGULATOR_RESTART_REASON: Final = "regulator_restart_reason"
+ROLE_REGULATOR_OUTPUT: Final = "regulator_output"
 ROLES: Final = (
     ROLE_TEMPERATURE,
     ROLE_POWER,
@@ -37,10 +50,14 @@ ROLES: Final = (
     ROLE_AMBIENT,
     ROLE_OCCUPANCY,
     ROLE_WORKDAY,
+    ROLE_REGULATOR_MODE,
+    ROLE_REGULATOR_UPTIME,
+    ROLE_REGULATOR_RESTART_REASON,
+    ROLE_REGULATOR_OUTPUT,
 )
 DEFAULT_STEP: Final = timedelta(minutes=1)
 
-type Value = float | bool | None
+type Value = float | bool | str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,6 +89,7 @@ def replay(
     step: timedelta = DEFAULT_STEP,
     on_sample: Callable[[TankSample, TankState, Mapping[str, Value]], None]
     | None = None,
+    active_modes: Iterable[str] = DEFAULT_REGULATOR_ACTIVE_MODES,
 ) -> ReplayResult:
     """Replay the state changes of each role (see ``ROLES``) through a model.
 
@@ -101,7 +119,7 @@ def replay(
 
     first = start if start is not None else min(c.timestamp for c in temperatures)
     last = end if end is not None else timeline[-1][0]
-    detector = PowerDropDetector(params_at(first).power_threshold_w)
+    detector = PowerDropDetector(params_at(first).power_threshold_w, active_modes)
     regulator_configured = bool(
         series.get(ROLE_MANUAL_MODE) or series.get(ROLE_REGULATOR)
     )
@@ -121,6 +139,14 @@ def replay(
                 detector.update_regulator(timestamp, _float(value))
             elif role == ROLE_MANUAL_MODE:
                 detector.update_manual(timestamp, _bool(value))
+            elif role == ROLE_REGULATOR_MODE:
+                detector.update_mode(timestamp, _text(value))
+            elif role == ROLE_REGULATOR_UPTIME:
+                detector.update_uptime(timestamp, _float(value))
+            elif role == ROLE_REGULATOR_RESTART_REASON:
+                detector.update_restart_reason(timestamp, _text(value))
+            elif role == ROLE_REGULATOR_OUTPUT:
+                detector.update_output(timestamp, _bool(value))
             index += 1
         sample = TankSample(
             timestamp=moment,
@@ -150,7 +176,7 @@ def changes(points: Iterable[tuple[datetime, Value]]) -> list[StateChange]:
 
 
 def _float(value: Value) -> float | None:
-    if value is None or isinstance(value, bool):
+    if value is None or isinstance(value, bool | str):
         return None
     return float(value)
 
@@ -158,4 +184,10 @@ def _float(value: Value) -> float | None:
 def _bool(value: Value) -> bool | None:
     if value is None or isinstance(value, bool):
         return value
+    if isinstance(value, str):
+        return None
     return bool(value)
+
+
+def _text(value: Value) -> str | None:
+    return value if isinstance(value, str) else None

@@ -54,6 +54,12 @@ CONF_REGULATOR_OUTPUT_SWITCH: Final = "regulator_output_switch"
 CONF_SOLAR_FORECAST_SENSOR: Final = "solar_forecast_sensor"
 CONF_AMBIENT_SENSOR: Final = "ambient_sensor"
 CONF_WORKDAY_ENTITY: Final = "workday_entity"
+# Regulator health: a power drop while the regulator is unavailable,
+# restarting, in a mode that does not heat or at 0 % is not a cut-off.
+CONF_REGULATOR_MODE_ENTITY: Final = "regulator_mode_entity"
+CONF_REGULATOR_ACTIVE_MODES: Final = "regulator_active_modes"
+CONF_REGULATOR_UPTIME_SENSOR: Final = "regulator_uptime_sensor"
+CONF_REGULATOR_RESTART_REASON_SENSOR: Final = "regulator_restart_reason_sensor"
 
 OPTIONAL_INPUT_KEYS: Final = (
     CONF_ENERGY_SENSOR,
@@ -68,6 +74,10 @@ OPTIONAL_INPUT_KEYS: Final = (
     CONF_REGULATOR_OUTPUT_SWITCH,
     CONF_AMBIENT_SENSOR,
     CONF_WORKDAY_ENTITY,
+    CONF_REGULATOR_MODE_ENTITY,
+    CONF_REGULATOR_ACTIVE_MODES,
+    CONF_REGULATOR_UPTIME_SENSOR,
+    CONF_REGULATOR_RESTART_REASON_SENSOR,
 )
 
 # ---------------------------------------------------------------------------
@@ -214,6 +224,10 @@ SERVICE_GET_PLAN: Final = "get_plan"
 SERVICE_REIMPORT_HISTORY: Final = "reimport_history"
 SERVICE_BOOST: Final = "boost"
 SERVICE_CANCEL_BOOST: Final = "cancel_boost"
+SERVICE_DISCARD_LAST_CUTOFF_SAMPLE: Final = "discard_last_cutoff_sample"
+SERVICE_DISCARD_CUTOFF_SAMPLE: Final = "discard_cutoff_sample"
+ATTR_INDEX: Final = "index"
+ATTR_VALUE: Final = "value"
 ATTR_TEMPERATURE: Final = "temperature"
 ATTR_LITERS: Final = "liters"
 ATTR_DURATION: Final = "duration"

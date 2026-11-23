@@ -66,6 +66,10 @@ ningún `entity_id` está fijado en el código.
   Solcast u Open-Meteo Solar Forecast (sumadas).
 - Interruptor de salida del regulador (p. ej. "PWM enabled" de FreeDS), para
   vender el excedente.
+- Estado del regulador: su modo (con los modos que calientan, Auto y Manual
+  por defecto), su tiempo encendido y el motivo de su último reinicio. Así una
+  caída de potencia mientras el regulador no está disponible, se reinicia,
+  está en otro modo o al 0 % no se toma como un corte del termostato.
 - Temperatura ambiente donde está el termo.
 - Sensor de días laborables (integración Workday): los festivos se aprenden
   aparte y las citas se pueden fijar para laborables o festivos.
@@ -317,6 +321,8 @@ de sol), no se calienta nada de más.
 | `tankwise.boost` / `tankwise.cancel_boost` | Inicia o cancela un Boost (ver Boost). |
 | `tankwise.reimport_history` | Vuelve a importar el histórico del recorder de los últimos días y lo combina con lo aprendido (también el botón "Importar de nuevo el histórico"). `config_entry_id` opcional. |
 | `tankwise.reset_learning` | Olvida las pérdidas de calor (`part: losses`), el perfil de uso (`part: demand`) o todo (`part: all`, por defecto). `config_entry_id` opcional. |
+| `tankwise.discard_last_cutoff_sample` | Olvida la última temperatura de corte del termostato aprendida y vuelve a calcular el corte. `config_entry_id` opcional; devuelve la muestra quitada y las que quedan. |
+| `tankwise.discard_cutoff_sample` | Igual para una muestra, indicada por `value` (°C, la más cercana a menos de 0,5 °C) o `index` (0 = la más antigua, −1 = la más reciente). Las muestras son el atributo `samples` del sensor de temperatura de corte. |
 
 ## Cómo funciona el modelo del depósito
 
@@ -337,7 +343,14 @@ de sol), no se calienta nada de más.
   pide potencia (modo manual encendido o PWM por encima del 10 %) y la
   potencia se queda por debajo de 50 W durante 3 minutos; ese instante se toma
   de los cambios de estado, así que una automatización que apague el modo
-  manual después no lo oculta.
+  manual después no lo oculta. No es un corte si, desde un minuto antes de la
+  caída hasta tres minutos después, el regulador no estuvo disponible o se
+  reinició (sus entidades tardan unos dos minutos en aparecer como no
+  disponibles), o si, desde un minuto antes hasta dos minutos después, estuvo
+  en un modo que no calienta o pidió un 0 % (un corte de alimentación del
+  derivador también para la resistencia). Mientras no se ha
+  aprendido ningún corte, debe estar a menos de 12 °C por debajo del
+  configurado; después, a menos de 4 °C del corte conocido.
 - **Extracciones.** Cada minuto se compara el cambio observado de la sonda
   filtrada con el previsto. Una extracción empieza cuando el residuo acumulado
   en 10 minutos baja de −1 °C y termina cuando se mantiene cerca de cero

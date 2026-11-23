@@ -65,6 +65,10 @@ and no entity ID is fixed in the code.
 - Solar production forecast: one or more Forecast.Solar, Solcast or
   Open-Meteo Solar Forecast entries (summed).
 - Regulator output switch (e.g. FreeDS "PWM enabled"), to sell the surplus.
+- Regulator health: its mode (with the modes that heat, Auto and Manual by
+  default), its uptime and its last restart reason. A power drop while the
+  regulator is unavailable, restarting, in another mode or at 0 % is then not
+  taken as a thermostat cut-off.
 - Ambient temperature where the tank is.
 - Workday sensor (Workday integration): holidays are learned apart and
   appointments can be set for workdays or holidays.
@@ -310,6 +314,8 @@ hour by itself (e.g. on sunny days), nothing extra is heated.
 | `tankwise.boost` / `tankwise.cancel_boost` | Starts or cancels a boost (see Boost). |
 | `tankwise.reimport_history` | Imports the recorder history of the last days again and merges it with what was learned (also the "Import history again" button). Optional `config_entry_id`. |
 | `tankwise.reset_learning` | Forgets the heat losses (`part: losses`), the usage profile (`part: demand`) or everything (`part: all`, default). Optional `config_entry_id`. |
+| `tankwise.discard_last_cutoff_sample` | Forgets the last learned thermostat cut-off temperature and computes the cut-off again. Optional `config_entry_id`; returns the sample removed and those left. |
+| `tankwise.discard_cutoff_sample` | Same for one sample, given by `value` (°C, the closest within 0.5 °C) or `index` (0 = oldest, −1 = newest). The samples are the `samples` attribute of the cut-off temperature sensor. |
 
 ## How the tank model works
 
@@ -329,6 +335,12 @@ hour by itself (e.g. on sunny days), nothing extra is heated.
   power (manual mode on, or PWM output above 10 %) and the power stays below
   50 W for 3 minutes; that instant is captured from state changes, so an
   automation that switches the manual mode off afterwards does not hide it.
+  It is not a cut-off when, from one minute before the drop to three minutes
+  after it, the regulator was unavailable or restarted (its entities take
+  about two minutes to be reported unavailable), or when, from one minute
+  before to two minutes after it, it was in a mode that does not heat or
+  asked for 0 % (a power cut of the diverter stops the element too). Until a cut-off is learned it must be within 12 °C below the
+  configured one; afterwards, within 4 °C of the known cut-off.
 - **Draws.** Every minute the observed change of the filtered probe is
   compared with the predicted one. A draw starts when the residual
   accumulated over 10 minutes falls below −1 °C and ends when it stays close to

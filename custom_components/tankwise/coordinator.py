@@ -56,8 +56,12 @@ from .const import (
     CONF_PROFILE_DAYS,
     CONF_PROFILE_MODE,
     CONF_RATED_POWER,
+    CONF_REGULATOR_ACTIVE_MODES,
+    CONF_REGULATOR_MODE_ENTITY,
     CONF_REGULATOR_OUTPUT_SWITCH,
+    CONF_REGULATOR_RESTART_REASON_SENSOR,
     CONF_REGULATOR_SENSOR,
+    CONF_REGULATOR_UPTIME_SENSOR,
     CONF_RESCUE,
     CONF_TEMPERATURE_SENSOR,
     CONF_VOLUME,
@@ -83,7 +87,14 @@ from .const import (
     UPDATE_INTERVAL,
 )
 from .controller import TankWiseController
-from .inputs import InputError, parse_bool, parse_measurement, parse_numeric, state_unit
+from .inputs import (
+    InputError,
+    parse_bool,
+    parse_measurement,
+    parse_numeric,
+    parse_text,
+    state_unit,
+)
 from .model.appointments import (
     Appointment,
     AppointmentRequirement,
@@ -103,10 +114,21 @@ from .model.replay import (
     ROLE_OCCUPANCY,
     ROLE_POWER,
     ROLE_REGULATOR,
+    ROLE_REGULATOR_MODE,
+    ROLE_REGULATOR_OUTPUT,
+    ROLE_REGULATOR_RESTART_REASON,
+    ROLE_REGULATOR_UPTIME,
     ROLE_TEMPERATURE,
     ROLE_WORKDAY,
 )
-from .model.tank import PowerDropDetector, TankModel, TankParams, TankSample, TankState
+from .model.tank import (
+    DEFAULT_REGULATOR_ACTIVE_MODES,
+    PowerDropDetector,
+    TankModel,
+    TankParams,
+    TankSample,
+    TankState,
+)
 from .model.water import mains_water_temperature
 from .planner import Planner
 from .storage import TankWiseStore
@@ -204,7 +226,8 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
         # cut-off, so its state is captured at the instant the power falls
         # from state change events, not only every 60 s.
         self._drop_detector = PowerDropDetector(
-            float(self.parameters[CONF_CUTOFF_POWER_THRESHOLD])
+            float(self.parameters[CONF_CUTOFF_POWER_THRESHOLD]),
+            self.regulator_active_modes,
         )
         self._store = TankWiseStore(hass, entry.entry_id)
         self.model = TankModel()
@@ -396,6 +419,12 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
             ROLE_AMBIENT: options.get(CONF_AMBIENT_SENSOR),
             ROLE_OCCUPANCY: options.get(CONF_OCCUPANCY_ENTITY),
             ROLE_WORKDAY: options.get(CONF_WORKDAY_ENTITY),
+            ROLE_REGULATOR_MODE: options.get(CONF_REGULATOR_MODE_ENTITY),
+            ROLE_REGULATOR_UPTIME: options.get(CONF_REGULATOR_UPTIME_SENSOR),
+            ROLE_REGULATOR_RESTART_REASON: options.get(
+                CONF_REGULATOR_RESTART_REASON_SENSOR
+            ),
+            ROLE_REGULATOR_OUTPUT: options.get(CONF_REGULATOR_OUTPUT_SWITCH),
         }
         info, result, demand = await async_bootstrap(
             self.hass,
@@ -403,6 +432,7 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
             self.tank_params_at,
             days=BOOTSTRAP_DAYS,
             tz=self.demand.tz,
+            active_modes=self.regulator_active_modes,
         )
         if info.status is BootstrapStatus.DONE and result is not None:
             # Never lose learning: keep the better learned of each parameter.
@@ -440,11 +470,38 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
     def async_start_listeners(self) -> None:
         """Follow power, regulator and manual mode changes between samples."""
         detector = self._drop_detector
+        options = self.config_entry.options
         power = self.config_entry.data.get(CONF_POWER_SENSOR)
-        regulator = self.config_entry.options.get(CONF_REGULATOR_SENSOR)
+        regulator = options.get(CONF_REGULATOR_SENSOR)
         manual = self.config_entry.data.get(CONF_MANUAL_MODE_SWITCH)
-        occupancy = self.config_entry.options.get(CONF_OCCUPANCY_ENTITY)
+        occupancy = options.get(CONF_OCCUPANCY_ENTITY)
+        # Regulator health: only its availability, restarts and mode matter.
+        health: dict[str, Callable[[datetime, State | None], None]] = {}
+        for key, update in (
+            (
+                CONF_REGULATOR_MODE_ENTITY,
+                lambda moment, state: detector.update_mode(moment, _text(state)),
+            ),
+            (
+                CONF_REGULATOR_UPTIME_SENSOR,
+                lambda moment, state: detector.update_uptime(moment, _numeric(state)),
+            ),
+            (
+                CONF_REGULATOR_RESTART_REASON_SENSOR,
+                lambda moment, state: detector.update_restart_reason(
+                    moment, _text(state)
+                ),
+            ),
+            (
+                CONF_REGULATOR_OUTPUT_SWITCH,
+                lambda moment, state: detector.update_output(moment, _boolean(state)),
+            ),
+        ):
+            if entity_id := options.get(key):
+                health[entity_id] = update
         now = dt_util.utcnow()
+        for entity_id, update in health.items():
+            update(now, self.hass.states.get(entity_id))
         if regulator:
             detector.update_regulator(now, _numeric(self.hass.states.get(regulator)))
         if manual:
@@ -475,12 +532,15 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
                     self.planner.on_manual_mode(new_state.last_changed, new)
             elif entity_id == occupancy:
                 self.async_request_replan("occupancy")
+            elif (update := health.get(entity_id)) is not None:
+                # last_updated: a restart may report the same reason again.
+                update(new_state.last_updated, new_state)
             else:
                 detector.update_power(new_state.last_changed, _power_watts(new_state))
 
         tracked = [
             entity_id
-            for entity_id in (power, regulator, manual, occupancy)
+            for entity_id in (power, regulator, manual, occupancy, *health)
             if entity_id
         ]
         self.config_entry.async_on_unload(
@@ -567,6 +627,34 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
                     at_risk=at_risk,
                 )
             )
+
+    @property
+    def regulator_active_modes(self) -> tuple[str, ...]:
+        """Regulator modes that heat (a drop in another mode is not a cut-off)."""
+        modes = self.config_entry.options.get(CONF_REGULATOR_ACTIVE_MODES)
+        return tuple(modes) if modes else DEFAULT_REGULATOR_ACTIVE_MODES
+
+    async def async_discard_cutoff_sample(
+        self, *, index: int | None = None, value: float | None = None
+    ) -> float:
+        """Forget one learned cut-off sample; the cut-off is computed again.
+
+        Raises ValueError if no sample matches.
+        """
+        removed = self.model.discard_cutoff_sample(index=index, value=value)
+        _LOGGER.info(
+            "Cut-off sample %.2f °C discarded; %d left",
+            removed,
+            len(self.model.cutoff_samples),
+        )
+        if self._last_sample is not None and self.data is not None:
+            # Same timestamp as the last sample: the derived values (cut-off,
+            # charge, status) are recomputed without advancing the model.
+            tank = self.model.update(self._last_sample, self.tank_params)
+            self.async_set_updated_data(replace(self.data, tank=tank))
+        await self.async_save_now()
+        await self.async_replan("cutoff")
+        return removed
 
     async def async_reset_learning(self, part: str) -> None:
         """Forget learned data: losses, the demand profile or everything."""
@@ -944,6 +1032,16 @@ def _numeric(state: State | None) -> float | None:
         return None
     try:
         return parse_numeric(state.state)
+    except InputError:
+        return None
+
+
+def _text(state: State | None) -> str | None:
+    """Return a text state (mode, reason), or None if unavailable."""
+    if state is None:
+        return None
+    try:
+        return parse_text(state.state)
     except InputError:
         return None
 
