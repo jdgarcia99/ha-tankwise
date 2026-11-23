@@ -23,6 +23,7 @@ from pytest_homeassistant_custom_component.common import (
 from custom_components.tankwise.const import (
     CONF_APPOINTMENTS,
     CONF_ENERGY_SENSOR,
+    CONF_HOT_WATER_VOLUME_SENSOR,
     CONF_OCCUPANCY_ENTITY,
     CONF_WORKDAY_ENTITY,
     DEFAULT_PARAMETERS,
@@ -30,6 +31,7 @@ from custom_components.tankwise.const import (
     UPDATE_INTERVAL,
 )
 from custom_components.tankwise.model.demand import SLOTS_PER_DAY, DayObservation
+from custom_components.tankwise.model.tank import ConsumptionEvent
 
 from .conftest import ENERGY, OCCUPANCY, set_input_states
 
@@ -80,12 +82,20 @@ def _observed_days(first: date, days: int) -> list[DayObservation]:
 
 
 async def _setup(
-    hass: HomeAssistant, entry: MockConfigEntry, *, history: int = 0
+    hass: HomeAssistant,
+    entry: MockConfigEntry,
+    *,
+    history: int = 0,
+    options: dict[str, Any] | None = None,
 ) -> None:
     await hass.config.async_set_time_zone("Europe/Madrid")
     set_input_states(hass, temperature="60.0")
     hass.states.async_set(OCCUPANCY, "on")
     entry.add_to_hass(hass)
+    if options:
+        hass.config_entries.async_update_entry(
+            entry, options={**entry.options, **options}
+        )
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
     if history:
@@ -104,10 +114,15 @@ async def test_demand_sensors(
     await _setup(hass, mock_entry, history=14)
 
     today = hass.states.get(DEMAND_TODAY)
-    assert float(today.state) == pytest.approx(4.0)
-    assert today.attributes["p50"] == pytest.approx(4.0)
-    # 10:00: the morning shower is over, the evening is still to come.
+    # 10:00: nothing drawn yet today, the evening is still to come.
+    assert float(today.state) == pytest.approx(2.6)
+    assert today.attributes["p50"] == pytest.approx(2.6)
+    assert today.attributes["observed"] == 0
+    assert today.attributes["observed_liters"] is None  # no hot water meter
     assert today.attributes["remaining_p90"] == pytest.approx(2.6)
+    # A usual day of this type: the morning shower and the evening.
+    assert today.attributes["profile_p90"] == pytest.approx(4.0)
+    assert today.attributes["profile_liters_p90"] is None
     assert today.attributes["day_type"] == "workday"
     assert today.attributes["observed_days"] == 14
     assert today.attributes["profile_status"] == "ready"
@@ -413,3 +428,76 @@ async def test_plan_not_at_risk_with_nobody_home(
     async_fire_time_changed(hass)
     await hass.async_block_till_done()
     assert hass.states.get("binary_sensor.tankwise_plan_at_risk").state == "off"
+
+
+async def test_draws_of_today_count_in_the_demand_of_today(
+    hass: HomeAssistant, mock_entry: MockConfigEntry, freezer: FrozenDateTimeFactory
+) -> None:
+    """What was drawn today is added to the rest of today, never ignored."""
+    freezer.move_to(NOW)
+    await _setup(hass, mock_entry, history=14)
+    coordinator = mock_entry.runtime_data
+    # The morning shower of today (no meter: estimated from the probe).
+    start = dt_util.as_utc(datetime.fromisoformat("2026-11-18T06:35:00+01:00"))
+    coordinator.model._consumptions.append(
+        ConsumptionEvent(
+            start=start,
+            end=start + timedelta(minutes=10),
+            energy_kwh=1.5,
+            start_temperature=60.0,
+            min_temperature=50.0,
+            while_heating=False,
+            shortage=False,
+        )
+    )
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+    today = hass.states.get(DEMAND_TODAY)
+    assert float(today.state) == pytest.approx(1.5 + 2.6)
+    assert today.attributes["observed"] == pytest.approx(1.5)
+    assert today.attributes["observed_liters"] is None
+    assert today.attributes["remaining_p90"] == pytest.approx(2.6)
+
+
+METER = "sensor.hot_water_meter_total"
+
+
+async def test_hot_water_meter_measures_the_draws(
+    hass: HomeAssistant,
+    mock_entry: MockConfigEntry,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """Litres read every minute become a draw with its litres and energy."""
+    freezer.move_to(NOW)
+    hass.states.async_set(METER, "1000", {"unit_of_measurement": "L"})
+    await _setup(
+        hass, mock_entry, history=14, options={CONF_HOT_WATER_VOLUME_SENSOR: METER}
+    )
+    coordinator = mock_entry.runtime_data
+    liters = 1000.0
+    for minute in range(16):
+        if minute < 8:
+            liters += 4.0  # a shower of 32 L
+            hass.states.async_set(METER, f"{liters}", {"unit_of_measurement": "L"})
+        freezer.tick(UPDATE_INTERVAL)
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+
+    [draw] = coordinator.model.consumptions
+    assert draw.liters == 32
+    assert not draw.estimated
+    last = hass.states.get("sensor.tankwise_last_draw")
+    assert last.attributes["liters"] == 32
+    mains = mock_entry.runtime_data.tank_params.mains_temperature
+    assert last.attributes["energy_kwh"] == pytest.approx(
+        32 * 0.001163 * (60.0 - mains), abs=0.01
+    )
+    today = hass.states.get(DEMAND_TODAY)
+    assert today.attributes["observed_liters"] == 32
+    assert today.attributes["observed"] == pytest.approx(
+        last.attributes["energy_kwh"], abs=0.01
+    )
+    suggested = hass.states.get("sensor.tankwise_ducha_manana_suggested_liters")
+    # The observed days of this test were not measured by the meter.
+    assert suggested.attributes["hot_days"] == 0
+    assert suggested.attributes["hot_liters_p90"] is None

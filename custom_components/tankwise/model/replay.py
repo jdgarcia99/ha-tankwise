@@ -1,12 +1,13 @@
 """Replay recorded state changes through the tank model.
 
 Home Assistant (and the CSV exports used by the simulation bench) store the
-inputs as state changes, not as regular samples. The replay merges the
-changes of every input, feeds the power, regulator and manual mode changes to
-a :class:`PowerDropDetector` in the exact order they happened (with the
-regulator health roles: mode, uptime, restart reason, output switch), and samples the
-latest value of each input on a regular grid (one minute by default), just as
-the coordinator does live.
+inputs as state changes, not as regular samples. The replay merges
+the changes of every input, feeds the power, regulator and manual mode
+changes to a :class:`PowerDropDetector` in the exact order they happened
+(with the regulator health roles: mode, uptime, restart reason, output
+switch), and samples the latest value of each input (including the hot water
+meter) on a regular grid (one minute by default), just as the coordinator
+does live.
 
 This module is pure Python and must not import Home Assistant.
 """
@@ -41,6 +42,9 @@ ROLE_REGULATOR_MODE: Final = "regulator_mode"
 ROLE_REGULATOR_UPTIME: Final = "regulator_uptime"
 ROLE_REGULATOR_RESTART_REASON: Final = "regulator_restart_reason"
 ROLE_REGULATOR_OUTPUT: Final = "regulator_output"
+# Hot water meter: cumulative litres and flow rate (L/min).
+ROLE_HOT_WATER_VOLUME: Final = "hot_water_volume"
+ROLE_HOT_WATER_FLOW: Final = "hot_water_flow"
 ROLES: Final = (
     ROLE_TEMPERATURE,
     ROLE_POWER,
@@ -54,6 +58,8 @@ ROLES: Final = (
     ROLE_REGULATOR_UPTIME,
     ROLE_REGULATOR_RESTART_REASON,
     ROLE_REGULATOR_OUTPUT,
+    ROLE_HOT_WATER_VOLUME,
+    ROLE_HOT_WATER_FLOW,
 )
 DEFAULT_STEP: Final = timedelta(minutes=1)
 
@@ -123,6 +129,7 @@ def replay(
     regulator_configured = bool(
         series.get(ROLE_MANUAL_MODE) or series.get(ROLE_REGULATOR)
     )
+    meter_configured = bool(series.get(ROLE_HOT_WATER_VOLUME))
     current: dict[str, Value] = dict.fromkeys(ROLES)
 
     index = 0
@@ -158,6 +165,9 @@ def replay(
             ambient_temperature=_float(current[ROLE_AMBIENT]),
             power_drop=detector.drop,
             regulator_configured=regulator_configured,
+            hot_water_volume=_float(current[ROLE_HOT_WATER_VOLUME]),
+            hot_water_flow=_float(current[ROLE_HOT_WATER_FLOW]),
+            meter_configured=meter_configured,
         )
         state = model.update(sample, params_at(moment))
         if on_sample is not None:

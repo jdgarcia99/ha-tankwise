@@ -8,7 +8,8 @@ reheating within it. The optimiser treats it as a hard constraint (phase 3).
 
 To help choosing the litres, the water actually drawn during the block is
 measured on the observed days and summarised as P50/P90 of the last weeks
-(the suggested litres).
+(the suggested litres, at the shower temperature). With a hot water meter the
+litres that really left the tank are summarised too.
 
 This module is pure Python and must not import Home Assistant.
 """
@@ -173,6 +174,10 @@ class AppointmentUsage:
     p50: float | None
     p90: float | None
     days: int
+    # Litres that left the tank, on the days measured by a hot water meter.
+    hot_p50: float | None = None
+    hot_p90: float | None = None
+    hot_days: int = 0
 
 
 def appointment_usage(
@@ -217,10 +222,22 @@ def appointment_usage(
         for obs in days
     ]
     weights = [demand.weight(obs, now, params) for obs in days]
+    metered = [obs for obs in days if obs.liters is not None]
+    hot = [
+        sum(
+            (obs.liters or ())[index] * factors[index]
+            for index in range(max(0, first), min(SLOTS_PER_DAY, last))
+        )
+        for obs in metered
+    ]
+    hot_weights = [demand.weight(obs, now, params) for obs in metered]
     return AppointmentUsage(
         p50=weighted_quantile(liters, weights, 0.5),
         p90=weighted_quantile(liters, weights, 0.9),
         days=len(days),
+        hot_p50=weighted_quantile(hot, hot_weights, 0.5) if hot else None,
+        hot_p90=weighted_quantile(hot, hot_weights, 0.9) if hot else None,
+        hot_days=len(metered),
     )
 
 

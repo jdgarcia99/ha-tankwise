@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-11-23
+
+### Added
+
+- Optional hot water meter at the outlet of the tank (**Options → Inputs**):
+  cumulative volume in L or m³ (`total_increasing`, `total` or no state
+  class, as pulse counters publish it) and, optionally, its flow rate. With
+  it the draws are measured instead of estimated from the probe:
+  - a draw starts with the first litre and ends after 3 minutes without a
+    new one (single pulses are grouped; it goes on while the flow is above
+    zero);
+  - its energy is `litres · 1.163 Wh/(L·K) · (T_out − T_mains)`, with the
+    tank temperature when it started: in a stratified tank the water leaves
+    hot nearly the whole draw, so the drop of the probe does not lower it.
+    On 23/11 34 L left at about 67 °C: 2.1 kWh, where the probe gave 0.98;
+  - the litres are counted while the probe is unavailable, so a shower
+    during a gap of the probe is no longer lost;
+  - the model learns the stratification from the metered energy and the
+    probe drop (draws worth at least 4 °C in a mixed tank, without heating),
+    by temperature, instead of assuming a mixed tank; the probe corrects the
+    model only beyond 1 °C (resolution and error of a MAX6675 thermocouple);
+  - measured draws are never scaled by the energy reconciliation, so the
+    useful litres factor (`k_use`) is learned from exact energies.
+- Litres in the demand profile: each day measured by the meter keeps the
+  litres of each 15-minute slot. The suggested litres of each appointment
+  gain `hot_liters_p50`, `hot_liters_p90` and `hot_days` (litres that left
+  the tank), and the demand of today the litres of a usual day.
+- Adding a hot water meter imports the history again, so the draws of the
+  imported days are measured with its history.
+- `liters` in `sensor.tankwise_last_draw`, in the draws of the diagnostics
+  and the stratification samples in the model status and diagnostics.
+
+### Fixed
+
+- `sensor.tankwise_demand_today` ignored what was drawn today: it showed the
+  P90 of a whole usual day from the profile. It is now what was drawn today
+  plus the P90 of the rest of the day, with `observed` (kWh),
+  `observed_liters` (with a meter) and the whole day of the profile
+  (`profile_p50`, `profile_p90`) as attributes.
+- The estimated draw across a gap was marked `while_heating` when the energy
+  meter moved by a few mWh (on 23/11, 1 mWh from a 1.9 W blip of the Shelly
+  at 18:40). A heating now needs at least 20 Wh.
+
+### Notes
+
+- Without a hot water meter the tank model behaves exactly as in 0.11.1
+  (checked against a recorded day of 0.11.1).
+- The history is imported again once after upgrading (models version 5).
+
 ## [0.11.1] - 2026-11-23
 
 ### Fixed
@@ -593,7 +642,8 @@ and the heating plan will follow.
 - The output contract entities (energy needed, deadline, grid allowed,
   requested power and urgency) arrive in a later release.
 
-[Unreleased]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.11.1...HEAD
+[Unreleased]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.11.1...v0.12.0
 [0.11.1]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.10.2...v0.11.0
 [0.10.2]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.10.1...v0.10.2

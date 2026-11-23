@@ -1,13 +1,13 @@
 """Cold start: rebuild the tank model from the recorder history.
 
-When TankWise is installed (or upgraded to models that learn more) it
-replays the last days of the probe, heater power and energy,
-regulator output, manual mode and ambient temperature through a fresh tank
-model. Losses, effective capacity, heater power, thermostat cut-offs and the
-draws of that period are learned before the first live sample, so the demand
-profile does not start empty. The coordinator merges the result with what it
-had already learned (see ``TankModel.merge_learning``): an import never loses
-learning.
+When TankWise is installed (or upgraded to models that learn more, or given
+a hot water meter) it replays the last days of the probe, heater power and
+energy, regulator output, manual mode, ambient temperature and hot water
+meter through a fresh tank model. Losses, effective capacity, heater power,
+thermostat cut-offs and the draws of that period are learned before the
+first live sample, so the demand profile does not start empty. The
+coordinator merges the result with what it had already learned (see
+``TankModel.merge_learning``): an import never loses learning.
 """
 
 from __future__ import annotations
@@ -35,6 +35,8 @@ from .model.demand import DemandModel
 from .model.replay import (
     ROLE_AMBIENT,
     ROLE_ENERGY,
+    ROLE_HOT_WATER_FLOW,
+    ROLE_HOT_WATER_VOLUME,
     ROLE_MANUAL_MODE,
     ROLE_OCCUPANCY,
     ROLE_POWER,
@@ -68,6 +70,8 @@ _MEASUREMENT_KIND = {
     ROLE_AMBIENT: "temperature",
     ROLE_POWER: "power",
     ROLE_ENERGY: "energy",
+    ROLE_HOT_WATER_VOLUME: "volume",
+    ROLE_HOT_WATER_FLOW: "flow",
 }
 
 
@@ -100,6 +104,8 @@ class BootstrapInfo:
     error: str | None = None
     # Version of the models the history was imported with (1: TankWise 0.3).
     version: int = 1
+    # The draws were measured by a hot water meter.
+    metered: bool = False
 
     def as_dict(self) -> dict[str, Any]:
         """Return a JSON-serialisable representation."""
@@ -113,6 +119,7 @@ class BootstrapInfo:
             "calibrations": self.calibrations,
             "days": self.days,
             "version": self.version,
+            "metered": self.metered,
             "error": self.error,
         }
 
@@ -129,6 +136,7 @@ class BootstrapInfo:
             calibrations=int(data.get("calibrations", 0)),
             days=int(data.get("days", 0)),
             version=int(data.get("version", 1)),
+            metered=bool(data.get("metered", False)),
             error=data.get("error"),
         )
 
@@ -136,7 +144,7 @@ class BootstrapInfo:
 def states_to_changes(
     role: str, states: list[State], unit: str | None
 ) -> list[StateChange]:
-    """Convert recorded states of one role to state changes in °C/W/kWh/%."""
+    """Convert recorded states of one role to °C, W, kWh, %, L or L/min."""
     result: list[StateChange] = []
     for state in states:
         value: Value
@@ -234,6 +242,7 @@ async def async_bootstrap(
                 occupied=occupancy if isinstance(occupancy, bool) else None,
                 draws=model.consumptions,
                 workday=workday if isinstance(workday, bool) else None,
+                metered=sample.meter_configured and sample.hot_water_volume is not None,
             )
 
         result = await hass.async_add_executor_job(
@@ -265,6 +274,7 @@ async def async_bootstrap(
         draws=len(result.model.consumptions),
         calibrations=int(model_data["calibration_count"]),
         days=len(demand.observations),
+        metered=bool(entity_ids.get(ROLE_HOT_WATER_VOLUME)),
     )
     _LOGGER.info(
         "Imported %d samples of tank history (%s to %s): %d draws, %d cut-offs, "

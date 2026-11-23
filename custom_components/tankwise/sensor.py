@@ -47,6 +47,10 @@ class TankWiseSensorDescription(SensorEntityDescription):
     requires_tank: bool = True
 
 
+def _round(value: float | None, digits: int) -> float | None:
+    return None if value is None else round(value, digits)
+
+
 def _last_draw_attributes(coordinator: TankWiseCoordinator) -> dict[str, Any]:
     event = coordinator.data.tank.last_consumption
     if event is None:
@@ -61,6 +65,7 @@ def _last_draw_attributes(coordinator: TankWiseCoordinator) -> dict[str, Any]:
         "slow": event.slow,
         "reconciled": event.reconciled is not None,
         "estimated": event.estimated,
+        "liters": _round(event.liters, 1),
     }
 
 
@@ -84,10 +89,18 @@ def _demand_today_attributes(coordinator: TankWiseCoordinator) -> dict[str, Any]
     data = coordinator.data
     today = dt_util.now().date()
     params = coordinator.demand_params
+    observed_kwh, observed_liters = data.observed_today
+    liters = data.profile_liters_today
     return {
         "p50": round(data.demand_today[0], 3),
+        "observed": round(observed_kwh, 3),
+        "observed_liters": _round(observed_liters, 1),
         "remaining_p50": round(data.demand_remaining[0], 3),
         "remaining_p90": round(data.demand_remaining[1], 3),
+        "profile_p50": round(data.profile_today[0], 3),
+        "profile_p90": round(data.profile_today[1], 3),
+        "profile_liters_p50": _round(liters[0], 1) if liters else None,
+        "profile_liters_p90": _round(liters[1], 1) if liters else None,
         "day_type": day_type(today, params.mode, data.readings.workday),
         "observed_days": len(coordinator.demand.observations),
         "profile_status": coordinator.demand.status().value,
@@ -120,6 +133,7 @@ def _model_status_attributes(coordinator: TankWiseCoordinator) -> dict[str, Any]
             "loss_windows": tank.loss_windows,
             "capacity_factor": tank.capacity_samples,
             "usable_factor": tank.usable_samples,
+            "stratification": tank.stratification_samples,
             "profile_days": len(demand.observations),
         },
         "samples_needed": {
@@ -566,6 +580,10 @@ class SuggestedLitersSensor(AppointmentEntity, SensorEntity):
         return {
             "p50": round(usage.p50, 1) if usage.p50 is not None else None,
             "days": usage.days,
+            # Litres that left the tank, measured by the hot water meter.
+            "hot_liters_p50": _round(usage.hot_p50, 1),
+            "hot_liters_p90": _round(usage.hot_p90, 1),
+            "hot_days": usage.hot_days,
         }
 
 

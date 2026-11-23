@@ -55,6 +55,8 @@ from homeassistant.util.unit_conversion import (
     EnergyConverter,
     PowerConverter,
     TemperatureConverter,
+    VolumeConverter,
+    VolumeFlowRateConverter,
 )
 import voluptuous as vol
 
@@ -71,6 +73,8 @@ from .const import (
     CONF_GRID_EXPORT_SENSOR,
     CONF_GRID_IMPORT_SENSOR,
     CONF_HEATER_SWITCH,
+    CONF_HOT_WATER_FLOW_SENSOR,
+    CONF_HOT_WATER_VOLUME_SENSOR,
     CONF_INJECTION_PRICE_SENSOR,
     CONF_MANUAL_MODE_SWITCH,
     CONF_MASTER_ENTITY,
@@ -115,6 +119,17 @@ from .model.water import REGIONS
 from .solar_forecast import async_forecast_entries
 
 ENERGY_STATE_CLASSES = (SensorStateClass.TOTAL_INCREASING, SensorStateClass.TOTAL)
+# A cumulative volume; pulse counters often publish it without a state class.
+VOLUME_STATE_CLASSES = (
+    SensorStateClass.TOTAL_INCREASING,
+    SensorStateClass.TOTAL,
+    None,
+)
+VOLUME_DEVICE_CLASSES = [
+    SensorDeviceClass.WATER,
+    SensorDeviceClass.VOLUME,
+    SensorDeviceClass.VOLUME_STORAGE,
+]
 
 # A regulator output is a percentage; some integrations publish it unitless.
 REGULATOR_UNITS: tuple[str | None, ...] = (PERCENTAGE, None)
@@ -218,6 +233,12 @@ OPTIONAL_INPUTS_SCHEMA = vol.Schema(
         ),
         vol.Optional(CONF_REGULATOR_UPTIME_SENSOR): _sensor_selector(),
         vol.Optional(CONF_REGULATOR_RESTART_REASON_SENSOR): _sensor_selector(),
+        vol.Optional(CONF_HOT_WATER_VOLUME_SENSOR): EntitySelector(
+            EntitySelectorConfig(
+                domain=SENSOR_DOMAIN, device_class=VOLUME_DEVICE_CLASSES
+            )
+        ),
+        vol.Optional(CONF_HOT_WATER_FLOW_SENSOR): _sensor_selector(),
     }
 )
 
@@ -391,6 +412,11 @@ def _validate_optional_inputs(
         CONF_EXPORT_POWER_SENSOR: (PowerConverter.VALID_UNITS, None),
         CONF_AMBIENT_SENSOR: (TemperatureConverter.VALID_UNITS, None),
         CONF_REGULATOR_SENSOR: (REGULATOR_UNITS, None),
+        CONF_HOT_WATER_VOLUME_SENSOR: (
+            VolumeConverter.VALID_UNITS,
+            VOLUME_STATE_CLASSES,
+        ),
+        CONF_HOT_WATER_FLOW_SENSOR: (VolumeFlowRateConverter.VALID_UNITS, None),
     }
     errors: dict[str, str] = {}
     for key, (units, state_classes) in measurement_checks.items():

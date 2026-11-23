@@ -8,6 +8,7 @@ showers in the evening (17:30-19:30). Start times move by a few minutes.
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+from dataclasses import replace
 from datetime import date, datetime, time, timedelta
 import random
 from zoneinfo import ZoneInfo
@@ -33,6 +34,14 @@ def shower(
         while_heating=False,
         shortage=shortage,
     )
+
+
+def metered(draws: Sequence[ConsumptionEvent]) -> list[ConsumptionEvent]:
+    """The same draws measured by a hot water meter (litres at 60 °C)."""
+    return [
+        replace(draw, liters=round(draw.energy_kwh / (0.001163 * (60.0 - 14.0)), 1))
+        for draw in draws
+    ]
 
 
 def household(first: date, days: int, seed: int = 1) -> list[ConsumptionEvent]:
@@ -70,6 +79,7 @@ def feed(
     occupied: Callable[[datetime], bool | None] = lambda moment: True,
     available: Callable[[datetime], bool] = lambda moment: True,
     workday: Callable[[date], bool | None] = lambda day: None,
+    metered: Callable[[datetime], bool] = lambda moment: False,
     step: timedelta = timedelta(minutes=5),
 ) -> datetime:
     """Run the demand model over ``days`` days (plus the finalize delay)."""
@@ -87,6 +97,7 @@ def feed(
             occupied=occupied(moment),
             draws=closed,
             workday=workday(moment.astimezone(TZ).date()),
+            metered=metered(moment),
         )
         moment += step
     return moment

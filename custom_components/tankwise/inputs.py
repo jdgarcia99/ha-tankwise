@@ -10,6 +10,8 @@ from homeassistant.const import (
     UnitOfEnergy,
     UnitOfPower,
     UnitOfTemperature,
+    UnitOfVolume,
+    UnitOfVolumeFlowRate,
 )
 from homeassistant.core import State
 from homeassistant.util.unit_conversion import (
@@ -17,6 +19,8 @@ from homeassistant.util.unit_conversion import (
     EnergyConverter,
     PowerConverter,
     TemperatureConverter,
+    VolumeConverter,
+    VolumeFlowRateConverter,
 )
 
 ON_STATES = frozenset({STATE_ON, "home", "true"})
@@ -27,6 +31,8 @@ MEASUREMENTS: dict[str, tuple[type[BaseUnitConverter], str]] = {
     "temperature": (TemperatureConverter, UnitOfTemperature.CELSIUS),
     "power": (PowerConverter, UnitOfPower.WATT),
     "energy": (EnergyConverter, UnitOfEnergy.KILO_WATT_HOUR),
+    "volume": (VolumeConverter, UnitOfVolume.LITERS),
+    "flow": (VolumeFlowRateConverter, UnitOfVolumeFlowRate.LITERS_PER_MINUTE),
 }
 
 
@@ -48,7 +54,7 @@ def parse_numeric(value: str) -> float:
 
 
 def parse_measurement(value: str, unit: str | None, kind: str) -> float:
-    """Return a measurement converted to °C, W or kWh, or raise InputError."""
+    """Return a measurement in °C, W, kWh, L or L/min, or raise InputError."""
     converter, target = MEASUREMENTS[kind]
     number = parse_numeric(value)
     if unit not in converter.VALID_UNITS:

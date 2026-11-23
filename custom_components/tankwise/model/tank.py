@@ -163,6 +163,27 @@ MAX_GAP_DRAW = timedelta(hours=12)
 # only beyond 1 °C plus this much per hour of gap and share of the heat.
 GAP_DRAW_DRIFT_PER_HOUR = 0.25  # °C
 GAP_DRAW_HEAT_SHARE = 0.1
+# Heater energy across a gap below this is meter noise, not a heating.
+GAP_HEATING_MIN_KWH = MIN_EPISODE_ENERGY_KWH
+
+# Hot water meter (litres leaving the tank)
+# A draw ends after this long without a new litre (single pulses are grouped).
+METER_DRAW_END = timedelta(minutes=3)
+# A volume jump beyond this flow (plus one litre) is a glitch, not a draw.
+METER_MAX_FLOW_L_PER_MIN = 30.0
+# The last probe reading may be this old to give the outlet temperature.
+METER_PROBE_MAX_AGE = timedelta(minutes=60)
+# Stratification: probe drop per litre against the drop of a mixed tank.
+STRATIFICATION_SETTLE = timedelta(minutes=10)  # after the last litre
+MIN_STRATIFICATION_DROP = 4.0  # °C expected in a mixed tank (MAX6675: ±1 °C)
+MIN_STRATIFICATION_RATIO = 0.2
+MAX_STRATIFICATION_RATIO = 1.5
+MAX_STRATIFICATION_SAMPLES = 20
+MIN_STRATIFICATION_SAMPLES = 3
+STRATIFICATION_BAND = 5.0  # °C, samples this close to a temperature are used
+# With a meter the energy balance is trusted: the probe only corrects the
+# model beyond this difference (resolution and noise of the probe).
+METERED_PROBE_DEADBAND = 1.0  # °C
 
 # Loss learning (rest windows)
 LOSS_SETTLE = timedelta(minutes=30)  # after heating, draws or meter activity
@@ -439,6 +460,11 @@ class TankSample:
     # its state is unavailable, a stop of the heating is left undecided: the
     # temperature backup criterion is only for installations without one.
     regulator_configured: bool = False
+    # Hot water meter: cumulative litres and flow (L/min); ``meter_configured``
+    # switches the draw detection from the probe to the litres.
+    hot_water_volume: float | None = None
+    hot_water_flow: float | None = None
+    meter_configured: bool = False
 
     @property
     def valid(self) -> bool:
@@ -476,6 +502,8 @@ class ConsumptionEvent:
     # Not observed: inferred from the probe drop across a gap of readings
     # (start and end are the bounds of the gap).
     estimated: bool = False
+    # Litres measured by the hot water meter (None: no meter).
+    liters: float | None = None
 
     def as_dict(self) -> dict[str, Any]:
         """Return a JSON-serialisable representation."""
@@ -492,7 +520,13 @@ class ConsumptionEvent:
                 round(self.reconciled, 3) if self.reconciled is not None else None
             ),
             "estimated": self.estimated,
+            "liters": round(self.liters, 1) if self.liters is not None else None,
         }
+
+    @property
+    def metered(self) -> bool:
+        """Return True if the draw was measured by the hot water meter."""
+        return self.liters is not None
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ConsumptionEvent:
@@ -510,6 +544,7 @@ class ConsumptionEvent:
             shortage=bool(data.get("shortage", False)),
             slow=bool(data.get("slow", False)),
             estimated=bool(data.get("estimated", False)),
+            liters=None if data.get("liters") is None else float(data["liters"]),
             reconciled=(
                 None if data.get("reconciled") is None else float(data["reconciled"])
             ),
@@ -549,6 +584,9 @@ class TankState:
     status_reason: str = REASON_CALIBRATED
     uncertain_since: datetime | None = None
     heater_power_samples: int = 0
+    # Hot water meter: probe drop per litre against a mixed tank (1: mixed).
+    stratification_ratio: float = 1.0
+    stratification_samples: int = 0
 
     def loss_power_w(self, ambient_temperature: float) -> float | None:
         """Return the current standing loss in W."""
@@ -575,6 +613,31 @@ class _ActiveEvent:
     slow: bool = False
     # Draw energy accumulated when the probe crossed the comfort temperature.
     energy_at_comfort: float | None = None
+
+
+@dataclass(slots=True)
+class _MeterDraw:
+    """A draw measured by the hot water meter, still running."""
+
+    start: datetime
+    last_flow: datetime
+    outlet: float  # tank temperature when it started (°C)
+    liters: float = 0.0
+    energy_kwh: float = 0.0
+    min_probe: float | None = None
+    heating: bool = False
+    estimated: bool = False  # litres counted across a gap of the meter
+    energy_at_comfort: float | None = None
+
+
+@dataclass(slots=True)
+class _StratificationProbe:
+    """Probe drop against the metered draws since a reading before them."""
+
+    start_probe: float
+    start_time: datetime
+    expected: float = 0.0  # °C the model drops for the metered energy
+    heating: bool = False
 
 
 @dataclass(slots=True)
@@ -681,6 +744,12 @@ class TankModel:
         self._last_energy: float | None = None
         self._last_power: float | None = None
         self._consumptions: deque[ConsumptionEvent] = deque(maxlen=MAX_CONSUMPTIONS)
+        # Hot water meter: last reading, (temperature, ratio) samples of the
+        # stratification, and how far the probe is expected above the model.
+        self._meter_volume: float | None = None
+        self._meter_time: datetime | None = None
+        self._stratification: list[tuple[float, float]] = []
+        self._stratification_offset = 0.0
 
         # Runtime only (not persisted)
         self._filter = ProbeFilter(tau_s=FILTER_TAU_S)
@@ -698,6 +767,9 @@ class TankModel:
         self._reconciliations: deque[Reconciliation] = deque(maxlen=MAX_RECONCILIATIONS)
         self._usable_samples: list[float] = []
         self._pending_usable: list[_UsableObservation] = []
+        self._meter_draw: _MeterDraw | None = None
+        self._strat_probe: _StratificationProbe | None = None
+        self._last_probe_time: datetime | None = None
 
     # ------------------------------------------------------------------
     # Public API
@@ -734,6 +806,31 @@ class TankModel:
         return _clamp(
             median(self._usable_samples), MIN_USABLE_FACTOR, MAX_USABLE_FACTOR
         )
+
+    def stratification_ratio(self, temperature: float | None = None) -> float:
+        """Return the probe drop per metered energy against a mixed tank.
+
+        1 means the probe falls as if the tank were fully mixed; less, that
+        the water at the probe stays hot while cold water enters below it.
+        Samples taken near ``temperature`` are preferred.
+        """
+        samples = self._stratification
+        if temperature is not None:
+            near = [
+                ratio
+                for start, ratio in samples
+                if abs(start - temperature) <= STRATIFICATION_BAND
+            ]
+            if len(near) >= MIN_STRATIFICATION_SAMPLES:
+                return median(near)
+        if len(samples) >= MIN_STRATIFICATION_SAMPLES:
+            return median(ratio for _, ratio in samples)
+        return 1.0
+
+    @property
+    def stratification_samples(self) -> list[tuple[float, float]]:
+        """Return the (start temperature, ratio) samples, oldest first."""
+        return list(self._stratification)
 
     def heater_power(self, params: TankParams) -> float:
         """Return the learned heater power (W), or the rated one."""
@@ -776,6 +873,9 @@ class TankModel:
 
     def update(self, sample: TankSample, params: TankParams) -> TankState:
         """Process one sample and return the new state."""
+        if sample.meter_configured:
+            # Litres are counted even while the probe or the power is missing.
+            self._track_meter(sample, params)
         if not sample.valid:
             # Safe mode: freeze everything, invent nothing.
             return self._state(sample.timestamp, params, available=False)
@@ -794,9 +894,11 @@ class TankModel:
             return self._state(now, params, available=True)
         if elapsed > FILTER_RESET_GAP:
             self._recover_from_gap(sample, params, elapsed)
-            return self._state(now, params, available=True)
-
-        self._step(sample, params, elapsed)
+        else:
+            self._step(sample, params, elapsed)
+        self._last_probe_time = now
+        if sample.meter_configured:
+            self._learn_stratification(now, self._ambient(sample, params), params)
         return self._state(now, params, available=True)
 
     def reset_losses(self) -> None:
@@ -815,6 +917,8 @@ class TankModel:
         self._heater_power_samples = 0
         self._cutoff_samples.clear()
         self._consumptions.clear()
+        self._stratification.clear()
+        self._stratification_offset = 0.0
         self._episode = None
 
     def learned_samples(self) -> int:
@@ -826,6 +930,7 @@ class TankModel:
             + self._heater_power_samples
             + len(self._cutoff_samples)
             + len(self._consumptions)
+            + len(self._stratification)
         )
 
     def merge_learning(self, other: TankModel) -> None:
@@ -895,6 +1000,8 @@ class TankModel:
             math.inf,
         ):
             self._cutoff_samples = list(other._cutoff_samples)
+        if len(other._stratification) > len(self._stratification):
+            self._stratification = list(other._stratification)
         # Draws of the running model that the import did not see (or that
         # are older than the imported period) are kept; overlapping ones are
         # the same draw, recomputed by the import with the current models.
@@ -930,6 +1037,10 @@ class TankModel:
             "last_valid_time": _iso(self._last_valid_time),
             "last_energy": self._last_energy,
             "consumptions": [event.as_dict() for event in self._consumptions],
+            "meter_volume": self._meter_volume,
+            "meter_time": _iso(self._meter_time),
+            "stratification": [list(item) for item in self._stratification],
+            "stratification_offset": self._stratification_offset,
         }
 
     @classmethod
@@ -988,6 +1099,14 @@ class TankModel:
             model._last_energy = None if last_energy is None else float(last_energy)
             for event in data["consumptions"]:
                 model._consumptions.append(ConsumptionEvent.from_dict(event))
+            volume = data.get("meter_volume")
+            model._meter_volume = None if volume is None else float(volume)
+            model._meter_time = _from_iso(data.get("meter_time"))
+            model._stratification = [
+                (float(start), float(ratio))
+                for start, ratio in data.get("stratification", [])
+            ][-MAX_STRATIFICATION_SAMPLES:]
+            model._stratification_offset = float(data.get("stratification_offset", 0.0))
         except (KeyError, TypeError, ValueError) as err:
             raise ValueError(f"invalid tank model data: {err}") from err
         return model
@@ -1008,6 +1127,7 @@ class TankModel:
             sample.timestamp,
         )
         self._last_valid_time = sample.timestamp
+        self._last_probe_time = sample.timestamp
         self._last_energy = sample.energy
         self._last_power = sample.power
 
@@ -1027,16 +1147,28 @@ class TankModel:
         gap_start = self._last_valid_time
         self._filter.reset()
         self._probe = self._filter.update(now, sample.temperature)
-        drop = predicted - self._probe
-        if abs(drop) > -IDLE_DRAW_THRESHOLD:
+        hours = elapsed.total_seconds() / 3600
+        tolerance = (
+            -IDLE_DRAW_THRESHOLD
+            + GAP_DRAW_DRIFT_PER_HOUR * hours
+            + GAP_DRAW_HEAT_SHARE * heat / params.heat_capacity
+        )
+        if sample.meter_configured:
+            # The litres drawn during the gap were counted (the model already
+            # lost their energy): the probe only corrects what they do not
+            # explain, e.g. heat added without an energy meter.
+            self._stratification_offset = max(
+                0.0,
+                self._stratification_offset
+                - self.capacity_factor(params) * heat / params.heat_capacity,
+            )
+            target = self._probe - self._stratification_offset
+            if abs(predicted - target) > tolerance:
+                predicted = target
+        elif abs(predicted - self._probe) > -IDLE_DRAW_THRESHOLD:
             # Water was drawn (or heat added without a meter) during the gap:
             # follow the probe.
-            hours = elapsed.total_seconds() / 3600
-            tolerance = (
-                -IDLE_DRAW_THRESHOLD
-                + GAP_DRAW_DRIFT_PER_HOUR * hours
-                + GAP_DRAW_HEAT_SHARE * heat / params.heat_capacity
-            )
+            drop = predicted - self._probe
             if drop > tolerance and gap_start is not None and elapsed <= MAX_GAP_DRAW:
                 self._record_gap_draw(
                     gap_start, now, drop, before, predicted, heat, params
@@ -1073,7 +1205,8 @@ class TankModel:
                 energy_kwh=drop * params.heat_capacity / self.capacity_factor(params),
                 start_temperature=before if before is not None else predicted,
                 min_temperature=self._probe,
-                while_heating=heat > 0,
+                # Meter noise (a few mWh) is not a heating.
+                while_heating=heat > GAP_HEATING_MIN_KWH,
                 shortage=(
                     self._probe <= params.comfort_min_temperature - SHORTAGE_MARGIN
                 ),
@@ -1115,12 +1248,26 @@ class TankModel:
         while self._residuals and now - self._residuals[0][0] > SLOW_WINDOW:
             self._residuals.popleft()
 
-        equivalent = self._track_draws(
-            now, predicted, full_residual, heating_window, params
-        )
-        if self._event is None and not heating_window:
-            alpha = 1.0 - math.exp(-elapsed / SLOW_CORRECTION_TAU)
-            equivalent += alpha * (self._probe - equivalent)
+        alpha = 1.0 - math.exp(-elapsed / SLOW_CORRECTION_TAU)
+        if sample.meter_configured:
+            # Draws are measured by the meter (their energy is already out of
+            # the model): the probe only corrects the drift, beyond its
+            # resolution, and is expected above the model while the water
+            # at the probe is hotter than the mean (stratification).
+            equivalent = predicted
+            self._stratification_offset = max(
+                0.0, self._stratification_offset - k_cap * heat / capacity
+            )
+            if self._meter_draw is None and not heating_window:
+                error = self._probe - self._stratification_offset - equivalent
+                excess = max(0.0, abs(error) - METERED_PROBE_DEADBAND)
+                equivalent += alpha * math.copysign(excess, error)
+        else:
+            equivalent = self._track_draws(
+                now, predicted, full_residual, heating_window, params
+            )
+            if self._event is None and not heating_window:
+                equivalent += alpha * (self._probe - equivalent)
         self._equivalent = self._clamp_temperature(equivalent, params)
 
         self._track_capacity_episode(sample, heat, elapsed, ambient, params)
@@ -1385,6 +1532,7 @@ class TankModel:
         )
         self._uncertain = False
         self._uncertain_since = None
+        self._stratification_offset = 0.0  # heated to the cut-off: mixed
         self._calibration_count += 1
         self._last_calibration = now
         self._heater.episode_energy = 0.0
@@ -1534,34 +1682,223 @@ class TankModel:
                 slow=event.slow,
             )
         )
-        if self._consumptions[-1].shortage and self._anchor is not None:
-            anchor = self._anchor
-            before = sum(
-                draw.energy_kwh
-                for draw in list(self._consumptions)[:-1]
-                if anchor.time <= draw.start < event.start
-            )
-            self._pending_usable.append(
-                _UsableObservation(
-                    anchor_time=anchor.time,
-                    anchor_probe=anchor.probe,
-                    energy_before_kwh=before,
-                    energy_until_comfort_kwh=(
-                        event.energy_at_comfort
-                        if event.energy_at_comfort is not None
-                        else event.energy_kwh
-                    ),
-                    mains=params.mains_temperature,
-                    shower=params.shower_temperature,
-                    comfort=params.comfort_min_temperature,
-                    volume_l=params.volume_l,
-                )
+        if self._consumptions[-1].shortage:
+            self._observe_shortage(
+                event.start,
+                event.energy_at_comfort
+                if event.energy_at_comfort is not None
+                else event.energy_kwh,
+                params,
             )
         self._event = None
         self._filter.tau_s = FILTER_TAU_S
         self._last_consumption_end = now
         self._history.clear()
         self._residuals.clear()
+
+    def _observe_shortage(
+        self, start: datetime, energy_until_comfort: float, params: TankParams
+    ) -> None:
+        """Keep a shortage (the last draw) to learn k_use when reconciled."""
+        anchor = self._anchor
+        if anchor is None:
+            return
+        before = sum(
+            draw.energy_kwh
+            for draw in list(self._consumptions)[:-1]
+            if anchor.time <= draw.start < start
+        )
+        self._pending_usable.append(
+            _UsableObservation(
+                anchor_time=anchor.time,
+                anchor_probe=anchor.probe,
+                energy_before_kwh=before,
+                energy_until_comfort_kwh=energy_until_comfort,
+                mains=params.mains_temperature,
+                shower=params.shower_temperature,
+                comfort=params.comfort_min_temperature,
+                volume_l=params.volume_l,
+            )
+        )
+
+    # ------------------------------------------------------------------
+    # Hot water meter
+    # ------------------------------------------------------------------
+
+    def _outlet_temperature(self, now: datetime) -> float | None:
+        """Return the temperature of the water leaving the tank now.
+
+        The last probe reading (the top of a stratified tank stays hot), or
+        the model with the expected stratification when it is too old.
+        """
+        if (
+            self._probe is not None
+            and self._last_probe_time is not None
+            and now - self._last_probe_time <= METER_PROBE_MAX_AGE
+        ):
+            return self._probe
+        if self._equivalent is None:
+            return None
+        return self._equivalent + self._stratification_offset
+
+    def _track_meter(self, sample: TankSample, params: TankParams) -> None:
+        """Count the litres leaving the tank and group them into draws.
+
+        A draw starts with the first new litre and ends after
+        ``METER_DRAW_END`` without another one (and without flow, if the
+        flow rate is known). Its energy is ``litres · c · (T_out - T_mains)``
+        with the tank temperature when it started: the water leaves hot
+        nearly the whole draw in a stratified tank.
+        """
+        now = sample.timestamp
+        heating = sample.power is not None and sample.power > params.power_threshold_w
+        draw = self._meter_draw
+        if heating:
+            if draw is not None:
+                draw.heating = True
+            if self._strat_probe is not None:
+                self._strat_probe.heating = True
+        volume = sample.hot_water_volume
+        if volume is None:
+            return  # meter unavailable: its litres are counted when it returns
+        previous, since = self._meter_volume, self._meter_time
+        self._meter_volume, self._meter_time = volume, now
+        if previous is None or since is None or now <= since:
+            return
+        delta = volume - previous
+        elapsed = now - since
+        limit = METER_MAX_FLOW_L_PER_MIN * elapsed.total_seconds() / 60 + 1
+        if delta < 0 or delta > limit or elapsed > MAX_GAP_DRAW:
+            return  # meter reset, glitch or too long a gap: count from here
+        if delta > 0:
+            outlet = self._outlet_temperature(now)
+            if draw is None:
+                if outlet is None:
+                    return  # nothing known about the tank yet
+                draw = self._open_meter_draw(since, now, outlet, heating)
+            if elapsed > METER_DRAW_END:
+                draw.estimated = True  # litres counted across a gap
+            self._add_meter_litres(draw, delta, params)
+            draw.last_flow = now
+        if draw is None:
+            return
+        if sample.temperature is not None:
+            if draw.min_probe is None or sample.temperature < draw.min_probe:
+                draw.min_probe = sample.temperature
+            if (
+                draw.energy_at_comfort is None
+                and sample.temperature < params.comfort_min_temperature
+            ):
+                draw.energy_at_comfort = draw.energy_kwh
+        flowing = sample.hot_water_flow is not None and sample.hot_water_flow > 0
+        if delta <= 0 and not flowing and now - draw.last_flow >= METER_DRAW_END:
+            self._close_meter_draw(now, params)
+
+    def _open_meter_draw(
+        self, since: datetime, now: datetime, outlet: float, heating: bool
+    ) -> _MeterDraw:
+        draw = _MeterDraw(start=since, last_flow=now, outlet=outlet, heating=heating)
+        self._meter_draw = draw
+        if self._episode is not None:
+            self._episode.draw_seen = True
+        if (
+            self._strat_probe is None
+            and not heating
+            and not self._in_heating_window(now)
+            and self._probe is not None
+            and self._last_probe_time is not None
+            and now - self._last_probe_time <= METER_PROBE_MAX_AGE
+        ):
+            self._strat_probe = _StratificationProbe(
+                start_probe=self._probe, start_time=self._last_probe_time
+            )
+        return draw
+
+    def _add_meter_litres(
+        self, draw: _MeterDraw, liters: float, params: TankParams
+    ) -> None:
+        """Take the energy of some litres out of the model."""
+        energy = (
+            liters
+            * WATER_HEAT_CAPACITY_KWH_PER_L_K
+            * max(0.0, draw.outlet - params.mains_temperature)
+        )
+        draw.liters += liters
+        draw.energy_kwh += energy
+        if self._equivalent is None:
+            return
+        drop = self.capacity_factor(params) * energy / params.heat_capacity
+        self._equivalent = self._clamp_temperature(self._equivalent - drop, params)
+        # The probe is expected to fall only part of it (stratification).
+        ratio = self.stratification_ratio(draw.outlet)
+        self._stratification_offset = max(
+            0.0, self._stratification_offset + (1 - ratio) * drop
+        )
+        if self._strat_probe is not None:
+            self._strat_probe.expected += drop
+
+    def _close_meter_draw(self, now: datetime, params: TankParams) -> None:
+        draw = self._meter_draw
+        assert draw is not None
+        self._meter_draw = None
+        minimum = draw.min_probe
+        if minimum is None:
+            minimum = (
+                self._equivalent + self._stratification_offset
+                if self._equivalent is not None
+                else draw.outlet
+            )
+        event = ConsumptionEvent(
+            start=draw.start,
+            end=draw.last_flow,
+            energy_kwh=draw.energy_kwh,
+            start_temperature=draw.outlet,
+            min_temperature=minimum,
+            while_heating=draw.heating,
+            shortage=minimum <= params.comfort_min_temperature - SHORTAGE_MARGIN,
+            estimated=draw.estimated,
+            liters=draw.liters,
+        )
+        self._consumptions.append(event)
+        self._last_consumption_end = now
+        if event.shortage:
+            self._observe_shortage(
+                event.start,
+                draw.energy_at_comfort
+                if draw.energy_at_comfort is not None
+                else draw.energy_kwh,
+                params,
+            )
+
+    def _learn_stratification(
+        self, now: datetime, ambient: float, params: TankParams
+    ) -> None:
+        """Compare the probe drop with the metered draws, once settled.
+
+        The ratio of the observed drop (losses removed) to the drop of a
+        mixed tank says how much of the cold water reaches the probe. Only
+        drops the probe can resolve are used (``MIN_STRATIFICATION_DROP``).
+        """
+        probe = self._strat_probe
+        if probe is None or self._meter_draw is not None or self._probe is None:
+            return
+        end = self._last_consumption_end
+        if end is None or now - end < STRATIFICATION_SETTLE:
+            return
+        self._strat_probe = None
+        if probe.heating or probe.expected < MIN_STRATIFICATION_DROP:
+            return
+        hours = (now - probe.start_time).total_seconds() / 3600
+        mean = (probe.start_probe + self._probe) / 2
+        loss = self._ua * (mean - ambient) * hours / (params.heat_capacity * 1000)
+        observed = probe.start_probe - self._probe - loss
+        ratio = _clamp(
+            observed / probe.expected,
+            MIN_STRATIFICATION_RATIO,
+            MAX_STRATIFICATION_RATIO,
+        )
+        self._stratification.append((probe.start_probe, ratio))
+        del self._stratification[:-MAX_STRATIFICATION_SAMPLES]
 
     # ------------------------------------------------------------------
     # Energy reconciliation
@@ -1593,6 +1930,7 @@ class TankModel:
             and tracker.last_heating_end is not None
             and now - tracker.last_heating_end >= POST_HEATING
             and self._event is None
+            and self._meter_draw is None
         )
         if not settled:
             return
@@ -1614,18 +1952,26 @@ class TankModel:
         assert self._probe is not None
         capacity = params.heat_capacity
         k_cap = self.capacity_factor(params)
-        indexes = [
+        interval = [
             index
             for index, event in enumerate(self._consumptions)
             if anchor.time <= event.start < now
         ]
+        # Metered draws are measured, not estimated: they are never scaled,
+        # and the rest of the balance is what the estimated ones drew.
+        metered = sum(
+            self._consumptions[index].energy_kwh
+            for index in interval
+            if self._consumptions[index].metered
+        )
+        indexes = [index for index in interval if not self._consumptions[index].metered]
         measured = sum(self._consumptions[index].energy_kwh for index in indexes)
         drawn_at_probe = (
             k_cap * anchor.heat_kwh
             - anchor.loss_kwh
             - capacity * (self._probe - anchor.probe)
         )
-        actual = max(0.0, drawn_at_probe / k_cap)
+        actual = max(0.0, drawn_at_probe / k_cap - metered)
         factor = None
         if measured >= MIN_RECONCILE_DRAWS_KWH:
             factor = _clamp(
@@ -1688,7 +2034,7 @@ class TankModel:
         heating = sample.power > params.power_threshold_w
         episode = self._episode
         if episode is None:
-            if heating and self._event is None:
+            if heating and self._event is None and self._meter_draw is None:
                 self._episode = _CapacityEpisode(start_probe=self._probe)
                 self._episode.energy_kwh += heat
             return
@@ -1698,7 +2044,7 @@ class TankModel:
         episode.ambient_sum += ambient
         episode.samples += 1
         episode.hours += elapsed.total_seconds() / 3600
-        if self._event is not None:
+        if self._event is not None or self._meter_draw is not None:
             episode.draw_seen = True
 
         tracker = self._heater
@@ -1752,6 +2098,7 @@ class TankModel:
         quiet = (
             not heating_window
             and self._event is None
+            and self._meter_draw is None
             and all(now - ref >= LOSS_SETTLE for ref in settle_refs)
         )
         if quiet:
@@ -1856,7 +2203,7 @@ class TankModel:
             available=available and equivalent is not None,
             status=self.status(),
             heater_state=self._heater.state,
-            drawing=self._event is not None,
+            drawing=self._event is not None or self._meter_draw is not None,
             probe_temperature=self._probe if available else None,
             equivalent_temperature=equivalent,
             mains_temperature=params.mains_temperature,
@@ -1880,6 +2227,10 @@ class TankModel:
             status_reason=self.status_reason(),
             uncertain_since=self._uncertain_since if self._uncertain else None,
             heater_power_samples=self._heater_power_samples,
+            stratification_ratio=self.stratification_ratio(
+                self._probe if available else None
+            ),
+            stratification_samples=len(self._stratification),
         )
 
 

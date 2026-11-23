@@ -16,7 +16,7 @@ from tankwise_model.appointments import (
 )
 from tankwise_model.demand import DayTypeMode, DemandModel, DemandParams
 
-from .household import EVENING_KWH, MORNING_KWH, TZ, feed, household
+from .household import EVENING_KWH, MORNING_KWH, TZ, feed, household, metered
 
 FIRST = date(2026, 10, 5)  # a Monday
 MORNING = Appointment(
@@ -214,3 +214,34 @@ def test_required_temperature_inverts_useful_litres() -> None:
     requirement = appointment_requirement(big, None, **common)
     assert requirement.source == "minimum"
     assert not requirement.feasible
+
+
+def test_usage_in_litres_measured_by_the_meter() -> None:
+    """With a meter the litres that left the tank are summarised too."""
+    model = DemandModel(TZ)
+    now = feed(
+        model, FIRST, 28, metered(household(FIRST, 28)), metered=lambda moment: True
+    )
+    usage = appointment_usage(
+        MORNING,
+        model,
+        DemandParams(mode=DayTypeMode.ALL),
+        now,
+        shower_temperature=40,
+        mains_temperature=15,
+    )
+    assert usage.hot_days == 28
+    hot = MORNING_KWH / (0.001163 * (60.0 - 14.0))  # litres at 60 °C
+    assert usage.hot_p90 == pytest.approx(hot, rel=0.05)
+    assert usage.hot_p50 is not None and usage.hot_p50 <= usage.hot_p90
+    # Hot litres are fewer than litres at the shower temperature.
+    assert usage.p90 is not None and usage.hot_p90 < usage.p90
+
+
+def test_usage_without_a_meter_has_no_hot_litres() -> None:
+    model = DemandModel(TZ)
+    now = feed(model, FIRST, 7, household(FIRST, 7))
+    usage = appointment_usage(
+        MORNING, model, DemandParams(), now, shower_temperature=40, mains_temperature=15
+    )
+    assert usage.hot_p90 is None and usage.hot_days == 0

@@ -82,6 +82,24 @@ balance, one sample per minute:
   `estimated` draw spread over the gap, so it reaches the demand profile.
   Only a gap of the probe or the power makes the state uncertain: the
   regulator is not needed to follow the tank.
+- **Hot water meter** (optional, at the outlet of the tank): the draws are
+  measured instead. A draw starts with the first new litre and ends after
+  3 minutes without one (and without flow, when the flow rate is known); its
+  energy is `litres · c · (T_out − T_mains)`, with `T_out` the probe when it
+  started (or the model when the probe is older than an hour). The litres are
+  counted before the validity check, so a gap of the probe loses none; a gap
+  of the meter gives one `estimated` draw. The model drops by
+  `k_cap · E / C` (the convention of the heat input and of the optimiser),
+  and the probe is expected above it by `(1 − r) · k_cap · E / C`, where `r`
+  is the **stratification ratio**: the probe drop (losses removed, settled
+  10 minutes after the last litre, no heating) over the drop the metered
+  energy gives a mixed tank, learned from draws of at least 4 °C, by start
+  temperature (±5 °C, median of the last 20, used from 3 samples). That
+  offset shrinks with the heat added and is reset by a heating to the
+  cut-off. The probe corrects the model only beyond 1 °C. Metered draws are
+  never scaled by the reconciliation (the balance only scales the estimated
+  ones), so the shortages give `k_use` from exact energies. Without a meter
+  every path is the one of 0.11.1 (a golden test checks it).
 
 **Useful litres.** The cold water entering mixes with the hot water, so only
 the heat above the comfort temperature can be used:
@@ -97,7 +115,10 @@ predicted then). The inverse gives the temperature an appointment needs.
 ## Demand
 
 Draws are spread over 15-minute slots of each observed day (at least 20 hours
-of data with the house occupied). For each day type (weekday, workday and
+of data with the house occupied). Days measured by a hot water meter for at
+least 20 hours also keep the litres of each slot: the energy drives the
+plan, the litres are compared with the appointments (`hot_liters_p50/p90`)
+and summarised per day type. For each day type (weekday, workday and
 weekend, or all alike; holidays from the Workday integration count as
 non-working days) the last N days are kept with a three-week half-life.
 
@@ -185,8 +206,9 @@ order is written to the logbook with its reason.
 
 The history import (`bootstrap.py`) replays the recorder history through new
 models when TankWise is installed or its models change (bootstrap version).
-It waits until the entry is complete and the inputs report values, is not
-adopted if it learned nothing, and is **merged** with what was learned:
+It waits until the entry is complete and the inputs report values, runs
+again when a hot water meter is added (the draws are measured with its
+history), is not adopted if it learned nothing, and is **merged** with what was learned:
 lists of measurements keep the source with more of them, and an estimate
 that is not coherent with the history (heat losses, heater power) gives way
 to the history.

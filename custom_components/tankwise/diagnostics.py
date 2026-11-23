@@ -163,6 +163,11 @@ async def async_get_config_entry_diagnostics(
             "heater_power_w": tank.heater_power_w,
             "cutoff_temperature": tank.cutoff_temperature,
             "cutoff_samples": list(tank.cutoff_samples),
+            "stratification_ratio": tank.stratification_ratio,
+            "stratification_samples": [
+                [round(start, 2), round(ratio, 3)]
+                for start, ratio in coordinator.model.stratification_samples
+            ],
             "mains_source": data.mains_source,
         },
         "bootstrap": coordinator.bootstrap.as_dict(),
@@ -212,6 +217,13 @@ async def async_get_config_entry_diagnostics(
             ],
             "today_p50_p90": list(data.demand_today),
             "remaining_p50_p90": list(data.demand_remaining),
+            "observed_today": list(data.observed_today),
+            "profile_today_p50_p90": list(data.profile_today),
+            "profile_liters_today_p50_p90": (
+                list(data.profile_liters_today)
+                if data.profile_liters_today is not None
+                else None
+            ),
             "forecast_p90_36h": data.forecast.total(0.9),
         },
         "appointments": [
