@@ -19,7 +19,15 @@ from tankwise_model.demand import (
     weighted_quantile,
 )
 
-from .household import EVENING_KWH, MORNING_KWH, TZ, feed, household, shower
+from .household import (
+    EVENING_KWH,
+    MORNING_KWH,
+    TZ,
+    feed,
+    household,
+    metered,
+    shower,
+)
 
 FIRST = date(2026, 10, 5)  # a Monday
 PARAMS = DemandParams(mode=DayTypeMode.ALL)
@@ -438,3 +446,71 @@ def test_windows_keep_p90_above_p50() -> None:
         start = now + timedelta(hours=hour)
         end = now + timedelta(days=1)
         assert forecast.window(start, end, 0.9) >= forecast.window(start, end, 0.5)
+
+
+# ---------------------------------------------------------------------------
+# Litres (hot water meter)
+# ---------------------------------------------------------------------------
+
+
+def _litres_of(kwh: float) -> float:
+    return round(kwh / (0.001163 * (60.0 - 14.0)), 1)
+
+
+def test_metered_days_keep_the_litres_of_each_slot() -> None:
+    model = DemandModel(TZ)
+    draws = metered(household(FIRST, 10))
+    now = feed(model, FIRST, 10, draws, metered=lambda moment: True)
+    [first, *_] = model.observations
+    assert first.liters is not None
+    day_draws = [d for d in draws if d.start.astimezone(TZ).date() == first.day]
+    assert first.total_liters == pytest.approx(sum(d.liters or 0 for d in day_draws))
+    # The morning shower: litres in the slots around 06:30, like the energy.
+    morning = first.window_liters(24, 30)
+    assert morning == pytest.approx(_litres_of(MORNING_KWH))
+    p50, p90 = model.day_liters(FIRST + timedelta(days=10), now, PARAMS) or (0, 0)
+    assert 0 < p50 <= p90
+    totals = [obs.total_liters for obs in model.observations]
+    assert min(totals) <= p50 <= max(totals)  # type: ignore[type-var]
+
+
+def test_days_without_a_meter_have_no_litres() -> None:
+    model = DemandModel(TZ)
+    now = feed(model, FIRST, 5, household(FIRST, 5))
+    assert all(obs.liters is None for obs in model.observations)
+    assert model.day_liters(FIRST + timedelta(days=5), now, PARAMS) is None
+    assert model.observations[0].window_liters(0, 96) is None
+
+
+def test_a_day_partly_metered_has_no_litres() -> None:
+    """The meter was added at noon: the litres of that day are incomplete."""
+    model = DemandModel(TZ)
+    added = datetime.combine(FIRST, time(12), TZ)
+    feed(
+        model,
+        FIRST,
+        2,
+        metered(household(FIRST, 2)),
+        metered=lambda moment: moment >= added,
+    )
+    first, second = model.observations
+    assert first.liters is None
+    assert second.liters is not None
+
+
+def test_litres_round_trip() -> None:
+    model = DemandModel(TZ)
+    feed(model, FIRST, 3, metered(household(FIRST, 3)), metered=lambda moment: True)
+    restored = DemandModel.from_dict(json.loads(json.dumps(model.as_dict())), TZ)
+    assert [obs.liters for obs in restored.observations] == [
+        tuple(round(value, 2) for value in obs.liters or ())
+        for obs in model.observations
+    ]
+    # Profiles saved by 0.11 have no litres.
+    data = model.as_dict()
+    for item in data["observations"]:
+        del item["liters"]
+    for item in data["coverage"].values():
+        del item["metered"]
+    old = DemandModel.from_dict(data, TZ)
+    assert all(obs.liters is None for obs in old.observations)

@@ -72,6 +72,10 @@ and no entity ID is fixed in the code.
 - Ambient temperature where the tank is.
 - Workday sensor (Workday integration): holidays are learned apart and
   appointments can be set for workdays or holidays.
+- Hot water meter at the outlet of the tank: cumulative volume (L or m³;
+  `total_increasing`, `total` or no state class, as pulse counters publish
+  it) and, optionally, its flow rate. With it the draws are measured in
+  litres instead of estimated from the probe (see below).
 
 **Options**
 
@@ -118,7 +122,13 @@ saved in the options): `time.<name>_<appointment>_time`,
 `number.<name>_<appointment>_liters` and `switch.<name>_<appointment>_enabled`.
 The sensor `sensor.<name>_<appointment>_suggested_liters` shows the litres
 actually used during the block (P90 of the last four weeks, raised like the
-plan after recent shortages) to help choosing the minimum, and `sensor.<name>_<appointment>_required_temperature`
+plan after recent shortages, at the shower temperature) to help choosing the
+minimum. With a hot water meter the suggestion comes from the measured draws:
+each is worth `litres_tank · (T_tank − T_mains) / (T_shower − T_mains)` litres
+at the shower temperature, with the tank temperature when it started
+(attributes `shower_liters_p50` and `shower_liters_p90`, and `source`);
+`hot_liters_p50` and `hot_liters_p90` give the litres that really left the
+tank. And `sensor.<name>_<appointment>_required_temperature`
 the tank temperature needed when the block starts. If that temperature is
 above the learned thermostat cut-off, `binary_sensor.tankwise_plan_at_risk`
 turns on: even a full tank does not cover the block. From phase 3 the planner
@@ -139,9 +149,9 @@ are translated.
 | Plan at risk (binary) | On when hot water cannot be guaranteed: an appointment needs more than a full tank gives, the usual demand is not covered, or the regulator or the probe is unavailable before an appointment (`reasons` attribute) |
 | Modelled temperature | Equivalent tank temperature tracked by the model |
 | Model status | `calibrated`, `learning` or `uncertain`; attributes `reason`, `missing` (what is needed to calibrate) and the `samples` of each learned parameter |
-| Last draw | Start of the last hot water draw, with its energy, minimum temperature and whether there was a shortage |
+| Last draw | Start of the last hot water draw, with its energy, litres (with a hot water meter), minimum temperature and whether there was a shortage |
 | Hot water shortages (7 days) | Draws that took the water at least 1.5 °C below the minimum comfort temperature |
-| Hot water demand today | Energy a strong day needs (P90), with the usual day (P50) and the rest of today as attributes |
+| Hot water demand today | What was drawn today plus what a strong rest of the day needs (P90); attributes: the usual day (P50), what was drawn (`observed`, `observed_liters`), the rest of today and the whole day of the profile (`profile_p50`/`profile_p90`, and in litres with a meter) |
 | Hot water demand forecast | Demand of the next 36 hours (P90), with the 15-minute slots as an attribute |
 | Heat loss coefficient (diagnostic, disabled by default) | Learned UA, in W/K |
 | Learned heating power (diagnostic, disabled by default) | Mean power of the heating element at full output |
@@ -345,8 +355,25 @@ hour by itself (e.g. on sunny days), nothing extra is heated.
   compared with the predicted one. A draw starts when the residual
   accumulated over 10 minutes falls below −1 °C and ends when it stays close to
   zero for 5 minutes. Its energy is `C · ΔT_residual / k_cap`.
+- **Hot water meter.** With a meter at the outlet the draws are measured,
+  not estimated: a draw starts with the first litre and ends after 3 minutes
+  without another one (single pulses are grouped; while the flow rate is
+  above zero it goes on). Its energy is
+  `litres · 1.163 Wh/(L·K) · (T_out − T_mains)`, with `T_out` the tank
+  temperature when it started: in a stratified tank the water leaves hot
+  nearly the whole draw, so the drop of the probe does not lower it. The
+  litres are counted even while the probe is unavailable. The model learns
+  the stratification from the pair "metered energy / probe drop" (draws that
+  would lower a mixed tank at least 4 °C, without heating): how much of the
+  drop reaches the probe, by temperature. With it the model keeps the energy
+  that left although the probe at the top hardly falls, and a heating to the
+  cut-off mixes the tank again. The probe only corrects the model beyond 1 °C
+  (resolution and noise of a thermocouple). Measured draws are never scaled
+  by the energy reconciliation, so `k_use` is learned from exact energies.
+  Without a meter nothing changes.
 - **Usage profile.** Each complete day (at least 20 h observed, home
-  occupied) is stored as the energy drawn in its 96 slots of 15 minutes. The
+  occupied) is stored as the energy drawn in its 96 slots of 15 minutes (and
+  the litres, when a hot water meter measured the whole day). The
   forecast uses the last 16 days of the same type, recent ones weighing more
   (half-life of three weeks). Percentiles are taken on the cumulative curve
   of each day, not slot by slot: the P90 of a day is a "strong" day, and
@@ -357,13 +384,14 @@ hour by itself (e.g. on sunny days), nothing extra is heated.
   small while the cold water stays at the bottom, and too large when the cold
   front reaches it. After each heating the tank is mixed, so the energy
   balance between two settled heatings gives the energy really drawn and the
-  draws in between are scaled to it. A drop of more than 1 °C beyond the
+  draws in between are scaled to it (only the estimated ones). A drop of more than 1 °C beyond the
   losses over an hour at rest is recorded as a slow draw.
 - **Hot water shortage.** A draw that took the probe at least 1.5 °C below
   the minimum comfort temperature.
 - **History import.** On the first start the last 10 days of the recorder are
   replayed through the models, so losses, cut-offs, draws and the usage
-  profile are known from day one.
+  profile are known from day one. Adding a hot water meter imports them again:
+  the draws of those days are measured with its history.
 - **Safe mode.** Without the probe or the power, the model freezes and the
   tank sensors become unavailable; nothing is invented. After an outage longer
   than 30 minutes the state is uncertain until the next full tank. A drop of

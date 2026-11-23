@@ -8,15 +8,17 @@ import pytest
 from tankwise_model.appointments import (
     MAX_APPOINTMENTS,
     Appointment,
+    appointment_requirement,
     appointment_usage,
     energy_from_liters,
     liters_from_energy,
     load_appointments,
     slugify,
 )
-from tankwise_model.demand import DayTypeMode, DemandModel, DemandParams
+from tankwise_model.demand import WEEKDAY_NAMES, DayTypeMode, DemandModel, DemandParams
+from tankwise_model.tank import ConsumptionEvent
 
-from .household import EVENING_KWH, MORNING_KWH, TZ, feed, household
+from .household import EVENING_KWH, MORNING_KWH, TZ, feed, household, metered
 
 FIRST = date(2026, 10, 5)  # a Monday
 MORNING = Appointment(
@@ -214,3 +216,122 @@ def test_required_temperature_inverts_useful_litres() -> None:
     requirement = appointment_requirement(big, None, **common)
     assert requirement.source == "minimum"
     assert not requirement.feasible
+
+
+def test_usage_in_litres_measured_by_the_meter() -> None:
+    """With a meter the litres that left the tank are summarised too."""
+    model = DemandModel(TZ)
+    now = feed(
+        model, FIRST, 28, metered(household(FIRST, 28)), metered=lambda moment: True
+    )
+    usage = appointment_usage(
+        MORNING,
+        model,
+        DemandParams(mode=DayTypeMode.ALL),
+        now,
+        shower_temperature=40,
+        mains_temperature=15,
+    )
+    assert usage.hot_days == 28
+    hot = MORNING_KWH / (0.001163 * (60.0 - 14.0))  # litres at 60 °C
+    assert usage.hot_p90 == pytest.approx(hot, rel=0.05)
+    assert usage.hot_p50 is not None and usage.hot_p50 <= usage.hot_p90
+    # Hot litres are fewer than litres at the shower temperature.
+    assert usage.p90 is not None and usage.hot_p90 < usage.p90
+
+
+def test_usage_without_a_meter_has_no_hot_litres() -> None:
+    model = DemandModel(TZ)
+    now = feed(model, FIRST, 7, household(FIRST, 7))
+    usage = appointment_usage(
+        MORNING, model, DemandParams(), now, shower_temperature=40, mains_temperature=15
+    )
+    assert usage.hot_p90 is None and usage.hot_days == 0
+
+
+def _metered_draw(clock: str, minutes: int, liters: float) -> ConsumptionEvent:
+    """A draw measured by the meter at 67.5 °C with the mains at 13.5 °C."""
+    start = datetime.combine(date(2026, 11, 23), time.fromisoformat(clock), TZ)
+    return ConsumptionEvent(
+        start=start,
+        end=start + timedelta(minutes=minutes),
+        energy_kwh=liters * 0.001163 * (67.5 - 13.5),
+        start_temperature=67.5,
+        min_temperature=59.0,
+        while_heating=False,
+        shortage=False,
+        liters=liters,
+    )
+
+
+def test_suggested_litres_come_from_the_measured_draws() -> None:
+    """23/11: 34 L at 67.5 °C are about 69 L at 40 °C (mains at 13.5 °C)."""
+    evening = Appointment(
+        "t",
+        "Tarde",
+        time(17, 0),
+        frozenset(WEEKDAY_NAMES),
+        60,
+        duration=timedelta(hours=3),
+    )
+    draws = [
+        _metered_draw("17:43:30", 2, 5.0),
+        _metered_draw("17:56:30", 14, 28.0),
+        _metered_draw("18:32:30", 1, 1.0),
+    ]
+    model = DemandModel(TZ)
+    now = feed(model, date(2026, 11, 23), 1, draws, metered=lambda moment: True)
+    usage = appointment_usage(
+        evening,
+        model,
+        DemandParams(mode=DayTypeMode.ALL),
+        now,
+        shower_temperature=40,
+        mains_temperature=13.5,
+    )
+    assert usage.hot_days == 1
+    assert usage.hot_p90 == pytest.approx(34)
+    equivalent = 34 * (67.5 - 13.5) / (40 - 13.5)
+    assert equivalent == pytest.approx(69.3, abs=0.05)
+    assert usage.shower_p90 == pytest.approx(equivalent)
+    assert usage.shower_p50 == pytest.approx(equivalent)
+    assert usage.suggested == pytest.approx(equivalent)
+    # The appointment needs the measured litres (above its 60 L minimum).
+    requirement = appointment_requirement(
+        evening,
+        usage,
+        volume_l=100,
+        comfort_temperature=38,
+        shower_temperature=40,
+        mains_temperature=13.5,
+        usable_factor=1.0,
+        max_temperature=68,
+    )
+    assert requirement.source == "usage"
+    assert requirement.liters == pytest.approx(equivalent)
+
+
+def test_measured_days_are_preferred_to_estimated_ones() -> None:
+    """Days estimated from the probe before the meter are not mixed in."""
+    model = DemandModel(TZ)
+    first = FIRST
+    added = datetime.combine(first + timedelta(days=7), time.min, TZ)
+    draws = household(first, 7) + metered(household(first + timedelta(days=7), 7, 2))
+    now = feed(model, first, 14, draws, metered=lambda moment: moment >= added)
+    usage = appointment_usage(
+        MORNING, model, DemandParams(), now, shower_temperature=40, mains_temperature=15
+    )
+    assert usage.days == 14
+    assert usage.hot_days == 7
+    assert usage.suggested == usage.shower_p90
+
+
+def test_without_a_meter_the_suggestion_is_unchanged() -> None:
+    model = DemandModel(TZ)
+    now = feed(model, FIRST, 7, household(FIRST, 7))
+    usage = appointment_usage(
+        MORNING, model, DemandParams(), now, shower_temperature=40, mains_temperature=15
+    )
+    assert usage.shower_p90 is None
+    assert usage.suggested == usage.p90
+    assert usage.suggested_p50 == usage.p50

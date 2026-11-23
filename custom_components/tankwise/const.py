@@ -60,6 +60,10 @@ CONF_REGULATOR_MODE_ENTITY: Final = "regulator_mode_entity"
 CONF_REGULATOR_ACTIVE_MODES: Final = "regulator_active_modes"
 CONF_REGULATOR_UPTIME_SENSOR: Final = "regulator_uptime_sensor"
 CONF_REGULATOR_RESTART_REASON_SENSOR: Final = "regulator_restart_reason_sensor"
+# Hot water meter at the outlet of the tank: cumulative volume (L or m³) and,
+# optionally, the flow rate. With it, draws are measured in litres.
+CONF_HOT_WATER_VOLUME_SENSOR: Final = "hot_water_volume_sensor"
+CONF_HOT_WATER_FLOW_SENSOR: Final = "hot_water_flow_sensor"
 
 OPTIONAL_INPUT_KEYS: Final = (
     CONF_ENERGY_SENSOR,
@@ -78,6 +82,8 @@ OPTIONAL_INPUT_KEYS: Final = (
     CONF_REGULATOR_ACTIVE_MODES,
     CONF_REGULATOR_UPTIME_SENSOR,
     CONF_REGULATOR_RESTART_REASON_SENSOR,
+    CONF_HOT_WATER_VOLUME_SENSOR,
+    CONF_HOT_WATER_FLOW_SENSOR,
 )
 
 # ---------------------------------------------------------------------------
@@ -194,7 +200,7 @@ BOOTSTRAP_DAYS: Final = 10
 # (2: demand profile, energy reconciliation and stricter cut-off detection;
 # 3: imports of 0.6 that ran before the inputs existed learned nothing;
 # 4: rest windows ended by a slow draw no longer inflate the heat losses).
-BOOTSTRAP_VERSION: Final = 4
+BOOTSTRAP_VERSION: Final = 5
 # The import waits this long for the probe and the power after a start.
 BOOTSTRAP_INPUT_WAIT: Final = timedelta(minutes=30)
 SHORTAGE_WINDOW: Final = timedelta(days=7)

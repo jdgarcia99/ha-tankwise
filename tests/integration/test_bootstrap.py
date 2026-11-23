@@ -20,9 +20,14 @@ from pytest_homeassistant_custom_component.components.recorder.common import (
 )
 
 from custom_components.tankwise.bootstrap import BootstrapStatus, states_to_changes
-from custom_components.tankwise.const import BOOTSTRAP_VERSION, DOMAIN
+from custom_components.tankwise.const import (
+    BOOTSTRAP_VERSION,
+    CONF_HOT_WATER_VOLUME_SENSOR,
+    DOMAIN,
+)
 from custom_components.tankwise.model.replay import (
     ROLE_ENERGY,
+    ROLE_HOT_WATER_VOLUME,
     ROLE_MANUAL_MODE,
     ROLE_TEMPERATURE,
 )
@@ -47,17 +52,29 @@ def auto_enable_custom_integrations(
     """The recorder must be set up before Home Assistant in these tests."""
 
 
-async def _record_history(hass: HomeAssistant, freezer: FrozenDateTimeFactory) -> None:
-    """Two days of history: a heating to the cut-off and an evening shower."""
+METER = "sensor.hot_water_meter_total"
+
+
+async def _record_history(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory, *, meter: bool = False
+) -> None:
+    """Two days of history: a heating to the cut-off and an evening shower.
+
+    With ``meter``, a hot water meter counts the litres of the shower (3 L
+    per minute at the tank temperature, no state class, like a pulse meter).
+    """
     start = dt_util.utcnow() - timedelta(days=2)
     freezer.move_to(start)
     temperature = 40.0
     energy = 100.0
+    liters = 1000.0
     set_input_states(hass, temperature=f"{temperature}", energy=f"{energy}")
+    if meter:
+        hass.states.async_set(METER, f"{liters}", {"unit_of_measurement": "L"})
     await hass.async_block_till_done()
 
     def minute(power: float, manual: str, draw_kw: float = 0.0) -> None:
-        nonlocal temperature, energy
+        nonlocal temperature, energy, liters
         heat = power / 1000 / 60
         energy += heat
         temperature += (0.9 * heat - draw_kw / 60) / 0.1163
@@ -70,6 +87,9 @@ async def _record_history(hass: HomeAssistant, freezer: FrozenDateTimeFactory) -
             energy=f"{energy:.4f}",
             manual=manual,
         )
+        if meter and draw_kw:
+            liters += 3.0
+            hass.states.async_set(METER, f"{liters}", {"unit_of_measurement": "L"})
 
     for _ in range(60):
         minute(0, "off")
@@ -479,3 +499,74 @@ async def test_incoherent_stored_losses_give_way_to_the_history(
     assert tank.ua_w_per_k == pytest.approx(1.0, abs=0.3)
     # Coherent parameters with more evidence are still kept.
     assert tank.heater_power_w == pytest.approx(1505.0)
+
+
+async def test_adding_a_meter_imports_the_history_again(
+    hass: HomeAssistant,
+    mock_entry: MockConfigEntry,
+    freezer: FrozenDateTimeFactory,
+    hass_storage: dict[str, Any],
+) -> None:
+    """The draws of the imported days are measured again in litres."""
+    await _record_history(hass, freezer, meter=True)
+    hass_storage[f"{DOMAIN}.{mock_entry.entry_id}"] = {
+        "version": 1,
+        "minor_version": 1,
+        "key": f"{DOMAIN}.{mock_entry.entry_id}",
+        "data": {
+            "bootstrap": {
+                "status": "done",
+                "samples": 10,
+                "version": BOOTSTRAP_VERSION,  # current, but without a meter
+            }
+        },
+    }
+    set_input_states(hass, temperature="50.0")
+    mock_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        mock_entry,
+        options={**mock_entry.options, CONF_HOT_WATER_VOLUME_SENSOR: METER},
+    )
+    assert await hass.config_entries.async_setup(mock_entry.entry_id)
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    coordinator = mock_entry.runtime_data
+    assert coordinator.bootstrap.status is BootstrapStatus.DONE
+    assert coordinator.bootstrap.metered
+    assert not coordinator.needs_bootstrap
+    [shower] = [
+        event for event in coordinator.model.consumptions if event.liters is not None
+    ]
+    assert shower.liters == 36  # 12 minutes at 3 L/min
+    # The mains temperature of the day of the shower (two days ago).
+    mains = coordinator.tank_params.mains_temperature
+    assert shower.energy_kwh == pytest.approx(
+        36 * 0.001163 * (shower.start_temperature - mains), rel=0.01
+    )
+
+
+async def test_import_without_a_meter_is_not_repeated(
+    hass: HomeAssistant,
+    mock_entry: MockConfigEntry,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    await _record_history(hass, freezer)
+    set_input_states(hass, temperature="50.0")
+    mock_entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(mock_entry.entry_id)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    coordinator = mock_entry.runtime_data
+    assert coordinator.bootstrap.status is BootstrapStatus.DONE
+    assert not coordinator.bootstrap.metered
+    assert not coordinator.needs_bootstrap
+
+
+def test_meter_states_are_converted_to_litres() -> None:
+    from homeassistant.core import State
+
+    changes = states_to_changes(
+        ROLE_HOT_WATER_VOLUME,
+        [State(METER, "1.5"), State(METER, "unavailable")],
+        "m³",
+    )
+    assert [change.value for change in changes] == [1500.0, None]

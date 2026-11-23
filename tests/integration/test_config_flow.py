@@ -22,6 +22,8 @@ from custom_components.tankwise.const import (
     CONF_GRID_EXPORT_SENSOR,
     CONF_GRID_IMPORT_SENSOR,
     CONF_HEATER_SWITCH,
+    CONF_HOT_WATER_FLOW_SENSOR,
+    CONF_HOT_WATER_VOLUME_SENSOR,
     CONF_INJECTION_PRICE_SENSOR,
     CONF_MANUAL_MODE_SWITCH,
     CONF_MASTER_ENTITY,
@@ -388,6 +390,77 @@ async def test_options_regulator_health_inputs(
     )
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert mock_entry.options == {**DEFAULT_PARAMETERS, **health}
+
+
+METER = "sensor.hot_water_meter_total"
+FLOW = "sensor.hot_water_meter_flow"
+
+
+@pytest.mark.parametrize(
+    ("unit", "state_class"),
+    [("L", None), ("m³", "total_increasing"), ("L", "total")],
+)
+async def test_options_hot_water_meter(
+    hass: HomeAssistant,
+    mock_setup_entry: AsyncMock,
+    mock_entry: MockConfigEntry,
+    unit: str,
+    state_class: str | None,
+) -> None:
+    """A cumulative volume, with or without a state class, and its flow."""
+    mock_entry.add_to_hass(hass)
+    set_input_states(hass)
+    attributes = {"unit_of_measurement": unit, "device_class": "water"}
+    if state_class is not None:
+        attributes["state_class"] = state_class
+    hass.states.async_set(METER, "351924", attributes)
+    hass.states.async_set(FLOW, "0.0", {"unit_of_measurement": "L/min"})
+    result = await _options_menu(hass, mock_entry, "inputs")
+    meter = {CONF_HOT_WATER_VOLUME_SENSOR: METER, CONF_HOT_WATER_FLOW_SENSOR: FLOW}
+    result = await hass.config_entries.options.async_configure(result["flow_id"], meter)
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert mock_entry.options == {**DEFAULT_PARAMETERS, **meter}
+
+
+@pytest.mark.parametrize(
+    ("volume", "flow", "errors"),
+    [
+        # An instantaneous reading is not a cumulative volume.
+        (
+            {"unit_of_measurement": "L", "state_class": "measurement"},
+            {"unit_of_measurement": "L/min"},
+            {CONF_HOT_WATER_VOLUME_SENSOR: "invalid_state_class"},
+        ),
+        (
+            {"unit_of_measurement": "kWh"},
+            {"unit_of_measurement": "L/min"},
+            {CONF_HOT_WATER_VOLUME_SENSOR: "invalid_unit"},
+        ),
+        (
+            {"unit_of_measurement": "L"},
+            {"unit_of_measurement": "L"},
+            {CONF_HOT_WATER_FLOW_SENSOR: "invalid_unit"},
+        ),
+    ],
+)
+async def test_options_hot_water_meter_invalid(
+    hass: HomeAssistant,
+    mock_setup_entry: AsyncMock,
+    mock_entry: MockConfigEntry,
+    volume: dict[str, str],
+    flow: dict[str, str],
+    errors: dict[str, str],
+) -> None:
+    mock_entry.add_to_hass(hass)
+    set_input_states(hass)
+    hass.states.async_set(METER, "351924", volume)
+    hass.states.async_set(FLOW, "0.0", flow)
+    result = await _options_menu(hass, mock_entry, "inputs")
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {CONF_HOT_WATER_VOLUME_SENSOR: METER, CONF_HOT_WATER_FLOW_SENSOR: FLOW},
+    )
+    assert result["errors"] == errors
 
 
 async def test_options_inputs_invalid(

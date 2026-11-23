@@ -24,6 +24,10 @@ Forecasts of the days of the same type:
   of that window across past days, which keeps the correlation between the
   slots of a day.
 
+With a hot water meter, each observed day also keeps the litres that left
+the tank in each slot (the energy still drives the plan; the litres are
+compared with the appointments).
+
 Recent days weigh more (half-life of three weeks). A draw that left the water
 below the comfort temperature raises the forecast of its slots by 20 %; the
 uplift fades out in two weeks. With the home unoccupied the forecast is zero.
@@ -33,7 +37,7 @@ This module is pure Python and must not import Home Assistant.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, time, timedelta, tzinfo
 from enum import StrEnum
@@ -122,11 +126,24 @@ class DayObservation:
     day: date
     slots: tuple[float, ...]
     workday: bool | None = None
+    # Litres that left the tank in each slot (None: no meter that day).
+    liters: tuple[float, ...] | None = None
 
     @property
     def total(self) -> float:
         """Return the energy drawn in the day."""
         return sum(self.slots)
+
+    @property
+    def total_liters(self) -> float | None:
+        """Return the litres drawn in the day (None: not measured)."""
+        return None if self.liters is None else sum(self.liters)
+
+    def window_liters(self, first: int, last: int) -> float | None:
+        """Return the litres drawn between two slots (``last`` excluded)."""
+        if self.liters is None:
+            return None
+        return sum(self.liters[max(0, first) : min(SLOTS_PER_DAY, last)])
 
     def window(self, first: int, last: int) -> float:
         """Return the energy drawn between two slots (``last`` excluded)."""
@@ -260,9 +277,12 @@ def _slot_start(moment: datetime) -> datetime:
 
 
 def spread_draws(
-    day: date, draws: Iterable[ConsumptionEvent], tz: tzinfo
+    day: date,
+    draws: Iterable[ConsumptionEvent],
+    tz: tzinfo,
+    value: Callable[[ConsumptionEvent], float] = lambda draw: draw.energy_kwh,
 ) -> list[float]:
-    """Spread the energy of the draws evenly over the slots of a local day."""
+    """Spread the energy (or ``value``) of the draws over a local day's slots."""
     slots = [0.0] * SLOTS_PER_DAY
     day_start = datetime.combine(day, time.min, tz).astimezone(UTC)
     day_end = datetime.combine(day + timedelta(days=1), time.min, tz).astimezone(UTC)
@@ -271,7 +291,7 @@ def spread_draws(
         end = draw.end.astimezone(UTC)
         if end <= start:
             if day_start <= start < day_end:
-                slots[_slot_index(start.astimezone(tz))] += draw.energy_kwh
+                slots[_slot_index(start.astimezone(tz))] += value(draw)
             continue
         duration = (end - start).total_seconds()
         moment = start
@@ -281,7 +301,7 @@ def spread_draws(
             step_end = min(end, boundary)
             if day_start <= moment < day_end:
                 slots[_slot_index(local)] += (
-                    draw.energy_kwh * (step_end - moment).total_seconds() / duration
+                    value(draw) * (step_end - moment).total_seconds() / duration
                 )
             moment = step_end
     return slots
@@ -292,6 +312,7 @@ class _Coverage:
     covered: timedelta = timedelta(0)
     occupied: timedelta = timedelta(0)
     workday: bool | None = None
+    metered: timedelta = timedelta(0)  # with a hot water meter
 
 
 class DemandModel:
@@ -339,11 +360,13 @@ class DemandModel:
         occupied: bool | None,
         draws: Sequence[ConsumptionEvent],
         workday: bool | None = None,
+        metered: bool = False,
     ) -> None:
         """Account one sample: coverage, new shortages and finished days.
 
         ``occupied`` None means unknown (no occupancy entity): occupied.
         ``workday`` is the workday sensor state (None: no sensor).
+        ``metered``: a hot water meter measures the draws (litres are kept).
         """
         local = moment.astimezone(self._tz)
         previous = self._last_update
@@ -353,6 +376,8 @@ class DemandModel:
             coverage.workday = workday
         if previous is not None and local > previous:
             step = min(local - previous, MAX_STEP)
+            if metered:
+                coverage.metered += step
             if available:
                 coverage.covered += step
                 if occupied is not False:
@@ -389,8 +414,16 @@ class DemandModel:
         day_draws = [
             draw for draw in draws if draw.start.astimezone(self._tz).date() == day
         ]
+        liters = None
+        if coverage.metered >= MIN_DAY_COVERAGE:
+            liters = tuple(
+                spread_draws(day, day_draws, self._tz, lambda draw: draw.liters or 0.0)
+            )
         self._observations[day] = DayObservation(
-            day, tuple(spread_draws(day, day_draws, self._tz)), coverage.workday
+            day,
+            tuple(spread_draws(day, day_draws, self._tz)),
+            coverage.workday,
+            liters,
         )
 
     def _prune(self, now: datetime) -> None:
@@ -546,6 +579,31 @@ class DemandModel:
             moment = (moment.astimezone(UTC) + SLOT).astimezone(self._tz)
         return result
 
+    def day_liters(
+        self,
+        day: date,
+        now: datetime,
+        params: DemandParams,
+        workday: bool | None = None,
+    ) -> tuple[float, float] | None:
+        """Return the P50 and P90 of the litres of a day (None: not measured).
+
+        Only the similar days measured by a hot water meter are used.
+        """
+        days = [
+            obs
+            for obs in self.similar_days(day, params, workday)
+            if obs.liters is not None
+        ]
+        if not days:
+            return None
+        totals = [sum(obs.liters or ()) for obs in days]
+        weights = [self.weight(obs, now, params) for obs in days]
+        return (
+            weighted_quantile(totals, weights, Q50),
+            weighted_quantile(totals, weights, Q90),
+        )
+
     def day_totals(
         self,
         day: date,
@@ -572,6 +630,11 @@ class DemandModel:
                     "day": obs.day.isoformat(),
                     "workday": obs.workday,
                     "slots": [round(value, 4) for value in obs.slots],
+                    **(
+                        {"liters": [round(value, 2) for value in obs.liters]}
+                        if obs.liters is not None
+                        else {}
+                    ),
                 }
                 for obs in self.observations
             ],
@@ -588,6 +651,7 @@ class DemandModel:
                     "covered": cov.covered.total_seconds(),
                     "occupied": cov.occupied.total_seconds(),
                     "workday": cov.workday,
+                    "metered": cov.metered.total_seconds(),
                 }
                 for day, cov in self._coverage.items()
             },
@@ -611,8 +675,13 @@ class DemandModel:
                     raise ValueError("wrong number of slots")
                 day = date.fromisoformat(item["day"])
                 workday = item.get("workday")
+                liters = None
+                if item.get("liters") is not None:
+                    liters = tuple(float(value) for value in item["liters"])
+                    if len(liters) != SLOTS_PER_DAY:
+                        raise ValueError("wrong number of litre slots")
                 model._observations[day] = DayObservation(
-                    day, slots, None if workday is None else bool(workday)
+                    day, slots, None if workday is None else bool(workday), liters
                 )
             for item in data["marks"]:
                 model._marks.append(
@@ -628,6 +697,7 @@ class DemandModel:
                     timedelta(seconds=float(item["covered"])),
                     timedelta(seconds=float(item["occupied"])),
                     None if workday is None else bool(workday),
+                    timedelta(seconds=float(item.get("metered", 0.0))),
                 )
             model._last_update = _from_iso(data["last_update"])
             model._last_draw_start = _from_iso(data["last_draw_start"])

@@ -39,7 +39,9 @@
           "regulator_mode_entity": "Modo del regulador",
           "regulator_active_modes": "Modos del regulador que calientan",
           "regulator_uptime_sensor": "Tiempo encendido del regulador",
-          "regulator_restart_reason_sensor": "Motivo del último reinicio del regulador"
+          "regulator_restart_reason_sensor": "Motivo del último reinicio del regulador",
+          "hot_water_volume_sensor": "Caudalímetro de agua caliente (volumen)",
+          "hot_water_flow_sensor": "Caudal de agua caliente"
         },
         "data_description": {
           "energy_sensor": "Recomendada. Energía acumulada del termo (total o total creciente). Sin ella se integra la potencia.",
@@ -57,7 +59,9 @@
           "regulator_mode_entity": "Selector con el modo del regulador. Una caída de potencia mientras está en un modo que no calienta (o no disponible) no es un corte del termostato.",
           "regulator_active_modes": "Modos del regulador que calientan. Por defecto, Auto y Manual.",
           "regulator_uptime_sensor": "Tiempo encendido del regulador (s). Si baja, se ha reiniciado: una caída de potencia cerca de un reinicio no es un corte del termostato.",
-          "regulator_restart_reason_sensor": "Motivo del último reinicio del regulador. Si cambia, se ha reiniciado."
+          "regulator_restart_reason_sensor": "Motivo del último reinicio del regulador. Si cambia, se ha reiniciado.",
+          "hot_water_volume_sensor": "Volumen acumulado de agua caliente que sale del termo (L o m³), de un caudalímetro a su salida. Con él, las extracciones se miden en litros en vez de estimarse con la sonda.",
+          "hot_water_flow_sensor": "Opcional. Caudal del mismo caudalímetro (p. ej. L/min): mientras es mayor que cero, la extracción sigue."
         }
       },
       "reconfigure": {
@@ -153,7 +157,9 @@
           "regulator_mode_entity": "Modo del regulador",
           "regulator_active_modes": "Modos del regulador que calientan",
           "regulator_uptime_sensor": "Tiempo encendido del regulador",
-          "regulator_restart_reason_sensor": "Motivo del último reinicio del regulador"
+          "regulator_restart_reason_sensor": "Motivo del último reinicio del regulador",
+          "hot_water_volume_sensor": "Caudalímetro de agua caliente (volumen)",
+          "hot_water_flow_sensor": "Caudal de agua caliente"
         },
         "data_description": {
           "energy_sensor": "Recomendada. Energía acumulada del termo (total o total creciente). Sin ella se integra la potencia.",
@@ -166,7 +172,9 @@
           "regulator_mode_entity": "Selector con el modo del regulador. Una caída de potencia mientras está en un modo que no calienta (o no disponible) no es un corte del termostato.",
           "regulator_active_modes": "Modos del regulador que calientan. Por defecto, Auto y Manual.",
           "regulator_uptime_sensor": "Tiempo encendido del regulador (s). Si baja, se ha reiniciado: una caída de potencia cerca de un reinicio no es un corte del termostato.",
-          "regulator_restart_reason_sensor": "Motivo del último reinicio del regulador. Si cambia, se ha reiniciado."
+          "regulator_restart_reason_sensor": "Motivo del último reinicio del regulador. Si cambia, se ha reiniciado.",
+          "hot_water_volume_sensor": "Volumen acumulado de agua caliente que sale del termo (L o m³), de un caudalímetro a su salida. Con él, las extracciones se miden en litros en vez de estimarse con la sonda.",
+          "hot_water_flow_sensor": "Opcional. Caudal del mismo caudalímetro (p. ej. L/min): mientras es mayor que cero, la extracción sigue."
         }
       },
       "appointments": {

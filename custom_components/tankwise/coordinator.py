@@ -47,6 +47,8 @@ from .const import (
     CONF_GRID_EXPORT_SENSOR,
     CONF_GRID_IMPORT_SENSOR,
     CONF_HEATER_SWITCH,
+    CONF_HOT_WATER_FLOW_SENSOR,
+    CONF_HOT_WATER_VOLUME_SENSOR,
     CONF_INJECTION_PRICE_SENSOR,
     CONF_MANUAL_MODE_SWITCH,
     CONF_MASTER_ENTITY,
@@ -110,6 +112,8 @@ from .model.planning import Mode
 from .model.replay import (
     ROLE_AMBIENT,
     ROLE_ENERGY,
+    ROLE_HOT_WATER_FLOW,
+    ROLE_HOT_WATER_VOLUME,
     ROLE_MANUAL_MODE,
     ROLE_OCCUPANCY,
     ROLE_POWER,
@@ -168,6 +172,9 @@ class TankReadings:
     export_power: float | None = None
     ambient_temperature: float | None = None
     workday: bool | None = None
+    # Hot water meter: cumulative litres and flow rate (L/min).
+    hot_water_volume: float | None = None
+    hot_water_flow: float | None = None
 
     @property
     def required_available(self) -> bool:
@@ -184,9 +191,15 @@ class TankWiseData:
     shortages_7d: int
     mains_source: str
     forecast: DemandForecast
-    # P50 and P90 (kWh) of today's total and of the rest of today.
+    # P50 and P90 (kWh) of today: what was drawn so far plus the rest of
+    # today; and of the rest of today alone.
     demand_today: tuple[float, float]
     demand_remaining: tuple[float, float]
+    # Drawn so far today: kWh and litres (None: no hot water meter).
+    observed_today: tuple[float, float | None] = (0.0, None)
+    # P50 and P90 of a whole usual day of today's type (profile): kWh, litres.
+    profile_today: tuple[float, float] = (0.0, 0.0)
+    profile_liters_today: tuple[float, float] | None = None
     appointment_usage: dict[str, AppointmentUsage] = field(default_factory=dict)
     appointment_requirements: dict[str, AppointmentRequirement] = field(
         default_factory=dict
@@ -309,7 +322,8 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
 
         It is imported again when the last import was made with older models
         (e.g. TankWise 0.3 had no demand profile nor energy reconciliation),
-        or when it did not learn anything.
+        when it did not learn anything, or when a hot water meter was added
+        (the draws of the imported days are measured again in litres).
         """
         if self.bootstrap.status in (
             BootstrapStatus.PENDING,
@@ -317,9 +331,10 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
             BootstrapStatus.EMPTY,
         ):
             return True
-        return (
-            self.bootstrap.status is not BootstrapStatus.NO_RECORDER
-            and self.bootstrap.version < BOOTSTRAP_VERSION
+        if self.bootstrap.status is BootstrapStatus.NO_RECORDER:
+            return False
+        return self.bootstrap.version < BOOTSTRAP_VERSION or (
+            self.meter_configured and not self.bootstrap.metered
         )
 
     @callback
@@ -425,6 +440,8 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
                 CONF_REGULATOR_RESTART_REASON_SENSOR
             ),
             ROLE_REGULATOR_OUTPUT: options.get(CONF_REGULATOR_OUTPUT_SWITCH),
+            ROLE_HOT_WATER_VOLUME: options.get(CONF_HOT_WATER_VOLUME_SENSOR),
+            ROLE_HOT_WATER_FLOW: options.get(CONF_HOT_WATER_FLOW_SENSOR),
         }
         info, result, demand = await async_bootstrap(
             self.hass,
@@ -629,6 +646,11 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
             )
 
     @property
+    def meter_configured(self) -> bool:
+        """Return True if a hot water meter measures the draws."""
+        return bool(self.config_entry.options.get(CONF_HOT_WATER_VOLUME_SENSOR))
+
+    @property
     def regulator_active_modes(self) -> tuple[str, ...]:
         """Regulator modes that heat (a drop in another mode is not a cut-off)."""
         modes = self.config_entry.options.get(CONF_REGULATOR_ACTIVE_MODES)
@@ -731,6 +753,9 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
                 self.config_entry.data.get(CONF_MANUAL_MODE_SWITCH)
                 or self.config_entry.options.get(CONF_REGULATOR_SENSOR)
             ),
+            hot_water_volume=readings.hot_water_volume,
+            hot_water_flow=readings.hot_water_flow,
+            meter_configured=self.meter_configured,
         )
         tank = self.model.update(sample, self.tank_params_at(readings.timestamp))
         self._last_sample = sample
@@ -741,6 +766,7 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
             occupied=readings.occupancy,
             draws=self.model.consumptions,
             workday=readings.workday,
+            metered=self.meter_configured and readings.hot_water_volume is not None,
         )
         workdays = await self._async_workdays(now, readings.workday)
         params = self.demand_params
@@ -754,11 +780,20 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
         today = dt_util.as_local(now).date()
         midnight = dt_util.start_of_local_day(today + timedelta(days=1))
         if readings.occupancy is False:
-            demand_today = (0.0, 0.0)
+            profile_today: tuple[float, float] = (0.0, 0.0)
+            profile_liters = None
         else:
-            demand_today = self.demand.day_totals(
+            profile_today = self.demand.day_totals(
                 today, now, params, workdays.get(today)
             )
+            profile_liters = self.demand.day_liters(
+                today, now, params, workdays.get(today)
+            )
+        observed_today = self._observed_today(today)
+        remaining = (
+            forecast.window(now, midnight, 0.5),
+            forecast.window(now, midnight, 0.9),
+        )
         await self.planner.async_update(now, readings, tank, forecast, workdays)
         _mains, source = self.mains_water_temperature_at(now)
         usage = self._appointment_usage()
@@ -789,11 +824,15 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
             shortages_7d=self._count_shortages(now),
             mains_source=source,
             forecast=forecast,
-            demand_today=demand_today,
-            demand_remaining=(
-                forecast.window(now, midnight, 0.5),
-                forecast.window(now, midnight, 0.9),
+            # What was drawn today counts: the demand of today is never below it.
+            demand_today=(
+                observed_today[0] + remaining[0],
+                observed_today[0] + remaining[1],
             ),
+            demand_remaining=remaining,
+            observed_today=observed_today,
+            profile_today=profile_today,
+            profile_liters_today=profile_liters,
             appointment_usage=usage,
             appointment_requirements=requirements,
             at_risk=at_risk,
@@ -937,6 +976,18 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
         value = (response or {}).get(entity_id, {}).get("workday")
         return value if isinstance(value, bool) else None
 
+    def _observed_today(self, today: date) -> tuple[float, float | None]:
+        """Return the energy and litres of the draws that started today."""
+        draws = [
+            event
+            for event in self.model.consumptions
+            if dt_util.as_local(event.start).date() == today
+        ]
+        energy = sum(event.energy_kwh for event in draws)
+        if not self.meter_configured:
+            return energy, None
+        return energy, sum(event.liters or 0.0 for event in draws)
+
     def _count_shortages(self, now: datetime) -> int:
         return sum(
             1
@@ -977,6 +1028,12 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
                 options.get(CONF_AMBIENT_SENSOR), "temperature"
             ),
             workday=self._read_bool(options.get(CONF_WORKDAY_ENTITY)),
+            hot_water_volume=self._read_measurement(
+                options.get(CONF_HOT_WATER_VOLUME_SENSOR), "volume"
+            ),
+            hot_water_flow=self._read_measurement(
+                options.get(CONF_HOT_WATER_FLOW_SENSOR), "flow"
+            ),
         )
 
     def _read(self, entity_id: str | None, parse: Callable[[State], Any]) -> Any:

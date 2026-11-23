@@ -73,6 +73,10 @@ ningún `entity_id` está fijado en el código.
 - Temperatura ambiente donde está el termo.
 - Sensor de días laborables (integración Workday): los festivos se aprenden
   aparte y las citas se pueden fijar para laborables o festivos.
+- Caudalímetro de agua caliente a la salida del termo: volumen acumulado (L o
+  m³; `total_increasing`, `total` o sin clase de estado, como lo publican los
+  contadores de pulsos) y, opcionalmente, su caudal. Con él las extracciones
+  se miden en litros en vez de estimarse con la sonda (ver más abajo).
 
 **Opciones**
 
@@ -119,7 +123,13 @@ guardan en las opciones): `time.<nombre>_<cita>_time`,
 `number.<nombre>_<cita>_liters` y `switch.<nombre>_<cita>_enabled`. El sensor
 `sensor.<nombre>_<cita>_suggested_liters` muestra los litros que realmente se
 usan durante el bloque (P90 de las últimas cuatro semanas, aumentado como en
-el plan tras faltas recientes) para ayudar a elegir el mínimo, y `sensor.<nombre>_<cita>_required_temperature` la
+el plan tras faltas recientes, a la temperatura de ducha) para ayudar a elegir
+el mínimo. Con caudalímetro la sugerencia sale de las extracciones medidas:
+cada una equivale a `litros_termo · (T_termo − T_red) / (T_ducha − T_red)`
+litros a la temperatura de ducha, con la temperatura del termo al empezar
+(atributos `shower_liters_p50` y `shower_liters_p90`, y `source`);
+`hot_liters_p50` y `hot_liters_p90` dan los litros que de verdad salieron del
+termo. Y `sensor.<nombre>_<cita>_required_temperature` la
 temperatura que necesita el depósito al empezar el bloque. Si supera el corte
 aprendido del termostato, `binary_sensor.tankwise_plan_at_risk` se enciende:
 ni el depósito lleno cubre el bloque. Desde la fase 3 el planificador trata
@@ -140,9 +150,9 @@ nombres visibles están traducidos.
 | Plan en riesgo (binario) | Encendido cuando no se puede garantizar el agua caliente: una cita necesita más de lo que da el depósito lleno, la demanda habitual no se cubre, o el regulador o la sonda no están disponibles antes de una cita (atributo `reasons`) |
 | Temperatura modelada | Temperatura equivalente del depósito según el modelo |
 | Estado del modelo | `calibrated`, `learning` o `uncertain`; atributos `reason`, `missing` (lo que falta para calibrar) y las muestras (`samples`) de cada parámetro aprendido |
-| Última extracción | Inicio de la última extracción, con su energía, temperatura mínima y si hubo falta de agua |
+| Última extracción | Inicio de la última extracción, con su energía, sus litros (con caudalímetro), temperatura mínima y si hubo falta de agua |
 | Faltas de agua caliente (7 días) | Extracciones que dejaron el agua al menos 1,5 °C por debajo de la temperatura mínima de confort |
-| Demanda de agua caliente hoy | Energía que necesita un día fuerte (P90), con el día habitual (P50) y el resto de hoy como atributos |
+| Demanda de agua caliente hoy | Lo extraído hoy más lo que necesita un resto de día fuerte (P90); atributos: el día habitual (P50), lo extraído (`observed`, `observed_liters`), el resto de hoy y el día completo del perfil (`profile_p50`/`profile_p90`, y en litros con caudalímetro) |
 | Previsión de demanda de agua caliente | Demanda de las próximas 36 horas (P90), con las franjas de 15 minutos como atributo |
 | Coeficiente de pérdidas (diagnóstico, desactivado por defecto) | UA aprendido, en W/K |
 | Potencia de calentamiento aprendida (diagnóstico, desactivado por defecto) | Potencia media de la resistencia a plena potencia |
@@ -355,9 +365,26 @@ de sol), no se calienta nada de más.
   filtrada con el previsto. Una extracción empieza cuando el residuo acumulado
   en 10 minutos baja de −1 °C y termina cuando se mantiene cerca de cero
   durante 5 minutos. Su energía es `C · ΔT_residual / k_cap`.
+- **Caudalímetro de agua caliente.** Con un caudalímetro a la salida las
+  extracciones se miden, no se estiman: empiezan con el primer litro y
+  terminan tras 3 minutos sin otro (los pulsos sueltos se agrupan; mientras el
+  caudal es mayor que cero sigue abierta). Su energía es
+  `litros · 1,163 Wh/(L·K) · (T_salida − T_red)`, con `T_salida` la
+  temperatura del termo al empezar: en un depósito estratificado el agua sale
+  caliente casi toda la extracción, así que la bajada de la sonda no la
+  rebaja. Los litros se cuentan aunque la sonda no esté disponible. El modelo
+  aprende la estratificación de la pareja «energía medida / bajada de la
+  sonda» (extracciones que bajarían un depósito mezclado al menos 4 °C, sin
+  calentar): qué parte de la bajada llega a la sonda, según la temperatura.
+  Con ella el modelo conserva la energía que salió aunque la sonda de arriba
+  apenas baje, y un calentamiento hasta el corte vuelve a mezclar el
+  depósito. La sonda solo corrige el modelo más allá de 1 °C (resolución y
+  ruido de un termopar). La reconciliación energética nunca escala las
+  extracciones medidas, así que `k_use` se aprende con energías exactas. Sin
+  caudalímetro no cambia nada.
 - **Perfil de uso.** Cada día completo (al menos 20 h observadas, casa
   ocupada) se guarda como la energía extraída en sus 96 franjas de 15
-  minutos. La previsión usa los últimos 16 días del mismo tipo, con más peso
+  minutos (y los litros, si un caudalímetro midió el día entero). La previsión usa los últimos 16 días del mismo tipo, con más peso
   los recientes (semivida de tres semanas). Los percentiles se calculan sobre
   la curva acumulada de cada día, no franja a franja: la P90 de un día es un
   día "fuerte", y las duchas que se mueven 15–30 minutos no cuentan dos
@@ -368,14 +395,17 @@ de sol), no se calienta nada de más.
   pequeña mientras el agua fría se queda abajo, y demasiado grande cuando el
   frente frío llega a ella. Tras cada calentamiento el depósito está mezclado,
   así que el balance de energía entre dos calentamientos asentados da la
-  energía realmente extraída y las extracciones intermedias se ajustan a ella.
+  energía realmente extraída y las extracciones intermedias se ajustan a ella
+  (solo las estimadas).
   Una bajada de más de 1 °C sobre las pérdidas en una hora en reposo se
   registra como extracción lenta.
 - **Falta de agua caliente.** Una extracción que llevó la sonda al menos
   1,5 °C por debajo de la temperatura mínima de confort.
 - **Importación del histórico.** En el primer arranque se reproducen los
   últimos 10 días del recorder a través de los modelos, así que pérdidas,
-  cortes, extracciones y el perfil de uso se conocen desde el primer día.
+  cortes, extracciones y el perfil de uso se conocen desde el primer día. Al
+  añadir un caudalímetro se importan de nuevo: las extracciones de esos días
+  se miden con su histórico.
 - **Modo seguro.** Sin sonda o sin potencia el modelo se congela y los
   sensores del depósito quedan no disponibles; no se inventa nada. Tras una
   interrupción de más de 30 minutos el estado es incierto hasta el siguiente
