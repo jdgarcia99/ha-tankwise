@@ -335,10 +335,11 @@ hour by itself (e.g. on sunny days), nothing extra is heated.
   power (manual mode on, or PWM output above 10 %) and the power stays below
   50 W for 3 minutes; that instant is captured from state changes, so an
   automation that switches the manual mode off afterwards does not hide it.
-  It is not a cut-off when, from one minute before the drop to two minutes
-  after it, the regulator was unavailable, restarted, was in a mode that does
-  not heat or asked for 0 % (a power cut of the diverter stops the element
-  too). Until a cut-off is learned it must be within 12 °C below the
+  It is not a cut-off when, from one minute before the drop to three minutes
+  after it, the regulator was unavailable or restarted (its entities take
+  about two minutes to be reported unavailable), or when, from one minute
+  before to two minutes after it, it was in a mode that does not heat or
+  asked for 0 % (a power cut of the diverter stops the element too). Until a cut-off is learned it must be within 12 °C below the
   configured one; afterwards, within 4 °C of the known cut-off.
 - **Draws.** Every minute the observed change of the filtered probe is
   compared with the predicted one. A draw starts when the residual

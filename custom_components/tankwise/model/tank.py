@@ -83,9 +83,13 @@ CUTOFF_PLAUSIBLE_NEAR = 4.0
 # this long after it, the regulator was unavailable, restarted, was in a mode
 # that does not heat, or asked for no power: the regulator (or its own power
 # supply) stopped the heating. The regulator entities take up to about two
-# minutes to be reported unavailable after a power cut.
+# minutes to be reported unavailable after a power cut, so unavailability and
+# restarts count for longer after the drop (still within the confirmation
+# time) than a mode or setpoint change, which is reported at once and, a few
+# minutes after a real cut-off, is usually an automation reacting to it.
 REGULATOR_DISTURBED_BEFORE = timedelta(minutes=1)
 REGULATOR_DISTURBED_AFTER = timedelta(minutes=2)
+REGULATOR_UNAVAILABLE_AFTER = timedelta(minutes=3)
 # Regulator modes that heat (``Auto``: surplus, ``Manual``: full power).
 DEFAULT_REGULATOR_ACTIVE_MODES = ("Auto", "Manual")
 # A sample to discard given by value matches within this margin.
@@ -263,16 +267,23 @@ class PowerDropDetector:
         self._falls: list[datetime] = []
         self._heating: bool | None = None
         self.drop: PowerDrop | None = None
-        # Regulator health: sources in an abnormal state now, the recent
-        # moments it was disturbed, and the last known uptime and restart
-        # reason (kept while unavailable, to see a restart when it returns).
-        self._abnormal: set[str] = set()
+        # Regulator health: sources in an abnormal state now (True when
+        # unavailable), the recent moments it was disturbed, and the last
+        # known uptime and restart reason (kept while unavailable, to see a
+        # restart when it returns).
+        self._abnormal: dict[str, bool] = {}
         self._disturbances: list[datetime] = []
         self._uptime: float | None = None
         self._restart_reason: str | None = None
 
-    def _disturb(self, timestamp: datetime) -> None:
-        """Record a moment the regulator was disturbed."""
+    def _disturb(self, timestamp: datetime, unavailable: bool) -> None:
+        """Record a moment the regulator was disturbed.
+
+        ``unavailable``: it was lost or restarted, which is reported late.
+        """
+        after = (
+            REGULATOR_UNAVAILABLE_AFTER if unavailable else REGULATOR_DISTURBED_AFTER
+        )
         self._disturbances = [
             moment
             for moment in self._disturbances
@@ -283,19 +294,20 @@ class PowerDropDetector:
         if (
             drop is not None
             and not drop.disturbed
-            and timedelta(0) <= timestamp - drop.timestamp <= REGULATOR_DISTURBED_AFTER
+            and timedelta(0) <= timestamp - drop.timestamp <= after
         ):
             self.drop = replace(drop, disturbed=True)
 
-    def _set_abnormal(self, timestamp: datetime, source: str, abnormal: bool) -> None:
+    def _set_abnormal(
+        self, timestamp: datetime, source: str, abnormal: bool, unavailable: bool
+    ) -> None:
         """Track a source entering, staying in or leaving an abnormal state."""
-        was = source in self._abnormal
+        was = self._abnormal.pop(source, None)
         if abnormal:
-            self._abnormal.add(source)
-        else:
-            self._abnormal.discard(source)
-        if abnormal or was:
-            self._disturb(timestamp)
+            self._abnormal[source] = unavailable
+            self._disturb(timestamp, unavailable)
+        elif was is not None:
+            self._disturb(timestamp, was)
 
     def _disturbed_at(self, timestamp: datetime) -> bool:
         """Return True if the regulator was disturbed shortly before ``timestamp``."""
@@ -307,30 +319,33 @@ class PowerDropDetector:
     def update_mode(self, timestamp: datetime, value: str | None) -> None:
         """Record a regulator mode change (None: unavailable)."""
         self._set_abnormal(
-            timestamp, "mode", value is None or value not in self._active_modes
+            timestamp,
+            "mode",
+            value is None or value not in self._active_modes,
+            value is None,
         )
 
     def update_uptime(self, timestamp: datetime, value: float | None) -> None:
         """Record the regulator uptime (s); a lower value is a restart."""
-        self._set_abnormal(timestamp, "uptime", value is None)
+        self._set_abnormal(timestamp, "uptime", value is None, True)
         if value is None:
             return
         if self._uptime is not None and value < self._uptime:
-            self._disturb(timestamp)
+            self._disturb(timestamp, True)
         self._uptime = value
 
     def update_restart_reason(self, timestamp: datetime, value: str | None) -> None:
         """Record the regulator's last restart reason; a new one is a restart."""
-        self._set_abnormal(timestamp, "restart_reason", value is None)
+        self._set_abnormal(timestamp, "restart_reason", value is None, True)
         if value is None:
             return
         if self._restart_reason is not None and value != self._restart_reason:
-            self._disturb(timestamp)
+            self._disturb(timestamp, True)
         self._restart_reason = value
 
     def update_output(self, timestamp: datetime, value: bool | None) -> None:
         """Record the regulator output switch (only its availability matters)."""
-        self._set_abnormal(timestamp, "output", value is None)
+        self._set_abnormal(timestamp, "output", value is None, True)
 
     def _record_fall(self, timestamp: datetime) -> None:
         self._falls.append(timestamp)
@@ -361,7 +376,9 @@ class PowerDropDetector:
             if value <= REGULATOR_DEMAND_PERCENT:
                 self._withdraw(timestamp)
         self._regulator = value
-        self._set_abnormal(timestamp, "regulator", value is None or value <= 0)
+        self._set_abnormal(
+            timestamp, "regulator", value is None or value <= 0, value is None
+        )
 
     def update_manual(self, timestamp: datetime, value: bool | None) -> None:
         """Record a manual mode change (full power requested when on)."""
@@ -369,7 +386,7 @@ class PowerDropDetector:
             self._record_fall(timestamp)
             self._withdraw(timestamp)
         self._manual = value
-        self._set_abnormal(timestamp, "manual", value is None)
+        self._set_abnormal(timestamp, "manual", value is None, True)
 
     @property
     def demand(self) -> bool:

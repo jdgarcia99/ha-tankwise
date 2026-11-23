@@ -344,9 +344,11 @@ de sol), no se calienta nada de más.
   potencia se queda por debajo de 50 W durante 3 minutos; ese instante se toma
   de los cambios de estado, así que una automatización que apague el modo
   manual después no lo oculta. No es un corte si, desde un minuto antes de la
-  caída hasta dos minutos después, el regulador no estuvo disponible, se
-  reinició, estuvo en un modo que no calienta o pidió un 0 % (un corte de
-  alimentación del derivador también para la resistencia). Mientras no se ha
+  caída hasta tres minutos después, el regulador no estuvo disponible o se
+  reinició (sus entidades tardan unos dos minutos en aparecer como no
+  disponibles), o si, desde un minuto antes hasta dos minutos después, estuvo
+  en un modo que no calienta o pidió un 0 % (un corte de alimentación del
+  derivador también para la resistencia). Mientras no se ha
   aprendido ningún corte, debe estar a menos de 12 °C por debajo del
   configurado; después, a menos de 4 °C del corte conocido.
 - **Extracciones.** Cada minuto se compara el cambio observado de la sonda

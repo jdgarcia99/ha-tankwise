@@ -3,9 +3,9 @@
 The diverter heats through its own output: when its power supply fails, the
 heating element stops drawing power although the thermostat is still closed,
 and its entities are only reported unavailable about two minutes later. A
-drop from one minute before to two minutes after the regulator was
-unavailable, restarted, was in a mode that does not heat or asked for 0 % is
-not a cut-off.
+drop from one minute before to three minutes after the regulator was
+unavailable or restarted, or from one minute before to two minutes after it
+was in a mode that does not heat or asked for 0 %, is not a cut-off.
 """
 
 from __future__ import annotations
@@ -211,8 +211,12 @@ def test_thermostat_cutoff_at_68_with_the_diverter_running_is_a_cutoff() -> None
     [
         # Unavailable 1:55 after the drop (the real delay): not a cut-off.
         (_all_unavailable("13:14:55"), False),
-        # ... but 2:01 after it, too late to say anything about the drop.
-        (_all_unavailable("13:15:01"), True),
+        # 2:01 after it (the first cut of 23/11 took 2:00.5): still not one.
+        (_all_unavailable("13:15:01"), False),
+        # 2:59 after it, just inside the window.
+        (_all_unavailable("13:15:59"), False),
+        # ... but 3:01 after it, too late to say anything about the drop.
+        (_all_unavailable("13:16:01"), True),
         # Unavailable 40 s before, back 20 s before the drop.
         (
             [
@@ -238,6 +242,14 @@ def test_thermostat_cutoff_at_68_with_the_diverter_running_is_a_cutoff() -> None
         ([("13:12:30", "regulator", 0.0), ("13:12:35", "regulator", 100.0)], False),
         # Only the output switch unavailable, a minute after.
         ([("13:14:00", "output", UNAVAILABLE)], False),
+        # A restart is reported late too: 2:30 after the drop still counts.
+        ([("13:15:30", "uptime", 3.0)], False),
+        # A mode or setpoint change is reported at once: 2:30 after the drop
+        # it is a reaction to the cut-off (e.g. an automation), not its cause.
+        ([("13:15:30", "mode", "Apagado")], True),
+        ([("13:15:30", "regulator", 0.0)], True),
+        # ... but within two minutes it still counts.
+        ([("13:14:50", "mode", "Apagado")], False),
     ],
 )
 def test_regulator_disturbance_around_the_drop(

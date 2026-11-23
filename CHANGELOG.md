@@ -15,10 +15,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   element stops drawing power, but the regulator entities keep their last
   state (100 %, manual off) for about two minutes before they are reported
   unavailable. On 23/11 a cut at 11:47:56 became a 60.9 °C sample. A power
-  drop is no longer a cut-off when, from one minute before it to two minutes
-  after it, the regulator was unavailable, restarted (lower uptime or a new
-  restart reason), was in a mode that does not heat, or asked for 0 %. The
-  history import applies the same rule.
+  drop is no longer a cut-off when, from one minute before it to three
+  minutes after it, the regulator was unavailable or restarted (lower uptime
+  or a new restart reason), or when, from one minute before it to two minutes
+  after it, it was in a mode that does not heat or asked for 0 %. A mode or
+  setpoint change is reported at once, and later than that it is usually an
+  automation reacting to a real cut-off. The history import applies the same
+  rule.
 - Once a cut-off is known, a new sample must be within 4 °C of it (it was
   12 °C below the configured cut-off). Until the first sample the old rule
   applies.
