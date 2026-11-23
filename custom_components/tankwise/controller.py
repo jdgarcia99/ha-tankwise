@@ -312,7 +312,11 @@ class TankWiseController:
             target = required_temperature(
                 float(liters),
                 volume_l=params.volume_l,
-                comfort_temperature=params.comfort_min_temperature,
+                comfort_temperature=(
+                    data.tank.useful_floor_temperature
+                    if data
+                    else params.comfort_min_temperature
+                ),
                 shower_temperature=params.shower_temperature,
                 mains_temperature=params.mains_temperature,
                 usable_factor=data.tank.usable_factor if data else 1.0,

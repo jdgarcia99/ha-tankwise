@@ -880,7 +880,7 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
                 appointment,
                 usage.get(appointment.id),
                 volume_l=params.volume_l,
-                comfort_temperature=params.comfort_min_temperature,
+                comfort_temperature=tank.useful_floor_temperature,
                 shower_temperature=params.shower_temperature,
                 mains_temperature=tank.mains_temperature,
                 usable_factor=tank.usable_factor,

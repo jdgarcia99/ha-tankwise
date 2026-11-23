@@ -304,6 +304,11 @@ SENSORS: tuple[TankWiseSensorDescription, ...] = (
                 else None
             ),
             "usable_factor": round(coordinator.data.tank.usable_factor, 3),
+            # Stratified: useful down to the mains water (times k_use).
+            "stratified": coordinator.data.tank.stratified,
+            "useful_floor_temperature": round(
+                coordinator.data.tank.useful_floor_temperature, 1
+            ),
         },
     ),
     TankWiseSensorDescription(
@@ -314,6 +319,21 @@ SENSORS: tuple[TankWiseSensorDescription, ...] = (
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=1,
         value_fn=lambda data: data.tank.equivalent_temperature,
+    ),
+    TankWiseSensorDescription(
+        key="outlet_temperature",
+        translation_key="outlet_temperature",
+        device_class=SensorDeviceClass.TEMPERATURE,
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=1,
+        value_fn=lambda data: data.tank.outlet_temperature,
+        attributes_fn=lambda coordinator: {
+            "stratification_ratio": round(
+                coordinator.data.tank.stratification_ratio, 3
+            ),
+            "stratified": coordinator.data.tank.stratified,
+        },
     ),
     TankWiseSensorDescription(
         key="model_status",

@@ -145,9 +145,10 @@ are translated.
 | Stored energy | kWh stored above the mains water temperature |
 | Useful energy | kWh stored above the minimum comfort temperature |
 | Charge | Useful energy as a percentage of a full tank |
-| Hot water available | Useful litres at the shower temperature before the water runs below the comfort temperature (theoretical litres as an attribute) |
+| Hot water available | Useful litres at the shower temperature before the water runs below the comfort temperature; in a stratified tank, `k_use` times the energy above the mains water (attributes: theoretical litres, `stratified`, `useful_floor_temperature`) |
 | Plan at risk (binary) | On when hot water cannot be guaranteed: an appointment needs more than a full tank gives, the usual demand is not covered, or the regulator or the probe is unavailable before an appointment (`reasons` attribute) |
-| Modelled temperature | Equivalent tank temperature tracked by the model |
+| Modelled temperature | Equivalent (mixed) tank temperature tracked by the model: the stored energy as a temperature |
+| Estimated outlet temperature | Temperature of the hot layer at the outlet, what the probe sees: the modelled temperature plus the expected stratification (equal to it in a mixed tank) |
 | Model status | `calibrated`, `learning` or `uncertain`; attributes `reason`, `missing` (what is needed to calibrate) and the `samples` of each learned parameter |
 | Last draw | Start of the last hot water draw, with its energy, litres (with a hot water meter), minimum temperature and whether there was a shortage |
 | Hot water shortages (7 days) | Draws that took the water at least 1.5 °C below the minimum comfort temperature |
@@ -333,7 +334,12 @@ hour by itself (e.g. on sunny days), nothing extra is heated.
   `E = C · (T − T_mains)`. The incoming cold water mixes with the hot water,
   so only the heat above the comfort temperature is usable: useful litres at
   the shower temperature `L = k_use · V · (T − T_comfort) / (T_shower − T_mains)`,
-  with `k_use` learned from real shortages.
+  with `k_use` learned from real shortages. Once the stratification is
+  learned with a hot water meter (at least 3 samples, the probe falling at
+  most 80 % of a mixed tank) the water leaves hot while cold water fills the
+  bottom, so the energy above the **mains water** is useful, times `k_use`
+  (the mixing zone is lost): `L = k_use · V · (T − T_mains) / (T_shower − T_mains)`.
+  The same limit is used for the appointments, the plan and its risk.
 - **Losses.** `P = UA · (T − T_ambient)`. UA is learned by recursive least
   squares from the slope of the probe over rest windows of at least two hours
   (no heating, no draws), within 0.3–3 W/K.

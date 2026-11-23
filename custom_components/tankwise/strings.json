@@ -291,11 +291,28 @@
           },
           "usable_factor": {
             "name": "Usable factor"
+          },
+          "stratified": {
+            "name": "Stratified"
+          },
+          "useful_floor_temperature": {
+            "name": "Useful down to"
           }
         }
       },
       "tank_temperature": {
         "name": "Modelled temperature"
+      },
+      "outlet_temperature": {
+        "name": "Estimated outlet temperature",
+        "state_attributes": {
+          "stratification_ratio": {
+            "name": "Stratification ratio"
+          },
+          "stratified": {
+            "name": "Stratified"
+          }
+        }
       },
       "model_status": {
         "name": "Model status",

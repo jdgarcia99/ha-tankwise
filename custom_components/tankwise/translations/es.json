@@ -291,11 +291,28 @@
           },
           "usable_factor": {
             "name": "Factor de aprovechamiento"
+          },
+          "stratified": {
+            "name": "Estratificado"
+          },
+          "useful_floor_temperature": {
+            "name": "Útil hasta"
           }
         }
       },
       "tank_temperature": {
         "name": "Temperatura modelada"
+      },
+      "outlet_temperature": {
+        "name": "Temperatura de salida estimada",
+        "state_attributes": {
+          "stratification_ratio": {
+            "name": "Proporción de estratificación"
+          },
+          "stratified": {
+            "name": "Estratificado"
+          }
+        }
       },
       "model_status": {
         "name": "Estado del modelo",

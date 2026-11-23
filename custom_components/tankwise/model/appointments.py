@@ -298,7 +298,9 @@ def required_temperature(
     """Return the tank temperature that gives ``liters`` useful litres.
 
     Inverse of the useful litres: L = k_use * V * (T - T_comfort) /
-    (T_shower - T_mains).
+    (T_shower - T_mains). ``comfort_temperature`` is the useful floor: the
+    comfort temperature of a mixed tank, or the mains water when the tank is
+    stratified (the useful energy is then k_use times the energy above it).
     """
     span = max(0.0, shower_temperature - mains_temperature)
     return comfort_temperature + liters * span / (volume_l * usable_factor)

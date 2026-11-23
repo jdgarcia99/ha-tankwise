@@ -276,7 +276,8 @@ class Planner:
             volume_l=params.volume_l,
             mains_temperature=tank.mains_temperature,
             ambient_temperature=ambient,
-            comfort_temperature=params.comfort_min_temperature,
+            # Stratified tank: the energy is useful down to the mains water.
+            comfort_temperature=tank.useful_floor_temperature,
             shower_temperature=params.shower_temperature,
             max_temperature=min(
                 tank.cutoff_temperature,
