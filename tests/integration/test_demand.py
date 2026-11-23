@@ -501,3 +501,5 @@ async def test_hot_water_meter_measures_the_draws(
     # The observed days of this test were not measured by the meter.
     assert suggested.attributes["hot_days"] == 0
     assert suggested.attributes["hot_liters_p90"] is None
+    assert suggested.attributes["shower_liters_p90"] is None
+    assert suggested.attributes["source"] == "probe"

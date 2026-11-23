@@ -31,9 +31,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - measured draws are never scaled by the energy reconciliation, so the
     useful litres factor (`k_use`) is learned from exact energies.
 - Litres in the demand profile: each day measured by the meter keeps the
-  litres of each 15-minute slot. The suggested litres of each appointment
-  gain `hot_liters_p50`, `hot_liters_p90` and `hot_days` (litres that left
-  the tank), and the demand of today the litres of a usual day.
+  litres of each 15-minute slot, and the demand of today gains the litres of
+  a usual day.
+- Suggested litres of the appointments from the measured draws: with a meter
+  the suggestion (still in litres at the shower temperature) uses only the
+  metered days, each draw worth
+  `litres_tank · (T_tank − T_mains) / (T_shower − T_mains)` with the tank
+  temperature when it started (34 L at 67.5 °C are 69 L at 40 °C with the
+  mains at 13.5 °C). The appointment requirement uses it too. New
+  attributes `shower_liters_p50`, `shower_liters_p90`, `hot_liters_p50`,
+  `hot_liters_p90` (litres that left the tank), `hot_days` and `source`
+  (`meter` or `probe`). Without a meter nothing changes.
 - Adding a hot water meter imports the history again, so the draws of the
   imported days are measured with its history.
 - `liters` in `sensor.tankwise_last_draw`, in the draws of the diagnostics

@@ -229,8 +229,8 @@ async def async_get_config_entry_diagnostics(
         "appointments": [
             {
                 **appointment.as_dict(),
-                "suggested_liters_p50": usage.p50 if usage else None,
-                "suggested_liters_p90": usage.p90 if usage else None,
+                "suggested_liters_p50": usage.suggested_p50 if usage else None,
+                "suggested_liters_p90": usage.suggested if usage else None,
                 "measured_days": usage.days if usage else 0,
             }
             for appointment in coordinator.appointments

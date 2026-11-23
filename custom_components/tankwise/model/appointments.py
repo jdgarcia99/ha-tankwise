@@ -9,7 +9,10 @@ reheating within it. The optimiser treats it as a hard constraint (phase 3).
 To help choosing the litres, the water actually drawn during the block is
 measured on the observed days and summarised as P50/P90 of the last weeks
 (the suggested litres, at the shower temperature). With a hot water meter the
-litres that really left the tank are summarised too.
+suggestion comes from the measured draws only: each one is worth
+``litres_tank · (T_tank - T_mains) / (T_shower - T_mains)`` litres at the
+shower temperature, with the tank temperature when it started (its metered
+energy). The litres that really left the tank are summarised too.
 
 This module is pure Python and must not import Home Assistant.
 """
@@ -174,10 +177,31 @@ class AppointmentUsage:
     p50: float | None
     p90: float | None
     days: int
-    # Litres that left the tank, on the days measured by a hot water meter.
+    # Litres that left the tank, on the days measured by a hot water meter,
+    # and their equivalent at the shower temperature.
     hot_p50: float | None = None
     hot_p90: float | None = None
     hot_days: int = 0
+    shower_p50: float | None = None
+    shower_p90: float | None = None
+
+    @property
+    def suggested(self) -> float | None:
+        """Return the suggested litres at the shower temperature (P90).
+
+        From the measured draws when a hot water meter measured some days,
+        otherwise from the draws estimated from the probe.
+        """
+        if self.shower_p90 is not None:
+            return self.shower_p90
+        return self.p90
+
+    @property
+    def suggested_p50(self) -> float | None:
+        """Return the P50 matching :attr:`suggested`."""
+        if self.shower_p90 is not None:
+            return self.shower_p50
+        return self.p50
 
 
 def appointment_usage(
@@ -223,10 +247,19 @@ def appointment_usage(
     ]
     weights = [demand.weight(obs, now, params) for obs in days]
     metered = [obs for obs in days if obs.liters is not None]
+    block = range(max(0, first), min(SLOTS_PER_DAY, last))
     hot = [
-        sum(
-            (obs.liters or ())[index] * factors[index]
-            for index in range(max(0, first), min(SLOTS_PER_DAY, last))
+        sum((obs.liters or ())[index] * factors[index] for index in block)
+        for obs in metered
+    ]
+    # On a metered day the energy of each slot is that of its measured draws,
+    # litres_tank · c · (T_tank at the start - T_mains): divided by
+    # c · (T_shower - T_mains) it is their equivalent at the shower temperature.
+    shower = [
+        liters_from_energy(
+            sum(obs.slots[index] * factors[index] for index in block),
+            shower_temperature,
+            mains_temperature,
         )
         for obs in metered
     ]
@@ -238,6 +271,8 @@ def appointment_usage(
         hot_p50=weighted_quantile(hot, hot_weights, 0.5) if hot else None,
         hot_p90=weighted_quantile(hot, hot_weights, 0.9) if hot else None,
         hot_days=len(metered),
+        shower_p50=weighted_quantile(shower, hot_weights, 0.5) if shower else None,
+        shower_p90=weighted_quantile(shower, hot_weights, 0.9) if shower else None,
     )
 
 
@@ -284,9 +319,10 @@ def appointment_requirement(
 
     The litres are the larger of the minimum set by the user and the P90 of
     the litres used during the block (a quantile of the whole block, never a
-    sum of hourly quantiles).
+    sum of hourly quantiles; measured by the meter when there is one).
     """
-    measured = usage.p90 if usage is not None and usage.p90 is not None else 0.0
+    suggested = usage.suggested if usage is not None else None
+    measured = suggested if suggested is not None else 0.0
     liters, source = (
         (measured, "usage")
         if measured > appointment.liters

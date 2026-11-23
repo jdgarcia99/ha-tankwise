@@ -123,8 +123,12 @@ saved in the options): `time.<name>_<appointment>_time`,
 The sensor `sensor.<name>_<appointment>_suggested_liters` shows the litres
 actually used during the block (P90 of the last four weeks, raised like the
 plan after recent shortages, at the shower temperature) to help choosing the
-minimum; with a hot water meter its attributes `hot_liters_p50` and
-`hot_liters_p90` give the litres that really left the tank. And `sensor.<name>_<appointment>_required_temperature`
+minimum. With a hot water meter the suggestion comes from the measured draws:
+each is worth `litres_tank · (T_tank − T_mains) / (T_shower − T_mains)` litres
+at the shower temperature, with the tank temperature when it started
+(attributes `shower_liters_p50` and `shower_liters_p90`, and `source`);
+`hot_liters_p50` and `hot_liters_p90` give the litres that really left the
+tank. And `sensor.<name>_<appointment>_required_temperature`
 the tank temperature needed when the block starts. If that temperature is
 above the learned thermostat cut-off, `binary_sensor.tankwise_plan_at_risk`
 turns on: even a full tank does not cover the block. From phase 3 the planner

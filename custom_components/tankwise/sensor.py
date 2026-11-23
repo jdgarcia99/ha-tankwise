@@ -569,7 +569,7 @@ class SuggestedLitersSensor(AppointmentEntity, SensorEntity):
     def native_value(self) -> float | None:
         """Return the P90 of the litres used after the appointment."""
         usage = self.coordinator.data.appointment_usage.get(self._appointment_id)
-        return usage.p90 if usage else None
+        return usage.suggested if usage else None
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -578,12 +578,16 @@ class SuggestedLitersSensor(AppointmentEntity, SensorEntity):
         if usage is None:
             return {}
         return {
-            "p50": round(usage.p50, 1) if usage.p50 is not None else None,
-            "days": usage.days,
-            # Litres that left the tank, measured by the hot water meter.
+            "p50": _round(usage.suggested_p50, 1),
+            "days": usage.hot_days if usage.shower_p90 is not None else usage.days,
+            # Measured by the hot water meter: litres that left the tank and
+            # their equivalent at the shower temperature (the suggestion).
             "hot_liters_p50": _round(usage.hot_p50, 1),
             "hot_liters_p90": _round(usage.hot_p90, 1),
+            "shower_liters_p50": _round(usage.shower_p50, 1),
+            "shower_liters_p90": _round(usage.shower_p90, 1),
             "hot_days": usage.hot_days,
+            "source": "meter" if usage.shower_p90 is not None else "probe",
         }
 
 

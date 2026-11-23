@@ -124,8 +124,12 @@ guardan en las opciones): `time.<nombre>_<cita>_time`,
 `sensor.<nombre>_<cita>_suggested_liters` muestra los litros que realmente se
 usan durante el bloque (P90 de las últimas cuatro semanas, aumentado como en
 el plan tras faltas recientes, a la temperatura de ducha) para ayudar a elegir
-el mínimo; con caudalímetro, sus atributos `hot_liters_p50` y `hot_liters_p90`
-dan los litros que de verdad salieron del termo. Y `sensor.<nombre>_<cita>_required_temperature` la
+el mínimo. Con caudalímetro la sugerencia sale de las extracciones medidas:
+cada una equivale a `litros_termo · (T_termo − T_red) / (T_ducha − T_red)`
+litros a la temperatura de ducha, con la temperatura del termo al empezar
+(atributos `shower_liters_p50` y `shower_liters_p90`, y `source`);
+`hot_liters_p50` y `hot_liters_p90` dan los litros que de verdad salieron del
+termo. Y `sensor.<nombre>_<cita>_required_temperature` la
 temperatura que necesita el depósito al empezar el bloque. Si supera el corte
 aprendido del termostato, `binary_sensor.tankwise_plan_at_risk` se enciende:
 ni el depósito lleno cubre el bloque. Desde la fase 3 el planificador trata

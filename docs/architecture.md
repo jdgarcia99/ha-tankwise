@@ -118,7 +118,10 @@ Draws are spread over 15-minute slots of each observed day (at least 20 hours
 of data with the house occupied). Days measured by a hot water meter for at
 least 20 hours also keep the litres of each slot: the energy drives the
 plan, the litres are compared with the appointments (`hot_liters_p50/p90`)
-and summarised per day type. For each day type (weekday, workday and
+and summarised per day type. With metered days the suggested litres of an
+appointment come only from them: the metered energy of the block over
+`c · (T_shower − T_mains)`, i.e. each draw's
+`litres · (T_tank − T_mains) / (T_shower − T_mains)`. For each day type (weekday, workday and
 weekend, or all alike; holidays from the Workday integration count as
 non-working days) the last N days are kept with a three-week half-life.
 
