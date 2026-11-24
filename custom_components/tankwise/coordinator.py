@@ -55,6 +55,7 @@ from .const import (
     CONF_OCCUPANCY_ENTITY,
     CONF_POWER_SENSOR,
     CONF_PRICE_SENSOR,
+    CONF_PROBE_POSITION,
     CONF_PROFILE_DAYS,
     CONF_PROFILE_MODE,
     CONF_RATED_POWER,
@@ -66,6 +67,7 @@ from .const import (
     CONF_REGULATOR_UPTIME_SENSOR,
     CONF_RESCUE,
     CONF_TEMPERATURE_SENSOR,
+    CONF_USABLE_FACTOR_DEFAULT,
     CONF_VOLUME,
     CONF_WATER_REGION,
     CONF_WORKDAY_ENTITY,
@@ -81,6 +83,7 @@ from .const import (
     PART_ALL,
     PART_DEMAND,
     PART_LOSSES,
+    PROBE_SHEATH,
     REQUIRED_INPUT_KEYS,
     SETTING_COMFORT_MIN_TEMPERATURE,
     SETTING_MAINS_WATER_TEMPERATURE,
@@ -597,6 +600,8 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
             shower_temperature=self.settings[SETTING_SHOWER_TEMPERATURE],
             cutoff_temperature=float(parameters[CONF_CUTOFF_TEMPERATURE]),
             power_threshold_w=float(parameters[CONF_CUTOFF_POWER_THRESHOLD]),
+            probe_at_top=parameters[CONF_PROBE_POSITION] != PROBE_SHEATH,
+            usable_factor_default=float(parameters[CONF_USABLE_FACTOR_DEFAULT]),
         )
 
     @property
@@ -655,6 +660,17 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
         """Regulator modes that heat (a drop in another mode is not a cut-off)."""
         modes = self.config_entry.options.get(CONF_REGULATOR_ACTIVE_MODES)
         return tuple(modes) if modes else DEFAULT_REGULATOR_ACTIVE_MODES
+
+    async def async_reset_usable_factor(self) -> int:
+        """Forget the learned useful litres factor; return how many samples it had."""
+        count = self.model.reset_usable_factor()
+        _LOGGER.info("Useful litres factor reset (%d samples forgotten)", count)
+        if self._last_sample is not None and self.data is not None:
+            tank = self.model.update(self._last_sample, self.tank_params)
+            self.async_set_updated_data(replace(self.data, tank=tank))
+        await self.async_save_now()
+        await self.async_replan("usable_factor")
+        return count
 
     async def async_discard_cutoff_sample(
         self, *, index: int | None = None, value: float | None = None

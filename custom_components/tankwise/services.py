@@ -33,6 +33,7 @@ from .const import (
     SERVICE_REIMPORT_HISTORY,
     SERVICE_REPLAN,
     SERVICE_RESET_LEARNING,
+    SERVICE_RESET_USABLE_FACTOR,
 )
 from .coordinator import TankWiseConfigEntry
 from .diagnostics import plan_report
@@ -205,6 +206,31 @@ def async_setup_services(hass: HomeAssistant) -> None:
         SERVICE_DISCARD_CUTOFF_SAMPLE,
         _discard_sample,
         DISCARD_CUTOFF_SAMPLE_SCHEMA,
+        supports_response=SupportsResponse.OPTIONAL,
+    )
+
+    async def _reset_usable_factor(call: ServiceCall) -> ServiceResponse:
+        results = []
+        for entry in _loaded_entries(hass, call):
+            coordinator = entry.runtime_data
+            removed = await coordinator.async_reset_usable_factor()
+            results.append(
+                {
+                    "config_entry_id": entry.entry_id,
+                    "name": entry.title,
+                    "samples_removed": removed,
+                    "usable_factor": round(coordinator.data.tank.usable_factor, 3)
+                    if coordinator.data
+                    else None,
+                }
+            )
+        return {"results": results}
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_RESET_USABLE_FACTOR,
+        _reset_usable_factor,
+        REPLAN_SCHEMA,
         supports_response=SupportsResponse.OPTIONAL,
     )
 

@@ -47,7 +47,7 @@ ningún `entity_id` está fijado en el código.
 
 **Entradas obligatorias**
 
-- Temperatura del depósito: sonda en la parte alta (°C o °F).
+- Sonda de temperatura del depósito (°C o °F). Indica dónde está en **Opciones → Parámetros → Posición de la sonda**: arriba del depósito (ve el agua que sale) o en la vaina del termostato, abajo junto a la resistencia (habitual en instalaciones caseras: un termopar metido en la vaina). En la vaina la sonda sigue caliente durante los primeros litros de una extracción y cae de golpe cuando llega el frente frío, mucho antes de que se acabe el agua caliente de arriba.
 - Potencia del termo (W o kW).
 - Interruptor de alimentación del termo (debe estar siempre encendido).
 - Modo manual del regulador: interruptor que hace que caliente a plena
@@ -149,7 +149,7 @@ nombres visibles están traducidos.
 | Agua caliente disponible | Litros útiles a la temperatura de ducha antes de que el agua baje de la temperatura de confort; en un depósito estratificado, `k_use` por la energía sobre la red (atributos: litros teóricos, `stratified`, `useful_floor_temperature`) |
 | Plan en riesgo (binario) | Encendido cuando no se puede garantizar el agua caliente: una cita necesita más de lo que da el depósito lleno, la demanda habitual no se cubre, o el regulador o la sonda no están disponibles antes de una cita (atributo `reasons`) |
 | Temperatura modelada | Temperatura equivalente (mezclada) del depósito según el modelo: la energía almacenada expresada como temperatura |
-| Temperatura de salida estimada | Temperatura de la capa caliente a la salida, la que ve la sonda: la temperatura modelada más la estratificación esperada (igual a ella en un depósito mezclado) |
+| Temperatura de salida estimada | Temperatura de la capa caliente a la salida. Con la sonda arriba, la que ve: la temperatura modelada más la estratificación esperada. Con la sonda en la vaina del termostato, la del último llenado menos las pérdidas (las extracciones no la bajan mientras queda agua caliente) |
 | Estado del modelo | `calibrated`, `learning` o `uncertain`; atributos `reason`, `missing` (lo que falta para calibrar) y las muestras (`samples`) de cada parámetro aprendido |
 | Última extracción | Inicio de la última extracción, con su energía, sus litros (con caudalímetro), temperatura mínima y si hubo falta de agua |
 | Faltas de agua caliente (7 días) | Extracciones que dejaron el agua al menos 1,5 °C por debajo de la temperatura mínima de confort |
@@ -334,6 +334,7 @@ de sol), no se calienta nada de más.
 | `tankwise.reset_learning` | Olvida las pérdidas de calor (`part: losses`), el perfil de uso (`part: demand`) o todo (`part: all`, por defecto). `config_entry_id` opcional. |
 | `tankwise.discard_last_cutoff_sample` | Olvida la última temperatura de corte del termostato aprendida y vuelve a calcular el corte. `config_entry_id` opcional; devuelve la muestra quitada y las que quedan. |
 | `tankwise.discard_cutoff_sample` | Igual para una muestra, indicada por `value` (°C, la más cercana a menos de 0,5 °C) o `index` (0 = la más antigua, −1 = la más reciente). Las muestras son el atributo `samples` del sensor de temperatura de corte. |
+| `tankwise.reset_usable_factor` | Olvida el factor de aprovechamiento aprendido (`k_use`). Hasta que se aprenda de nuevo: el parámetro *Factor de aprovechamiento por defecto* (0,85) con la sonda en la vaina del termostato, 1,0 con la sonda arriba. Devuelve las muestras borradas y el factor en uso. |
 
 ## Cómo funciona el modelo del depósito
 

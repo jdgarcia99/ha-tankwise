@@ -109,11 +109,13 @@
         "data": {
           "volume": "Volumen del depósito",
           "water_region": "Región del agua de red",
+          "probe_position": "Posición de la sonda",
           "rescue": "Recarga de rescate dentro de los bloques de las citas",
           "boost_as_shortage": "Contar el Boost como falta de agua"
         },
         "data_description": {
           "water_region": "Se usa para estimar la temperatura del agua de red de cada día. Se puede fijar a mano con el número 'Temperatura del agua de red'.",
+          "probe_position": "Dónde está la sonda de temperatura. Arriba: ve el agua caliente que sale. Vaina del termostato: abajo, junto a la resistencia, donde entra el agua fría; sigue caliente durante los primeros litros de una extracción y cae de golpe cuando llega el frente frío, mucho antes de que se acabe el agua caliente de arriba. Con la vaina, las faltas de agua y el factor de aprovechamiento no se toman de la sonda, y con caudalímetro la sonda no corrige el balance de energía entre llenados.",
           "rescue": "Si los litros útiles que quedan no cubren la demanda habitual que queda en un bloque, calentar solo la energía que falta dentro del bloque. Desactivada: modo estricto, nunca se calienta dentro de un bloque.",
           "boost_as_shortage": "Desactivado por defecto: un Boost puede tener cualquier motivo y no cambia el perfil de uso. Activado, la previsión alrededor de la hora de cada Boost sube como tras una falta de agua."
         },
@@ -128,13 +130,15 @@
               "cutoff_power_threshold": "Umbral de potencia de corte del termostato",
               "profile_mode": "Agrupar los días del perfil de uso",
               "profile_days": "Días de cada tipo en el perfil de uso",
-              "regulator_margin": "Minutos antes de cortar el interruptor del termo"
+              "regulator_margin": "Minutos antes de cortar el interruptor del termo",
+              "usable_factor_default": "Factor de aprovechamiento por defecto"
             },
             "data_description": {
               "rated_power": "Después se aprende del sensor de potencia.",
               "cutoff_temperature": "Después se aprende de los cortes detectados.",
               "profile_days": "Más días dan una previsión más estable cuando el uso cambia de un día a otro; menos días se adaptan antes.",
-              "regulator_margin": "Si el regulador sigue sin estar disponible este tiempo mientras TankWise lo tiene en manual (o la resistencia calienta fuera del plan), se abre el interruptor del termo como último recurso. Se vuelve a cerrar cuando el regulador vuelve."
+              "regulator_margin": "Si el regulador sigue sin estar disponible este tiempo mientras TankWise lo tiene en manual (o la resistencia calienta fuera del plan), se abre el interruptor del termo como último recurso. Se vuelve a cerrar cuando el regulador vuelve.",
+              "usable_factor_default": "Parte de la energía sobre el agua de red que se puede aprovechar mientras no se ha aprendido, con la sonda en la vaina del termostato (que no permite aprenderlo). Con la sonda arriba se usa 1,0 hasta aprenderlo."
             }
           }
         }
@@ -260,6 +264,12 @@
         "losses": "Pérdidas de calor",
         "demand": "Perfil de uso",
         "all": "Todo"
+      }
+    },
+    "probe_position": {
+      "options": {
+        "top": "Arriba del depósito",
+        "sheath": "Vaina del termostato (abajo)"
       }
     }
   },
@@ -904,6 +914,16 @@
         "index": {
           "name": "Posición",
           "description": "Posición de la muestra: 0 es la más antigua y -1 la más reciente."
+        }
+      }
+    },
+    "reset_usable_factor": {
+      "name": "Reiniciar el factor de aprovechamiento",
+      "description": "Olvida el factor de aprovechamiento aprendido (k_use). Hasta que se aprenda de nuevo se usa el valor por defecto (el parámetro con la sonda en la vaina del termostato, 1,0 con la sonda arriba).",
+      "fields": {
+        "config_entry_id": {
+          "name": "Termo",
+          "description": "Instancia de TankWise. Todas si se deja vacío."
         }
       }
     }

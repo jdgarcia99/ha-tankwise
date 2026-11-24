@@ -92,6 +92,12 @@ OPTIONAL_INPUT_KEYS: Final = (
 CONF_VOLUME: Final = "volume"
 CONF_RATED_POWER: Final = "rated_power"
 CONF_WATER_REGION: Final = "water_region"
+# Where the probe is: at the top (it sees the water leaving) or in the
+# thermostat's sheath, low in the tank next to the element.
+CONF_PROBE_POSITION: Final = "probe_position"
+PROBE_TOP: Final = "top"
+PROBE_SHEATH: Final = "sheath"
+PROBE_POSITIONS: Final = (PROBE_TOP, PROBE_SHEATH)
 CONF_AMBIENT_TEMPERATURE: Final = "ambient_temperature"
 CONF_CUTOFF_TEMPERATURE: Final = "cutoff_temperature"
 CONF_CUTOFF_POWER_THRESHOLD: Final = "cutoff_power_threshold"
@@ -103,6 +109,8 @@ CONF_RESCUE: Final = "rescue"
 CONF_BOOST_AS_SHORTAGE: Final = "boost_as_shortage"
 # Minutes the regulator may be unavailable before the heater switch is opened.
 CONF_REGULATOR_MARGIN: Final = "regulator_margin"
+# k_use while none is learned, with the probe in the thermostat's sheath.
+CONF_USABLE_FACTOR_DEFAULT: Final = "usable_factor_default"
 
 # Options flow section with the parameters most users never change.
 SECTION_ADVANCED: Final = "advanced"
@@ -114,6 +122,7 @@ ADVANCED_PARAMETERS: Final = (
     "profile_mode",
     "profile_days",
     "regulator_margin",
+    "usable_factor_default",
 )
 
 # Hot water appointments (list of dicts in the options).
@@ -123,6 +132,7 @@ DEFAULT_NAME: Final = "TankWise"
 DEFAULT_VOLUME: Final = 100  # L
 DEFAULT_RATED_POWER: Final = 1500  # W, initial value (then learned)
 DEFAULT_WATER_REGION: Final = DEFAULT_REGION
+DEFAULT_PROBE_POSITION: Final = PROBE_TOP
 DEFAULT_AMBIENT_TEMPERATURE: Final = 20.0  # °C, without an ambient sensor
 DEFAULT_CUTOFF_TEMPERATURE: Final = 68.0  # °C, initial value (then learned)
 DEFAULT_CUTOFF_POWER_THRESHOLD: Final = 50  # W
@@ -131,11 +141,13 @@ DEFAULT_PROFILE_DAYS: Final = 16
 DEFAULT_RESCUE: Final = True
 DEFAULT_REGULATOR_MARGIN: Final = 2  # min
 DEFAULT_BOOST_AS_SHORTAGE: Final = False
+DEFAULT_USABLE_FACTOR_DEFAULT: Final = 0.85
 
 DEFAULT_PARAMETERS: Final = {
     CONF_VOLUME: DEFAULT_VOLUME,
     CONF_RATED_POWER: DEFAULT_RATED_POWER,
     CONF_WATER_REGION: DEFAULT_WATER_REGION,
+    CONF_PROBE_POSITION: DEFAULT_PROBE_POSITION,
     CONF_AMBIENT_TEMPERATURE: DEFAULT_AMBIENT_TEMPERATURE,
     CONF_CUTOFF_TEMPERATURE: DEFAULT_CUTOFF_TEMPERATURE,
     CONF_CUTOFF_POWER_THRESHOLD: DEFAULT_CUTOFF_POWER_THRESHOLD,
@@ -144,6 +156,7 @@ DEFAULT_PARAMETERS: Final = {
     CONF_RESCUE: DEFAULT_RESCUE,
     CONF_REGULATOR_MARGIN: DEFAULT_REGULATOR_MARGIN,
     CONF_BOOST_AS_SHORTAGE: DEFAULT_BOOST_AS_SHORTAGE,
+    CONF_USABLE_FACTOR_DEFAULT: DEFAULT_USABLE_FACTOR_DEFAULT,
 }
 INTEGER_PARAMETERS: Final = (
     CONF_VOLUME,
@@ -232,6 +245,7 @@ SERVICE_BOOST: Final = "boost"
 SERVICE_CANCEL_BOOST: Final = "cancel_boost"
 SERVICE_DISCARD_LAST_CUTOFF_SAMPLE: Final = "discard_last_cutoff_sample"
 SERVICE_DISCARD_CUTOFF_SAMPLE: Final = "discard_cutoff_sample"
+SERVICE_RESET_USABLE_FACTOR: Final = "reset_usable_factor"
 ATTR_INDEX: Final = "index"
 ATTR_VALUE: Final = "value"
 ATTR_TEMPERATURE: Final = "temperature"

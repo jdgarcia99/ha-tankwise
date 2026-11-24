@@ -34,7 +34,7 @@ from __future__ import annotations
 from collections import deque
 from collections.abc import Iterable
 from dataclasses import dataclass, field, replace
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 import math
 from statistics import median
@@ -109,6 +109,10 @@ REGULATOR_UNAVAILABLE_AFTER = timedelta(minutes=3)
 DEFAULT_REGULATOR_ACTIVE_MODES = ("Auto", "Manual")
 # A sample to discard given by value matches within this margin.
 CUTOFF_MATCH_MARGIN = 0.5
+# Two cut-off samples are the same one within these margins (a history import
+# finds again the samples learned live, at the same poll).
+CUTOFF_SAME_MARGIN = 0.05  # °C
+CUTOFF_SAME_SECONDS = 120.0
 MIN_EPISODE_ENERGY_KWH = 0.02
 BACKUP_FULL_MARGIN = 2.5  # °C below the cut-off temperature
 CUTOFF_LEARN_MARGIN = 1.0  # °C, backup cut-offs closer than this are learned
@@ -270,6 +274,14 @@ class TankParams:
     power_threshold_w: float = 50.0
     # Initial effective capacity factor k_cap (then learned).
     capacity_factor: float = DEFAULT_CAPACITY_FACTOR
+    # The probe is at the top and sees the water leaving. False: it is in the
+    # thermostat's sheath, low in the tank, where the cold water arrives; it
+    # stays hot during the first litres of a draw and then falls quickly when
+    # the cold front reaches it, long before the hot water at the top runs out.
+    probe_at_top: bool = True
+    # k_use while none is learned with the probe in the sheath (it cannot be
+    # learned from that probe): a prudent share of the energy above mains.
+    usable_factor_default: float = 0.85
 
     @property
     def heat_capacity(self) -> float:
@@ -836,7 +848,11 @@ class TankModel:
         self._capacity_samples: list[float] = []
         self._heater_power_w: float | None = None
         self._heater_power_samples = 0
-        self._cutoff_samples: list[float] = []
+        # Learned cut-offs (time, °C), oldest first; the time is None for
+        # samples saved before 0.12.3. Samples discarded by hand are kept
+        # apart, so a history import does not bring them back.
+        self._cutoffs: list[tuple[datetime | None, float]] = []
+        self._discarded_cutoffs: list[tuple[datetime | None, float]] = []
         self._uncertain = True
         self._uncertain_reason = REASON_NEVER_CALIBRATED
         self._uncertain_since: datetime | None = None
@@ -852,6 +868,10 @@ class TankModel:
         self._meter_time: datetime | None = None
         self._stratification: list[tuple[float, float]] = []
         self._stratification_offset = 0.0
+        # Probe in the thermostat's sheath: temperature of the hot layer at
+        # the top (the last full charge, less the losses; draws do not lower
+        # it while hot water remains).
+        self._hot: float | None = None
 
         # Runtime only (not persisted)
         self._filter = ProbeFilter(tau_s=FILTER_TAU_S)
@@ -876,6 +896,16 @@ class TankModel:
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
+
+    @property
+    def _cutoff_samples(self) -> list[float]:
+        """Learned cut-off temperatures, oldest first."""
+        return [value for _, value in self._cutoffs]
+
+    @_cutoff_samples.setter
+    def _cutoff_samples(self, values: list[float]) -> None:
+        """Replace the samples by temperatures without a time (tests, old data)."""
+        self._cutoffs = [(None, float(value)) for value in values]
 
     @property
     def consumptions(self) -> list[ConsumptionEvent]:
@@ -908,6 +938,24 @@ class TankModel:
         return _clamp(
             median(self._usable_samples), MIN_USABLE_FACTOR, MAX_USABLE_FACTOR
         )
+
+    def usable_factor_for(self, params: TankParams) -> float:
+        """Return k_use: learned, or the default while none is learned.
+
+        The default is 1.0 with the probe at the top (as before 0.12.3) and
+        ``params.usable_factor_default`` with the probe in the sheath, which
+        cannot teach it.
+        """
+        if self._usable_samples or params.probe_at_top:
+            return self.usable_factor
+        return params.usable_factor_default
+
+    def reset_usable_factor(self) -> int:
+        """Forget the learned k_use samples; return how many there were."""
+        count = len(self._usable_samples)
+        self._usable_samples.clear()
+        self._pending_usable = []
+        return count
 
     def stratification_ratio(self, temperature: float | None = None) -> float:
         """Return the probe drop per metered energy against a mixed tank.
@@ -1041,7 +1089,7 @@ class TankModel:
         self._usable_samples.clear()
         self._heater_power_w = None
         self._heater_power_samples = 0
-        self._cutoff_samples.clear()
+        self._cutoffs.clear()
         self._consumptions.clear()
         self._stratification.clear()
         self._stratification_offset = 0.0
@@ -1118,14 +1166,16 @@ class TankModel:
         ):
             self._heater_power_w = other._heater_power_w
             self._heater_power_samples = other._heater_power_samples
-        if keep_running(
-            len(self._cutoff_samples),
-            len(other._cutoff_samples),
-            median(self._cutoff_samples or [0.0]),
-            median(other._cutoff_samples or [0.0]),
-            math.inf,
-        ):
-            self._cutoff_samples = list(other._cutoff_samples)
+        # Cut-offs: the union of both (an import of the last days may lack
+        # older samples the running model has), without the discarded ones.
+        discarded = _union_cutoffs(self._discarded_cutoffs, other._discarded_cutoffs)
+        self._discarded_cutoffs = discarded[-MAX_CUTOFF_SAMPLES:]
+        self._cutoffs = [
+            sample
+            # The imported samples first: they carry their time.
+            for sample in _union_cutoffs(self._cutoffs, other._cutoffs)
+            if not any(_same_cutoff(sample, gone) for gone in discarded)
+        ][-MAX_CUTOFF_SAMPLES:]
         if len(other._stratification) > len(self._stratification):
             self._stratification = list(other._stratification)
         # Draws of the running model that the import did not see (or that
@@ -1155,6 +1205,10 @@ class TankModel:
             "heater_power_w": self._heater_power_w,
             "heater_power_samples": self._heater_power_samples,
             "cutoff_samples": list(self._cutoff_samples),
+            "cutoff_times": [_iso(moment) for moment, _ in self._cutoffs],
+            "discarded_cutoffs": [
+                [_iso(moment), value] for moment, value in self._discarded_cutoffs
+            ],
             "uncertain": self._uncertain,
             "uncertain_reason": self._uncertain_reason,
             "uncertain_since": _iso(self._uncertain_since),
@@ -1167,6 +1221,7 @@ class TankModel:
             "meter_time": _iso(self._meter_time),
             "stratification": [list(item) for item in self._stratification],
             "stratification_offset": self._stratification_offset,
+            "hot_temperature": self._hot,
         }
 
     @classmethod
@@ -1205,8 +1260,17 @@ class TankModel:
                 model._heater_power_samples = int(data["heater_power_samples"])
             model._ua = _clamp(ua, MIN_UA, MAX_UA)
             model._loss_windows = int(data["loss_windows"])
-            model._cutoff_samples = [float(value) for value in data["cutoff_samples"]][
-                -MAX_CUTOFF_SAMPLES:
+            values = [float(value) for value in data["cutoff_samples"]]
+            times = data.get("cutoff_times") or []
+            if len(times) != len(values):
+                times = [None] * len(values)  # saved before 0.12.3
+            model._cutoffs = [
+                (_from_iso(moment), value)
+                for moment, value in zip(times, values, strict=True)
+            ][-MAX_CUTOFF_SAMPLES:]
+            model._discarded_cutoffs = [
+                (_from_iso(moment), float(value))
+                for moment, value in data.get("discarded_cutoffs", [])
             ]
             model._uncertain = bool(data["uncertain"])
             model._calibration_count = int(data["calibration_count"])
@@ -1233,6 +1297,8 @@ class TankModel:
                 for start, ratio in data.get("stratification", [])
             ][-MAX_STRATIFICATION_SAMPLES:]
             model._stratification_offset = float(data.get("stratification_offset", 0.0))
+            hot = data.get("hot_temperature")
+            model._hot = None if hot is None else float(hot)
         except (KeyError, TypeError, ValueError) as err:
             raise ValueError(f"invalid tank model data: {err}") from err
         return model
@@ -1289,7 +1355,9 @@ class TankModel:
                 - self.capacity_factor(params) * heat / params.heat_capacity,
             )
             target = self._probe - self._stratification_offset
-            if abs(predicted - target) > tolerance:
+            # A probe in the thermostat's sheath says where the cold front
+            # is, not how much energy is left: the metered balance stands.
+            if params.probe_at_top and abs(predicted - target) > tolerance:
                 predicted = target
         elif abs(predicted - self._probe) > -IDLE_DRAW_THRESHOLD:
             # Water was drawn (or heat added without a meter) during the gap:
@@ -1301,6 +1369,7 @@ class TankModel:
                 )
             predicted = self._probe
         self._equivalent = self._clamp_temperature(predicted, params)
+        self._update_hot(elapsed, ambient, params)
 
         if elapsed > LONG_GAP:
             self._set_uncertain(REASON_DATA_GAP, now)
@@ -1333,9 +1402,7 @@ class TankModel:
                 min_temperature=self._probe,
                 # Meter noise (a few mWh) is not a heating.
                 while_heating=heat > GAP_HEATING_MIN_KWH,
-                shortage=(
-                    self._probe <= params.comfort_min_temperature - SHORTAGE_MARGIN
-                ),
+                shortage=self._is_shortage(self._probe, params),
                 estimated=True,
             )
         )
@@ -1384,7 +1451,10 @@ class TankModel:
             self._stratification_offset = max(
                 0.0, self._stratification_offset - k_cap * heat / capacity
             )
-            if self._meter_draw is None and not heating_window:
+            if params.probe_at_top and self._meter_draw is None and not heating_window:
+                # In the thermostat's sheath the probe falls when the cold
+                # front reaches it, not with the energy left: no correction
+                # between full charges, which set the model at the probe.
                 error = self._probe - self._stratification_offset - equivalent
                 excess = max(0.0, abs(error) - METERED_PROBE_DEADBAND)
                 equivalent += alpha * math.copysign(excess, error)
@@ -1395,6 +1465,7 @@ class TankModel:
             if self._event is None and not heating_window:
                 equivalent += alpha * (self._probe - equivalent)
         self._equivalent = self._clamp_temperature(equivalent, params)
+        self._update_hot(elapsed, ambient, params)
 
         self._track_capacity_episode(sample, heat, elapsed, ambient, params)
         self._track_anchor(sample, heat, elapsed, ambient, params)
@@ -1412,6 +1483,23 @@ class TankModel:
     # ------------------------------------------------------------------
     # Energy balance
     # ------------------------------------------------------------------
+
+    def _update_hot(
+        self, elapsed: timedelta, ambient: float, params: TankParams
+    ) -> None:
+        """Follow the hot layer at the top: losses lower it, heating raises it.
+
+        Draws do not: cold water enters at the bottom and the water at the
+        top leaves at its temperature until it runs out (plug flow).
+        """
+        if self._equivalent is None:
+            return
+        hot = self._equivalent if self._hot is None else self._hot
+        rate = self._ua / (params.heat_capacity * 1000)  # 1/h
+        hot = ambient + (hot - ambient) * math.exp(
+            -rate * elapsed.total_seconds() / 3600
+        )
+        self._hot = self._clamp_temperature(max(hot, self._equivalent), params)
 
     def _ambient(self, sample: TankSample, params: TankParams) -> float:
         if sample.ambient_temperature is not None:
@@ -1620,6 +1708,7 @@ class TankModel:
         samples = self._cutoff_samples
         if not samples:
             raise ValueError("no cut-off samples")
+        # Remembered, so that a history import does not learn it again.
         if value is not None:
             position = min(range(len(samples)), key=lambda i: abs(samples[i] - value))
             if abs(samples[position] - value) > CUTOFF_MATCH_MARGIN:
@@ -1630,7 +1719,11 @@ class TankModel:
             position = index % len(samples)
         else:
             raise ValueError("an index or a value is required")
-        return samples.pop(position)
+        removed = self._cutoffs.pop(position)
+        self._discarded_cutoffs = [*self._discarded_cutoffs, removed][
+            -MAX_CUTOFF_SAMPLES:
+        ]
+        return removed[1]
 
     def purge_cutoffs(self, params: TankParams) -> int:
         """Forget learned cut-offs that cannot be thermostat cut-offs.
@@ -1638,9 +1731,9 @@ class TankModel:
         Returns how many were removed.
         """
         minimum = params.cutoff_temperature - CUTOFF_PLAUSIBLE_BELOW
-        kept = [value for value in self._cutoff_samples if value >= minimum]
-        removed = len(self._cutoff_samples) - len(kept)
-        self._cutoff_samples = kept
+        kept = [sample for sample in self._cutoffs if sample[1] >= minimum]
+        removed = len(self._cutoffs) - len(kept)
+        self._cutoffs = kept
         return removed
 
     def _calibrate(
@@ -1651,14 +1744,15 @@ class TankModel:
             regulator_confirmed
             or self._probe >= self.cutoff_temperature(params) - CUTOFF_LEARN_MARGIN
         ):
-            self._cutoff_samples.append(self._probe)
-            del self._cutoff_samples[:-MAX_CUTOFF_SAMPLES]
+            self._cutoffs.append((now, self._probe))
+            del self._cutoffs[:-MAX_CUTOFF_SAMPLES]
         self._equivalent = (
             self._probe if regulator_confirmed else self.cutoff_temperature(params)
         )
         self._uncertain = False
         self._uncertain_since = None
         self._stratification_offset = 0.0  # heated to the cut-off: mixed
+        self._hot = self._equivalent
         self._calibration_count += 1
         self._last_calibration = now
         self._heater.episode_energy = 0.0
@@ -1802,9 +1896,7 @@ class TankModel:
                 start_temperature=event.start_temperature,
                 min_temperature=event.min_probe,
                 while_heating=event.while_heating,
-                shortage=(
-                    event.min_probe <= params.comfort_min_temperature - SHORTAGE_MARGIN
-                ),
+                shortage=self._is_shortage(event.min_probe, params),
                 slow=event.slow,
             )
         )
@@ -1822,12 +1914,31 @@ class TankModel:
         self._history.clear()
         self._residuals.clear()
 
+    def _is_shortage(self, probe_minimum: float, params: TankParams) -> bool:
+        """Whether a draw left the water below the comfort temperature.
+
+        With the probe at the top, its minimum tells. In the thermostat's
+        sheath it falls below comfort long before the hot water at the top
+        runs out: then only the model can tell, when no useful energy is left.
+        """
+        if params.probe_at_top:
+            return probe_minimum <= params.comfort_min_temperature - SHORTAGE_MARGIN
+        return (
+            self._equivalent is not None
+            and self._equivalent <= self.useful_floor_temperature(params)
+        )
+
     def _observe_shortage(
         self, start: datetime, energy_until_comfort: float, params: TankParams
     ) -> None:
-        """Keep a shortage (the last draw) to learn k_use when reconciled."""
+        """Keep a shortage (the last draw) to learn k_use when reconciled.
+
+        Only with the probe at the top: the litres drawn until it crossed the
+        comfort temperature are the useful litres. In the sheath it crosses
+        it much earlier, so nothing is learned.
+        """
         anchor = self._anchor
-        if anchor is None:
+        if anchor is None or not params.probe_at_top:
             return
         before = sum(
             draw.energy_kwh
@@ -1851,12 +1962,18 @@ class TankModel:
     # Hot water meter
     # ------------------------------------------------------------------
 
-    def _outlet_temperature(self, now: datetime) -> float | None:
+    def _outlet_temperature(self, now: datetime, params: TankParams) -> float | None:
         """Return the temperature of the water leaving the tank now.
 
-        The last probe reading (the top of a stratified tank stays hot), or
-        the model with the expected stratification when it is too old.
+        With the probe at the top, its last reading, or the model with the
+        expected stratification when it is too old. With the probe in the
+        thermostat's sheath, the hot layer: the probe there reads the cold
+        water entering, not the water leaving.
         """
+        if not params.probe_at_top:
+            if self._equivalent is None:
+                return None
+            return max(self._equivalent, self._hot or self._equivalent)
         if (
             self._probe is not None
             and self._last_probe_time is not None
@@ -1897,7 +2014,7 @@ class TankModel:
         if delta < 0 or delta > limit or elapsed > MAX_GAP_DRAW:
             return  # meter reset, glitch or too long a gap: count from here
         if delta > 0:
-            outlet = self._outlet_temperature(now)
+            outlet = self._outlet_temperature(now, params)
             if draw is None:
                 if outlet is None:
                     return  # nothing known about the tank yet
@@ -1981,7 +2098,7 @@ class TankModel:
             start_temperature=draw.outlet,
             min_temperature=minimum,
             while_heating=draw.heating,
-            shortage=minimum <= params.comfort_min_temperature - SHORTAGE_MARGIN,
+            shortage=self._is_shortage(minimum, params),
             estimated=draw.estimated,
             liters=draw.liters,
         )
@@ -2307,12 +2424,16 @@ class TankModel:
             mains = params.mains_temperature
             stored = max(0.0, capacity * (equivalent - mains))
             # Stratified: k_use times the energy above the mains water.
-            share = self.usable_factor if stratified else 1.0
+            share = self.usable_factor_for(params) if stratified else 1.0
             useful = max(0.0, share * capacity * (equivalent - floor))
             full_useful = share * capacity * (cutoff - floor)
-            outlet = self._clamp_temperature(
-                equivalent + self._stratification_offset, params
-            )
+            if params.probe_at_top:
+                # The probe sees the hot layer; the model is the mean.
+                outlet = self._clamp_temperature(
+                    equivalent + self._stratification_offset, params
+                )
+            else:
+                outlet = max(equivalent, self._hot or equivalent)
             charge = (
                 _clamp(100 * useful / full_useful, 0.0, 100.0)
                 if full_useful > 0
@@ -2323,7 +2444,10 @@ class TankModel:
                 theoretical = max(0.0, params.volume_l * (equivalent - mains) / span)
                 liters = max(
                     0.0,
-                    self.usable_factor * params.volume_l * (equivalent - floor) / span,
+                    self.usable_factor_for(params)
+                    * params.volume_l
+                    * (equivalent - floor)
+                    / span,
                 )
             else:
                 theoretical = liters = 0.0
@@ -2347,7 +2471,7 @@ class TankModel:
             loss_windows=self._loss_windows,
             capacity_factor=self.capacity_factor(params),
             capacity_samples=len(self._capacity_samples),
-            usable_factor=self.usable_factor,
+            usable_factor=self.usable_factor_for(params),
             usable_samples=len(self._usable_samples),
             heater_power_w=self.heater_power(params),
             calibration_count=self._calibration_count,
@@ -2364,6 +2488,39 @@ class TankModel:
             useful_floor_temperature=floor,
             outlet_temperature=outlet,
         )
+
+
+def _same_cutoff(
+    first: tuple[datetime | None, float], second: tuple[datetime | None, float]
+) -> bool:
+    """Whether two cut-off samples are the same one.
+
+    By time and value when both have a time; by value alone (within
+    CUTOFF_SAME_MARGIN) when one was saved without its time.
+    """
+    if abs(first[1] - second[1]) > CUTOFF_SAME_MARGIN:
+        return False
+    if first[0] is None or second[0] is None:
+        return True
+    return abs((first[0] - second[0]).total_seconds()) <= CUTOFF_SAME_SECONDS
+
+
+def _union_cutoffs(
+    first: list[tuple[datetime | None, float]],
+    second: list[tuple[datetime | None, float]],
+) -> list[tuple[datetime | None, float]]:
+    """Both lists of cut-off samples without duplicates, oldest first.
+
+    Samples without a time are older than any with one (saved before 0.12.3).
+    """
+    result = list(first)
+    for sample in second:
+        if not any(_same_cutoff(sample, kept) for kept in result):
+            result.append(sample)
+    oldest = datetime.min.replace(tzinfo=UTC)
+    return sorted(
+        result, key=lambda sample: (sample[0] is not None, sample[0] or oldest)
+    )
 
 
 def _clamp(value: float, low: float, high: float) -> float:

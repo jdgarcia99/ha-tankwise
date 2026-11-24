@@ -255,14 +255,19 @@ def _store_0_5(entry: MockConfigEntry) -> dict[str, Any]:
     return store
 
 
-def _assert_learning_kept(coordinator: Any) -> None:
+def _assert_learning_kept(coordinator: Any, *, imported: bool = True) -> None:
     tank = coordinator.data.tank
     assert tank.ua_w_per_k == pytest.approx(0.94)
     assert tank.loss_windows == 12
     assert tank.heater_power_w == pytest.approx(1505.0)
     assert tank.usable_factor == pytest.approx(0.89)
     assert tank.capacity_samples == 5
-    assert list(tank.cutoff_samples) == [68.5, 69.1, 68.8, 68.2]
+    # The union: the four saved samples (older, without a time) and, when the
+    # import was adopted, the one of the imported history.
+    assert list(tank.cutoff_samples)[:4] == [68.5, 69.1, 68.8, 68.2]
+    assert len(tank.cutoff_samples) == (5 if imported else 4)
+    if imported:
+        assert tank.cutoff_samples[-1] == pytest.approx(62.0, abs=1.5)
 
 
 async def test_upgrade_from_0_5_keeps_learning(
@@ -292,7 +297,10 @@ async def test_upgrade_from_0_5_keeps_learning(
     await hass.config_entries.async_unload(mock_entry.entry_id)
     stored = hass_storage[f"{DOMAIN}.{mock_entry.entry_id}"]["data"]
     assert stored["tank"]["ua"] == pytest.approx(0.94)
-    assert stored["tank"]["cutoff_samples"] == [68.5, 69.1, 68.8, 68.2]
+    assert stored["tank"]["cutoff_samples"][:4] == [68.5, 69.1, 68.8, 68.2]
+    assert len(stored["tank"]["cutoff_samples"]) == 5
+    assert stored["tank"]["cutoff_times"][:4] == [None] * 4  # saved by 0.5
+    assert stored["tank"]["cutoff_times"][4] is not None
 
 
 async def test_import_waits_for_inputs_that_appear_late(
@@ -397,7 +405,7 @@ async def test_import_that_learns_nothing_is_not_adopted(
     assert coordinator.bootstrap.samples > 1000
     assert coordinator.needs_bootstrap  # imported again at the next start
     assert "learned nothing" in caplog.text
-    _assert_learning_kept(coordinator)
+    _assert_learning_kept(coordinator, imported=False)
 
 
 async def test_reimport_history_service(

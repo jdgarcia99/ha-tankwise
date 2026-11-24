@@ -225,6 +225,9 @@
     },
     "discard_cutoff_sample": {
       "service": "mdi:thermometer-minus"
+    },
+    "reset_usable_factor": {
+      "service": "mdi:water-sync"
     }
   }
 }

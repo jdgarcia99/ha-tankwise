@@ -44,8 +44,35 @@ balance, one sample per minute:
 
 - **Energy**: `E = C · (T − T_mains)`, with `C = V · 0.001163` kWh/K.
 - **Heat in**: increments of the energy meter (or the integral of the power).
-  Only a fraction `k_cap` (effective capacity factor, learned) shows up at a
-  probe in the upper part of the tank.
+  Only a fraction `k_cap` (effective capacity factor, learned) shows up at the
+  probe.
+- **Probe position** (`TankParams.probe_at_top`, option *Probe position*).
+  At the top the probe sees the water leaving. In the thermostat's sheath
+  (low, next to the element, where the cold water arrives) it stays hot for
+  the first litres of a draw and falls quickly when the cold front reaches it
+  (24/11: 68.5 → 66 °C for the first 30 L, then down to 32 °C by 65 L, with
+  some 55 L at 40 °C still available at the top). With the sheath:
+  - a shortage is not the probe below comfort but the model with no useful
+    energy left (`_is_shortage`), and `k_use` is not learned from the probe
+    crossing the comfort temperature;
+  - the estimated outlet temperature is the hot layer (`_hot`): set at a full
+    charge, lowered by the losses, raised by heating (never below the model),
+    not lowered by draws;
+  - with a hot water meter, a draw leaves at the hot layer's temperature, and
+    the probe does not correct the metered balance between full charges;
+  - a partial heating (the sun, without reaching the cut-off) puts its
+    metered energy into the whole tank (the mean rises `k_cap · E / C`): the
+    element heats the cold water at the bottom, which cannot rise through
+    water hotter than itself, so the hot layer only follows once the mean
+    passes it, and the useful litres follow the energy meanwhile;
+  - `k_use` cannot be learned from the probe: until it is (an outlet
+    temperature sensor would), the *Default useful litres factor* parameter
+    (0.85) is used. With the probe at the top the default stays 1.0.
+    `tankwise.reset_usable_factor` forgets the learned one.
+  The stratification ratio stays an empirical indicator (probe drop against
+  the metered energy): with the probe in the sheath it is far from linear
+  (small draws barely move it, larger ones more than a mixed tank), so it is
+  only used to tell a stratified tank.
 - **Losses**: `P = UA · (T − T_ambient)`. `UA` is learned by recursive least
   squares from the slope (Theil–Sen) of the probe over rest windows of two to
   four hours: no heating, no draw, no meter activity. A window ended by a draw

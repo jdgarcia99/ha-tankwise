@@ -425,7 +425,8 @@ def test_merge_keeps_evidence_but_not_incoherent_estimates() -> None:
     data = imported.as_dict()
     assert data["ua"] == 0.95 and data["loss_windows"] == 5  # incoherent: history
     assert data["heater_power_w"] == 1505.0  # coherent, more evidence
-    assert data["cutoff_samples"] == [68.5, 69.1, 68.8]  # more measurements
+    # Cut-offs: the union of both, never a choice between them.
+    assert sorted(data["cutoff_samples"]) == [62.0, 68.5, 68.8, 69.1]
 
     coherent = TankModel.from_dict(
         {

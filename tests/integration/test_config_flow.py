@@ -304,6 +304,7 @@ async def test_options_parameters_with_advanced_section(
     assert schema_keys == [
         CONF_VOLUME,
         CONF_WATER_REGION,
+        "probe_position",
         "rescue",
         "boost_as_shortage",
         "advanced",
@@ -314,6 +315,7 @@ async def test_options_parameters_with_advanced_section(
         {
             CONF_VOLUME: 150.0,
             CONF_WATER_REGION: "mainland",
+            "probe_position": "sheath",
             "rescue": False,
             "boost_as_shortage": True,
             "advanced": {
@@ -324,6 +326,7 @@ async def test_options_parameters_with_advanced_section(
                 CONF_PROFILE_MODE: "weekday",
                 CONF_PROFILE_DAYS: 20.0,
                 "regulator_margin": 5.0,
+                "usable_factor_default": 0.8,
             },
         },
     )
@@ -331,6 +334,7 @@ async def test_options_parameters_with_advanced_section(
     assert mock_entry.options == {
         CONF_VOLUME: 150,
         CONF_WATER_REGION: "mainland",
+        "probe_position": "sheath",
         CONF_RATED_POWER: 2000,
         CONF_AMBIENT_TEMPERATURE: 15.0,
         CONF_CUTOFF_TEMPERATURE: 65.0,
@@ -338,6 +342,7 @@ async def test_options_parameters_with_advanced_section(
         CONF_PROFILE_MODE: "weekday",
         CONF_PROFILE_DAYS: 20,
         "regulator_margin": 5,
+        "usable_factor_default": 0.8,
         "rescue": False,
         "boost_as_shortage": True,
         CONF_ENERGY_SENSOR: ENERGY,  # inputs are kept

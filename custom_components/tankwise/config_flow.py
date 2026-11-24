@@ -81,6 +81,7 @@ from .const import (
     CONF_OCCUPANCY_ENTITY,
     CONF_POWER_SENSOR,
     CONF_PRICE_SENSOR,
+    CONF_PROBE_POSITION,
     CONF_PROFILE_DAYS,
     CONF_PROFILE_MODE,
     CONF_RATED_POWER,
@@ -94,6 +95,7 @@ from .const import (
     CONF_RESCUE,
     CONF_SOLAR_FORECAST_ENTRIES,
     CONF_TEMPERATURE_SENSOR,
+    CONF_USABLE_FACTOR_DEFAULT,
     CONF_VOLUME,
     CONF_WATER_REGION,
     CONF_WORKDAY_ENTITY,
@@ -104,6 +106,7 @@ from .const import (
     DOMAIN,
     INTEGER_PARAMETERS,
     OPTIONAL_INPUT_KEYS,
+    PROBE_POSITIONS,
     SECTION_ADVANCED,
 )
 from .model.appointments import (
@@ -274,6 +277,13 @@ PARAMETERS_SCHEMA = vol.Schema(
                 mode=SelectSelectorMode.DROPDOWN,
             )
         ),
+        vol.Required(CONF_PROBE_POSITION): SelectSelector(
+            SelectSelectorConfig(
+                options=list(PROBE_POSITIONS),
+                translation_key=CONF_PROBE_POSITION,
+                mode=SelectSelectorMode.LIST,
+            )
+        ),
         vol.Required(CONF_RESCUE): BooleanSelector(),
         vol.Required(CONF_BOOST_AS_SHORTAGE): BooleanSelector(),
         vol.Required(SECTION_ADVANCED): section(
@@ -301,6 +311,11 @@ PARAMETERS_SCHEMA = vol.Schema(
                     vol.Required(CONF_PROFILE_DAYS): _number_selector(4, 60, 1, "d"),
                     vol.Required(CONF_REGULATOR_MARGIN): _number_selector(
                         1, 30, 1, UnitOfTime.MINUTES
+                    ),
+                    vol.Required(CONF_USABLE_FACTOR_DEFAULT): NumberSelector(
+                        NumberSelectorConfig(
+                            min=0.5, max=1.0, step=0.01, mode=NumberSelectorMode.BOX
+                        )
                     ),
                 }
             ),
