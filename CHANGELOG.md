@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.4] - 2026-11-24
+
+### Fixed
+
+- With the probe in the thermostat's sheath the model could fall far below
+  what the probe allows (24/11: 16.0 °C with the probe at 27.5 °C, 8 L
+  available): draws are counted at the temperature of the hot layer, which
+  overcounts them as that layer runs out. The probe now bounds the model at
+  every sample: in a stably stratified tank the water above the probe is at
+  least at its temperature and the water below it at least at the mains
+  temperature, so the mean is at least `p · T_mains + (1 − p) · T_probe` and
+  the hot layer at least the probe. `p` is the new advanced parameter
+  *Volume below the probe* (30 %). Not the probe itself: the cold water fills
+  the bottom below the sheath first (24/11: the probe stayed at 68 °C for
+  the first 30 L of the evening while the mean fell to 60 °C).
+
+### Notes
+
+- The cut-off of 24/11 at 13:49 is in the list: 69.15 °C, learned at
+  13:52:58 when it was confirmed. The sample is the filtered probe at the
+  confirmation (3 minutes after the cut), not the raw reading at the cut
+  (69.4 °C).
+
 ## [0.12.3] - 2026-11-24
 
 ### Fixed
@@ -753,7 +776,8 @@ and the heating plan will follow.
 - The output contract entities (energy needed, deadline, grid allowed,
   requested power and urgency) arrive in a later release.
 
-[Unreleased]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.12.3...HEAD
+[Unreleased]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.12.4...HEAD
+[0.12.4]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.12.3...v0.12.4
 [0.12.3]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.12.2...v0.12.3
 [0.12.2]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.12.1...v0.12.2
 [0.12.1]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.12.0...v0.12.1

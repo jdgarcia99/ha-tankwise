@@ -82,6 +82,7 @@ from .const import (
     CONF_POWER_SENSOR,
     CONF_PRICE_SENSOR,
     CONF_PROBE_POSITION,
+    CONF_PROBE_VOLUME_BELOW,
     CONF_PROFILE_DAYS,
     CONF_PROFILE_MODE,
     CONF_RATED_POWER,
@@ -311,6 +312,9 @@ PARAMETERS_SCHEMA = vol.Schema(
                     vol.Required(CONF_PROFILE_DAYS): _number_selector(4, 60, 1, "d"),
                     vol.Required(CONF_REGULATOR_MARGIN): _number_selector(
                         1, 30, 1, UnitOfTime.MINUTES
+                    ),
+                    vol.Required(CONF_PROBE_VOLUME_BELOW): _number_selector(
+                        0, 90, 5, PERCENTAGE
                     ),
                     vol.Required(CONF_USABLE_FACTOR_DEFAULT): NumberSelector(
                         NumberSelectorConfig(

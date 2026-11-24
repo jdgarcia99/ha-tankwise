@@ -47,7 +47,7 @@ and no entity ID is fixed in the code.
 
 **Required inputs**
 
-- Tank temperature probe (°C or °F). Say where it is in **Options → Parameters → Probe position**: at the top of the tank (it sees the water leaving), or in the thermostat's sheath, low in the tank next to the element (common in DIY installations: a thermocouple slid into the sheath). In the sheath the probe stays hot during the first litres of a draw and then falls quickly when the cold front reaches it, long before the hot water at the top runs out.
+- Tank temperature probe (°C or °F). Say where it is in **Options → Parameters → Probe position**: at the top of the tank (it sees the water leaving), or in the thermostat's sheath, low in the tank next to the element (common in DIY installations: a thermocouple slid into the sheath). In the sheath the probe stays hot during the first litres of a draw and then falls quickly when the cold front reaches it, long before the hot water at the top runs out. It still bounds the model: the mean is never taken below the *Volume below the probe* (30 %) at the mains temperature and the rest at the probe's.
 - Water heater power (W or kW).
 - Water heater power switch (it must always stay on).
 - Regulator manual mode: switch that makes the regulator heat at full power

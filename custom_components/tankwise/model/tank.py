@@ -282,6 +282,9 @@ class TankParams:
     # k_use while none is learned with the probe in the sheath (it cannot be
     # learned from that probe): a prudent share of the energy above mains.
     usable_factor_default: float = 0.85
+    # Share of the volume below a probe in the sheath: the cold water fills it
+    # before reaching the probe (24/11: about 30 L of 100 L).
+    probe_volume_below: float = 0.3
 
     @property
     def heat_capacity(self) -> float:
@@ -1369,6 +1372,7 @@ class TankModel:
                 )
             predicted = self._probe
         self._equivalent = self._clamp_temperature(predicted, params)
+        self._apply_probe_floor(params)
         self._update_hot(elapsed, ambient, params)
 
         if elapsed > LONG_GAP:
@@ -1465,6 +1469,7 @@ class TankModel:
             if self._event is None and not heating_window:
                 equivalent += alpha * (self._probe - equivalent)
         self._equivalent = self._clamp_temperature(equivalent, params)
+        self._apply_probe_floor(params)
         self._update_hot(elapsed, ambient, params)
 
         self._track_capacity_episode(sample, heat, elapsed, ambient, params)
@@ -1484,6 +1489,41 @@ class TankModel:
     # Energy balance
     # ------------------------------------------------------------------
 
+    def probe_floor(self, params: TankParams) -> float | None:
+        """Lowest mean a probe in the sheath allows (None: no bound).
+
+        In a stably stratified tank the water gets warmer upwards: the water
+        above the probe is at least at its temperature and the water below
+        it at least at the mains temperature. So the mean is at least
+        ``p · T_mains + (1 - p) · T_probe``, with ``p`` the share of the
+        volume below the probe. Not the probe itself: the cold water fills
+        the bottom below it first (24/11: the probe stayed at 68 °C for the
+        first 30 L while the mean fell to 60 °C).
+        """
+        if params.probe_at_top or self._probe is None:
+            return None
+        share = _clamp(params.probe_volume_below, 0.0, 0.95)
+        return share * params.mains_temperature + (1 - share) * self._probe
+
+    def _apply_probe_floor(self, params: TankParams) -> None:
+        """Raise a model that fell below what the probe in the sheath allows.
+
+        E.g. draws counted at the temperature of a hot layer that was running
+        out: the model lost energy the tank did not. The hot layer, above
+        the probe, is never colder than it.
+        """
+        floor = self.probe_floor(params)
+        if floor is None or self._equivalent is None:
+            return
+        if self._equivalent < floor:
+            self._equivalent = self._clamp_temperature(floor, params)
+        if (
+            self._hot is not None
+            and self._probe is not None
+            and self._hot < self._probe
+        ):
+            self._hot = self._clamp_temperature(self._probe, params)
+
     def _update_hot(
         self, elapsed: timedelta, ambient: float, params: TankParams
     ) -> None:
@@ -1499,6 +1539,8 @@ class TankModel:
         hot = ambient + (hot - ambient) * math.exp(
             -rate * elapsed.total_seconds() / 3600
         )
+        if not params.probe_at_top and self._probe is not None:
+            hot = max(hot, self._probe)  # above the probe: never colder
         self._hot = self._clamp_temperature(max(hot, self._equivalent), params)
 
     def _ambient(self, sample: TankSample, params: TankParams) -> float:

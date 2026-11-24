@@ -56,6 +56,7 @@ from .const import (
     CONF_POWER_SENSOR,
     CONF_PRICE_SENSOR,
     CONF_PROBE_POSITION,
+    CONF_PROBE_VOLUME_BELOW,
     CONF_PROFILE_DAYS,
     CONF_PROFILE_MODE,
     CONF_RATED_POWER,
@@ -602,6 +603,7 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
             power_threshold_w=float(parameters[CONF_CUTOFF_POWER_THRESHOLD]),
             probe_at_top=parameters[CONF_PROBE_POSITION] != PROBE_SHEATH,
             usable_factor_default=float(parameters[CONF_USABLE_FACTOR_DEFAULT]),
+            probe_volume_below=float(parameters[CONF_PROBE_VOLUME_BELOW]) / 100,
         )
 
     @property

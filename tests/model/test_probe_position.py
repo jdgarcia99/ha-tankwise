@@ -238,3 +238,57 @@ def test_default_useful_litres_factor_with_the_probe_in_the_sheath() -> None:
     assert learned.reset_usable_factor() == 5
     assert learned.usable_factor_for(SHEATH) == 0.85
     assert learned.as_dict()["usable_samples"] == []
+
+
+# ---------------------------------------------------------------------------
+# The probe as a lower bound
+# ---------------------------------------------------------------------------
+
+
+def _draw(model: TankModel, liters: float, probe: float, minutes: int = 10):
+    """Metered draws at a steady pace, the probe in the sheath at ``probe``."""
+    state, volume = None, 1000.0
+    for minute in range(1, minutes + 1):
+        volume += liters / minutes
+        state = model.update(
+            TankSample(
+                timestamp=_at("10:00:00") + timedelta(minutes=minute),
+                temperature=probe,
+                power=0.0,
+                energy=100.0,
+                hot_water_volume=volume,
+                meter_configured=True,
+            ),
+            SHEATH,
+        )
+    return state
+
+
+def test_draws_never_take_the_mean_below_the_probe_bound() -> None:
+    """Hot layer on top, the probe low at 27.5 °C: 40 L counted at 60 °C.
+
+    The draws alone would take the mean to about 13 °C. Above the probe the
+    water is at least at 27.5 °C and below it (30 % of the volume) at least
+    at the mains temperature, so the mean stays at 23.3 °C or more, and the
+    hot layer at 27.5 °C or more.
+    """
+    model = _layered(hot=60.0, mixed=30.0)
+    state = _draw(model, 40.0, probe=27.5)
+    floor = 0.3 * SHEATH.mains_temperature + 0.7 * 27.5
+    assert floor == pytest.approx(23.3, abs=0.05)
+    assert state.equivalent_temperature == pytest.approx(floor, abs=0.1)
+    assert state.outlet_temperature >= 27.5
+    assert state.liters_available > 30  # it was 8 L with the model at 16 °C
+
+
+def test_the_mean_may_be_below_a_probe_the_cold_front_has_not_reached() -> None:
+    """24/11: the first 30 L did not move the probe (68 °C); the mean fell."""
+    first = _layered(hot=67.0, mixed=66.6)
+    state = _draw(first, 12.0, probe=68.0, minutes=4)
+    assert state.equivalent_temperature < 68.0 - 4  # not held at the probe
+    assert state.equivalent_temperature >= first.probe_floor(SHEATH)
+
+
+def test_no_bound_with_the_probe_at_the_top() -> None:
+    model = _layered(hot=60.0, mixed=30.0)
+    assert model.probe_floor(TOP) is None

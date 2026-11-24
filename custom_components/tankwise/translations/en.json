@@ -131,6 +131,7 @@
               "profile_mode": "Group days of the usage profile",
               "profile_days": "Days of each type in the usage profile",
               "regulator_margin": "Minutes before cutting the heater switch",
+              "probe_volume_below": "Volume below the probe",
               "usable_factor_default": "Default useful litres factor"
             },
             "data_description": {
@@ -138,6 +139,7 @@
               "cutoff_temperature": "It is then learned from the detected cut-offs.",
               "profile_days": "More days give a steadier forecast when usage changes from one day to the next; fewer days adapt faster.",
               "regulator_margin": "If the regulator stays unavailable this long while TankWise has it in manual mode (or the element heats outside the plan), the heater switch is opened as a last resort. It is closed again when the regulator comes back.",
+              "probe_volume_below": "With the probe in the thermostat's sheath: share of the tank below it, which the cold water fills before reaching the probe (about the litres drawn after a full charge before the probe starts to fall). The mean temperature is never taken below this share at the mains temperature and the rest at the probe's.",
               "usable_factor_default": "Share of the energy above the mains water that is usable while none is learned, with the probe in the thermostat's sheath (it cannot teach it). With the probe at the top, 1.0 is used until it is learned."
             }
           }

@@ -131,6 +131,7 @@
               "profile_mode": "Agrupar los días del perfil de uso",
               "profile_days": "Días de cada tipo en el perfil de uso",
               "regulator_margin": "Minutos antes de cortar el interruptor del termo",
+              "probe_volume_below": "Volumen bajo la sonda",
               "usable_factor_default": "Factor de aprovechamiento por defecto"
             },
             "data_description": {
@@ -138,6 +139,7 @@
               "cutoff_temperature": "Después se aprende de los cortes detectados.",
               "profile_days": "Más días dan una previsión más estable cuando el uso cambia de un día a otro; menos días se adaptan antes.",
               "regulator_margin": "Si el regulador sigue sin estar disponible este tiempo mientras TankWise lo tiene en manual (o la resistencia calienta fuera del plan), se abre el interruptor del termo como último recurso. Se vuelve a cerrar cuando el regulador vuelve.",
+              "probe_volume_below": "Con la sonda en la vaina del termostato: parte del depósito que queda por debajo, que el agua fría llena antes de llegar a la sonda (aproximadamente los litros extraídos tras un llenado antes de que la sonda empiece a bajar). La temperatura media nunca se considera menor que esa parte a la temperatura de red y el resto a la de la sonda.",
               "usable_factor_default": "Parte de la energía sobre el agua de red que se puede aprovechar mientras no se ha aprendido, con la sonda en la vaina del termostato (que no permite aprenderlo). Con la sonda arriba se usa 1,0 hasta aprenderlo."
             }
           }
