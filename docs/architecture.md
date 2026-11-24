@@ -79,7 +79,10 @@ balance, one sample per minute:
   state reaches Home Assistant a few seconds after the power, so that is its
   own stop arriving late (a cloud), unless it asked for more power first
   (`PowerDrop.insisted`: output at 95 %, `REGULATOR_INSIST_RISE` points above
-  its value at the drop, or the manual mode switched on). With the element
+  its value at the drop, or the manual mode switched on; or, at full output
+  or in manual mode at the drop and unable to rise, held there for
+  `REGULATOR_HOLD`, 5 s: its own stop is reported within a couple of
+  seconds). With the element
   drawing nothing, a regulator raises its output: that is the thermostat.
   The sample is the filtered probe, never the mixed equivalent, and a
   confirmed cut-off sets the model full at it (stratification offset reset). A sample must be within 4 °C of the known

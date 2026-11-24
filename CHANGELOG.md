@@ -28,7 +28,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     regulator's own stop arriving late (a cloud: on 24/11 at 13:41 the power
     fell to 0 and the 0 % arrived 2 s later), unless the regulator first asked
     for more power (output at 95 %, 10 points above its value at the drop, or
-    the manual mode switched on), as it does when the thermostat cuts off.
+    the manual mode switched on), as it does when the thermostat cuts off. At
+    full output or in manual mode at the drop it cannot rise: held there for
+    5 s after the drop counts as asking for more.
 - The cut-off sample is the probe's temperature and a confirmed cut-off sets
   the model full at it, also in a stratified tank (now covered by a test).
 

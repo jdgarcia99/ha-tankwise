@@ -360,7 +360,8 @@ hour by itself (e.g. on sunny days), nothing extra is heated.
   it is a consequence of the cut-off. One exception: an output stop reported
   within a minute of the drop is the regulator's own stop arriving late,
   unless it first asked for more power (output up to 95 %, or 10 points more,
-  or the manual mode on), which is what a regulator does when the thermostat
+  or the manual mode on; or, already at 95 % or in manual mode at the drop,
+  held there for 5 s), which is what a regulator does when the thermostat
   cuts off. The sample is the probe's temperature, and the model is set full
   at it. Until a cut-off is learned it must be within 12 °C below the
   configured one; afterwards, within 4 °C of the known cut-off.

@@ -81,8 +81,11 @@ REGULATOR_FALL_STEP = 30.0
 # (an automation or SolarSplit taking the surplus elsewhere) is a consequence.
 REGULATOR_STOP_AFTER = timedelta(seconds=60)
 # Asking for more: the output rose this much above its value at the drop, or
-# reached REGULATOR_FULL_PERCENT, or the manual mode was switched on.
+# reached REGULATOR_FULL_PERCENT, or the manual mode was switched on. Or, at
+# full output already (it cannot rise), it stayed there this long after the
+# drop: its own stop would have been reported within a couple of seconds.
 REGULATOR_INSIST_RISE = 10.0
+REGULATOR_HOLD = timedelta(seconds=5)
 # A cut-off this far below the configured cut-off temperature is not a
 # thermostat cut-off (e.g. an automation stopping the heating at 45 °C).
 # Used while no cut-off has been learned yet.
@@ -291,6 +294,9 @@ class PowerDrop:
     # after it (then a later stop does not withdraw the demand).
     regulator: float | None = None
     insisted: bool = False
+    # At full output (or in manual mode) at the drop and since: held there
+    # for REGULATOR_HOLD, it counts as asking for more.
+    full: bool = False
 
 
 class PowerDropDetector:
@@ -425,6 +431,16 @@ class PowerDropDetector:
         if drop is not None and drop.demand and not drop.insisted:
             self.drop = replace(drop, demand=False)
 
+    def _held(self, timestamp: datetime) -> None:
+        """Called before a regulator change: was it held at full since the drop?"""
+        drop = self._after_drop(timestamp)
+        if (
+            drop is not None
+            and drop.full
+            and timestamp - drop.timestamp >= REGULATOR_HOLD
+        ):
+            self._insist(timestamp)
+
     def _insist(self, timestamp: datetime) -> None:
         """The regulator asked for more power right after the drop."""
         drop = self._after_drop(timestamp)
@@ -433,6 +449,14 @@ class PowerDropDetector:
 
     def update_regulator(self, timestamp: datetime, value: float | None) -> None:
         """Record a regulator output change (%; None: unavailable)."""
+        self._held(timestamp)
+        if (
+            (drop := self.drop) is not None
+            and drop.full
+            and not self._manual
+            and (value is None or value < REGULATOR_FULL_PERCENT)
+        ):
+            self.drop = replace(drop, full=False)
         if (
             value is not None
             and self._regulator is not None
@@ -463,6 +487,14 @@ class PowerDropDetector:
 
     def update_manual(self, timestamp: datetime, value: bool | None) -> None:
         """Record a manual mode change (full power requested when on)."""
+        self._held(timestamp)
+        if (
+            (drop := self.drop) is not None
+            and drop.full
+            and value is not True
+            and (self._regulator is None or self._regulator < REGULATOR_FULL_PERCENT)
+        ):
+            self.drop = replace(drop, full=False)
         if value is False and self._manual:
             self._record_fall(timestamp)
             self._withdraw(timestamp)
@@ -495,6 +527,11 @@ class PowerDropDetector:
                 demand=self.demand and not falling,
                 disturbed=self._disturbed_at(timestamp),
                 regulator=self._regulator,
+                full=bool(self._manual)
+                or (
+                    self._regulator is not None
+                    and self._regulator >= REGULATOR_FULL_PERCENT
+                ),
             )
         self._heating = heating
 

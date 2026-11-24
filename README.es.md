@@ -369,7 +369,8 @@ de sol), no se calienta nada de más.
   corte. Una excepción: una parada de la consigna que llega en el minuto
   siguiente a la caída es la del propio regulador publicada con retraso, salvo
   que antes pidiera más potencia (consigna al 95 % o 10 puntos más, o el modo
-  manual encendido), que es lo que hace un regulador cuando corta el
+  manual encendido; o, si ya estaba al 95 % o en manual en la caída, que se
+  mantenga así 5 s), que es lo que hace un regulador cuando corta el
   termostato. La muestra es la temperatura de la sonda, y el modelo se pone
   lleno a esa temperatura. Mientras no se ha
   aprendido ningún corte, debe estar a menos de 12 °C por debajo del

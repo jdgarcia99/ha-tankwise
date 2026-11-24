@@ -539,3 +539,30 @@ def test_history_import_applies_the_rule_after_the_drop(
     """Imported again after the upgrade, the cut-off of 24/11 counts."""
     result = replay(_series(events, temperature), PARAMS)
     assert len(result.model.cutoff_samples) == samples
+
+
+# The diverter steady at 100 % in Auto: it cannot ask for more. Held there
+# ~30 s after the drop, then 0 % (SolarSplit taking the surplus): a cut-off.
+FULL_THEN_ZERO: list[Event] = [
+    *_running("13:00:00", 52_000.0),
+    ("13:49:27", "power", 0.0),
+    ("13:49:32", "regulator", 100.0),  # reported again, unchanged
+    ("13:49:57", "regulator", 0.0),
+]
+# The same with the output at 0 % reported 2 s after the drop: its own stop
+# arriving late, like the cloud.
+FULL_THEN_LATE_STOP: list[Event] = [
+    *_running("13:00:00", 52_000.0),
+    ("13:49:27", "power", 0.0),
+    ("13:49:29", "regulator", 0.0),
+]
+
+
+@pytest.mark.parametrize(
+    ("events", "cutoff"), [(FULL_THEN_ZERO, True), (FULL_THEN_LATE_STOP, False)]
+)
+def test_full_output_held_after_the_drop_counts_as_asking_for_more(
+    events: list[Event], cutoff: bool
+) -> None:
+    _, calibrations = _replay(24, events, "13:00:30", "14:00:30", top=69.4)
+    assert bool(calibrations) is cutoff
