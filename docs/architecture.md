@@ -62,15 +62,30 @@ balance, one sample per minute:
   power falls, from state change events, because an external order may switch
   it off seconds later. The cut-off temperature is the median of the last 20.
   A drop is discarded when the regulator, or its own power supply, stopped
-  the element: from one minute before it to three minutes after it, the
-  regulator was unavailable or restarted (uptime lower, new restart reason),
-  or, from one minute before to two minutes after it, it was in a mode that
-  does not heat or asked for 0 %. Its entities are reported unavailable up to
-  about two minutes after a power cut, and the cut-off is only confirmed
-  after three, so the longer window delays nothing. A mode or setpoint change
-  is reported at once; later than two minutes it is usually an automation
-  reacting to a real cut-off (`REGULATOR_DISTURBED_AFTER`,
-  `REGULATOR_UNAVAILABLE_AFTER`). A sample must be within 4 °C of the known
+  the element. Before the drop (from one minute before to the drop itself)
+  its mode, output and manual mode must show it was asking for power: a mode
+  that does not heat, an output at 0 %, the manual mode or the output
+  stopping just before (`REGULATOR_FALLING_WINDOW`: down to 10 % or by
+  `REGULATOR_FALL_STEP` points; a regulator modulating in Auto moves a few
+  points and cannot stop the element) discard it, and so do unavailability
+  and restarts (uptime lower, new restart reason). After the drop only
+  unavailability or a restart discard it, up to
+  `REGULATOR_UNAVAILABLE_AFTER` (3 min): its entities are reported
+  unavailable up to about two minutes after a power cut, and the cut-off is
+  only confirmed after three. A mode or output change after the drop is a
+  consequence of the cut-off (an automation, SolarSplit taking the surplus
+  elsewhere). The exception is the output reported at rest (or the manual
+  mode off) within `REGULATOR_STOP_AFTER` (60 s) of the drop: the regulator's
+  state reaches Home Assistant a few seconds after the power, so that is its
+  own stop arriving late (a cloud), unless it asked for more power first
+  (`PowerDrop.insisted`: output at 95 %, `REGULATOR_INSIST_RISE` points above
+  its value at the drop, or the manual mode switched on; or, at full output
+  or in manual mode at the drop and unable to rise, held there for
+  `REGULATOR_HOLD`, 5 s: its own stop is reported within a couple of
+  seconds). With the element
+  drawing nothing, a regulator raises its output: that is the thermostat.
+  The sample is the filtered probe, never the mixed equivalent, and a
+  confirmed cut-off sets the model full at it (stratification offset reset). A sample must be within 4 °C of the known
   cut-off (within 12 °C below the configured one until the first sample).
   Single samples can be discarded with a service.
 - **Draws**: the residual between the observed and the predicted change of the

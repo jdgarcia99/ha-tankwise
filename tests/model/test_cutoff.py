@@ -218,10 +218,21 @@ def test_detector_manual_off_after_the_drop_withdraws_it() -> None:
     detector.update_power(_at(15, "16:00:01"), 1480)
     detector.update_power(_at(15, "16:30:00"), 0)
     assert detector.drop is not None and detector.drop.demand
-    detector.update_manual(_at(15, "16:30:20"), False)
+    detector.update_manual(_at(15, "16:30:03"), False)  # reported late: its own stop
     assert detector.drop is not None
     assert not detector.drop.demand
     assert detector.drop.timestamp == _at(15, "16:30:00")
+
+
+def test_detector_manual_held_after_the_drop_keeps_it() -> None:
+    """In manual mode for 20 s after the drop: the thermostat, then an order."""
+    detector = PowerDropDetector(50)
+    detector.update_manual(_at(15, "16:00:00"), True)
+    detector.update_power(_at(15, "16:00:01"), 1480)
+    detector.update_power(_at(15, "16:30:00"), 0)
+    detector.update_manual(_at(15, "16:30:20"), False)
+    assert detector.drop is not None
+    assert detector.drop.demand and detector.drop.insisted
 
 
 def test_detector_regulator_lowered_just_before_the_drop() -> None:

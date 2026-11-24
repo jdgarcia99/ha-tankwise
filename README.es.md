@@ -359,12 +359,20 @@ de sol), no se calienta nada de más.
   pide potencia (modo manual encendido o PWM por encima del 10 %) y la
   potencia se queda por debajo de 50 W durante 3 minutos; ese instante se toma
   de los cambios de estado, así que una automatización que apague el modo
-  manual después no lo oculta. No es un corte si, desde un minuto antes de la
-  caída hasta tres minutos después, el regulador no estuvo disponible o se
-  reinició (sus entidades tardan unos dos minutos en aparecer como no
-  disponibles), o si, desde un minuto antes hasta dos minutos después, estuvo
-  en un modo que no calienta o pidió un 0 % (un corte de alimentación del
-  derivador también para la resistencia). Mientras no se ha
+  manual después no lo oculta. Su modo, consigna y modo manual solo se miran
+  hasta la caída: desde un minuto antes deben indicar que pedía potencia (una
+  consigna que baja al 10 % o 30 puntos justo antes indica que la paró el
+  regulador). Después de la caída solo la descartan que el regulador deje de
+  estar disponible o se reinicie (hasta tres minutos: sus entidades tardan
+  unos dos minutos en aparecer como no disponibles tras un corte de
+  alimentación); un cambio de modo o de consigna después es consecuencia del
+  corte. Una excepción: una parada de la consigna que llega en el minuto
+  siguiente a la caída es la del propio regulador publicada con retraso, salvo
+  que antes pidiera más potencia (consigna al 95 % o 10 puntos más, o el modo
+  manual encendido; o, si ya estaba al 95 % o en manual en la caída, que se
+  mantenga así 5 s), que es lo que hace un regulador cuando corta el
+  termostato. La muestra es la temperatura de la sonda, y el modelo se pone
+  lleno a esa temperatura. Mientras no se ha
   aprendido ningún corte, debe estar a menos de 12 °C por debajo del
   configurado; después, a menos de 4 °C del corte conocido.
 - **Extracciones.** Cada minuto se compara el cambio observado de la sonda

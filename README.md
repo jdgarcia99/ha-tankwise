@@ -351,11 +351,19 @@ hour by itself (e.g. on sunny days), nothing extra is heated.
   power (manual mode on, or PWM output above 10 %) and the power stays below
   50 W for 3 minutes; that instant is captured from state changes, so an
   automation that switches the manual mode off afterwards does not hide it.
-  It is not a cut-off when, from one minute before the drop to three minutes
-  after it, the regulator was unavailable or restarted (its entities take
-  about two minutes to be reported unavailable), or when, from one minute
-  before to two minutes after it, it was in a mode that does not heat or
-  asked for 0 % (a power cut of the diverter stops the element too). Until a cut-off is learned it must be within 12 °C below the
+  Its mode, output and manual mode are checked only up to the drop: from one
+  minute before it they must show it was asking for power (an output falling
+  to 10 % or by 30 points just before means the regulator stopped it). After
+  the drop, only the regulator becoming unavailable or restarting (up to
+  three minutes: its entities take about two minutes to be reported
+  unavailable after a power cut) discards it; a mode or output change after
+  it is a consequence of the cut-off. One exception: an output stop reported
+  within a minute of the drop is the regulator's own stop arriving late,
+  unless it first asked for more power (output up to 95 %, or 10 points more,
+  or the manual mode on; or, already at 95 % or in manual mode at the drop,
+  held there for 5 s), which is what a regulator does when the thermostat
+  cuts off. The sample is the probe's temperature, and the model is set full
+  at it. Until a cut-off is learned it must be within 12 °C below the
   configured one; afterwards, within 4 °C of the known cut-off.
 - **Draws.** Every minute the observed change of the filtered probe is
   compared with the predicted one. A draw starts when the residual

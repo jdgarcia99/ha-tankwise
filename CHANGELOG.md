@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.2] - 2026-11-24
+
+### Fixed
+
+- A real thermostat cut-off was discarded. On 24/11 at 13:49:27 (probe
+  69.4 °C) the diverter was modulating in Auto (77 → 73.8 → 72.7 %); with no
+  consumption it raised its output to 100 % at 13:49:32 and went to 0 % at
+  13:50:02 (the surplus taken elsewhere). Three rules discarded it: the small
+  swings before the drop counted as the regulator stopping, the 0 % after the
+  drop counted as a disturbance, and as the regulator's own late stop.
+  - The mode, the output and the manual mode are checked only up to the drop.
+    After it, only the regulator becoming unavailable or restarting (up to
+    3 minutes) discards it: a mode or output change after the drop is a
+    consequence of the cut-off.
+  - Before the drop, only an output stopping (down to 10 % or by 30 points)
+    or the manual mode switched off counts as the regulator stopping it, not
+    a regulator modulating by a few points.
+  - An output at rest reported within a minute of the drop is still the
+    regulator's own stop arriving late (a cloud: on 24/11 at 13:41 the power
+    fell to 0 and the 0 % arrived 2 s later), unless the regulator first asked
+    for more power (output at 95 %, 10 points above its value at the drop, or
+    the manual mode switched on), as it does when the thermostat cuts off. At
+    full output or in manual mode at the drop it cannot rise: held there for
+    5 s after the drop counts as asking for more.
+- The cut-off sample is the probe's temperature and a confirmed cut-off sets
+  the model full at it, also in a stratified tank (now covered by a test).
+
+### Notes
+
+- The history is imported again after upgrading (models version 6), so the
+  cut-offs of the last 10 days are taken again with the new rule: the one of
+  24/11 counts without waiting for the next one.
+
 ## [0.12.1] - 2026-11-23
 
 ### Fixed
@@ -674,7 +707,8 @@ and the heating plan will follow.
 - The output contract entities (energy needed, deadline, grid allowed,
   requested power and urgency) arrive in a later release.
 
-[Unreleased]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.12.1...HEAD
+[Unreleased]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.12.2...HEAD
+[0.12.2]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.12.1...v0.12.2
 [0.12.1]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.12.0...v0.12.1
 [0.12.0]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.11.1...v0.12.0
 [0.11.1]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.11.0...v0.11.1
