@@ -47,7 +47,7 @@ ningún `entity_id` está fijado en el código.
 
 **Entradas obligatorias**
 
-- Sonda de temperatura del depósito (°C o °F). Indica dónde está en **Opciones → Parámetros → Posición de la sonda**: arriba del depósito (ve el agua que sale) o en la vaina del termostato, abajo junto a la resistencia (habitual en instalaciones caseras: un termopar metido en la vaina). En la vaina la sonda sigue caliente durante los primeros litros de una extracción y cae de golpe cuando llega el frente frío, mucho antes de que se acabe el agua caliente de arriba.
+- Sonda de temperatura del depósito (°C o °F). Indica dónde está en **Opciones → Parámetros → Posición de la sonda**: arriba del depósito (ve el agua que sale) o en la vaina del termostato, abajo junto a la resistencia (habitual en instalaciones caseras: un termopar metido en la vaina). En la vaina la sonda sigue caliente durante los primeros litros de una extracción y cae de golpe cuando llega el frente frío, mucho antes de que se acabe el agua caliente de arriba. Aun así acota el modelo: la media nunca se considera menor que el *Volumen bajo la sonda* (30 %) a la temperatura de red y el resto a la de la sonda.
 - Potencia del termo (W o kW).
 - Interruptor de alimentación del termo (debe estar siempre encendido).
 - Modo manual del regulador: interruptor que hace que caliente a plena
