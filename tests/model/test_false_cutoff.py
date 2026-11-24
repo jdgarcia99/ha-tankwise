@@ -236,20 +236,22 @@ def test_thermostat_cutoff_at_68_with_the_diverter_running_is_a_cutoff() -> None
         ([("13:11:50", "uptime", 3.0)], True),
         # A new restart reason one minute after the drop.
         ([("13:14:00", "restart", "power-on event")], False),
-        # A mode that does not heat, 30 s after the drop.
-        ([("13:13:30", "mode", "Apagado")], False),
+        # A mode that does not heat at the drop (switched 30 s before).
+        ([("13:12:30", "mode", "Apagado"), ("13:13:30", "mode", "Auto")], False),
+        # ... but after the drop it is a consequence of the cut-off.
+        ([("13:13:30", "mode", "Apagado")], True),
         # The regulator at 0 % in the minute before the drop.
         ([("13:12:30", "regulator", 0.0), ("13:12:35", "regulator", 100.0)], False),
         # Only the output switch unavailable, a minute after.
         ([("13:14:00", "output", UNAVAILABLE)], False),
         # A restart is reported late too: 2:30 after the drop still counts.
         ([("13:15:30", "uptime", 3.0)], False),
-        # A mode or setpoint change is reported at once: 2:30 after the drop
-        # it is a reaction to the cut-off (e.g. an automation), not its cause.
+        # Mode or setpoint changes after the drop are reactions to the
+        # cut-off (an automation, SolarSplit), not its cause.
         ([("13:15:30", "mode", "Apagado")], True),
         ([("13:15:30", "regulator", 0.0)], True),
-        # ... but within two minutes it still counts.
-        ([("13:14:50", "mode", "Apagado")], False),
+        ([("13:14:50", "mode", "Apagado")], True),
+        ([("13:14:50", "regulator", 0.0)], True),
     ],
 )
 def test_regulator_disturbance_around_the_drop(
@@ -393,12 +395,147 @@ def _series(
     [
         (POWER_CUT_1147, 60.9, 0),
         (CUTOFF_1313, 67.9, 1),
-        # Only the mode role tells: the diverter was switched off.
-        ([*CUTOFF_1313, ("13:13:30", "mode", "Apagado")], 67.9, 0),
+        # Only the mode role tells: the diverter was switched off before.
+        ([*CUTOFF_1313, ("13:12:30", "mode", "Apagado")], 67.9, 0),
+        # Switched off after the drop: a consequence, the cut-off counts.
+        ([*CUTOFF_1313, ("13:13:30", "mode", "Apagado")], 67.9, 1),
     ],
 )
 def test_history_import_ignores_the_power_cut(
     events: list[Event], temperature: float, samples: int
 ) -> None:
+    result = replay(_series(events, temperature), PARAMS)
+    assert len(result.model.cutoff_samples) == samples
+
+
+# ---------------------------------------------------------------------------
+# 24/11: a cut-off while the diverter modulates in Auto
+# ---------------------------------------------------------------------------
+
+
+def _modulating(start: str, uptime: float) -> list[Event]:
+    """The diverter in Auto taking the surplus: output and power move every 5 s."""
+    events = _running(start, uptime)
+    events += [(start, "regulator", 92.3), (start, "power", 1420.0)]
+    return events
+
+
+# The thermostat cut off at 13:49:27 (probe 69.4 °C) with the output at
+# 72.7 %, after small swings (77.0 → 73.8 → 72.7). With no consumption the
+# diverter raised its output to 100 % at 13:49:32; at 13:50:02 it went to 0 %
+# (the surplus taken elsewhere). It stayed available and in Auto. TankWise
+# 0.12.1 discarded it: the swings counted as the regulator stopping, and the
+# 0 % after the drop as a stop and as a disturbance.
+CUTOFF_1349: list[Event] = [
+    *_modulating("13:00:00", 52_000.0),
+    ("13:49:07", "regulator", 71.31),
+    ("13:49:12", "regulator", 76.97),
+    ("13:49:17", "regulator", 73.82),
+    ("13:49:22", "regulator", 72.67),
+    ("13:49:26.25", "power", 886.5),
+    ("13:49:27.27", "power", 5.7),
+    ("13:49:27.5", "regulator", 73.56),
+    ("13:49:28.2", "power", 0.0),
+    ("13:49:32.5", "regulator", 100.0),
+    ("13:50:02.67", "regulator", 0.0),
+]
+
+
+def test_cutoff_while_modulating_with_the_setpoint_to_zero_after_it() -> None:
+    model, calibrations = _replay(24, CUTOFF_1349, "13:00:30", "14:00:30", top=69.4)
+    assert len(calibrations) == 1
+    assert calibrations[0][0] == _at(24, "13:52:30")  # first poll >= 3 min
+    assert model.cutoff_samples == (pytest.approx(69.4, abs=0.1),)
+
+
+def test_setpoint_to_zero_after_the_drop_without_asking_for_more_is_a_stop() -> None:
+    """No rise first: the setpoint falling within a minute caused it (late report)."""
+    events = [event for event in CUTOFF_1349 if event[0] != "13:49:32.5"]
+    _, calibrations = _replay(24, events, "13:00:30", "14:00:30", top=69.4)
+    assert calibrations == []
+
+
+# 24/11, 13:41: a cloud. The output fell (36 → 19 %), the power fell to 0 at
+# 13:41:15 and the output 0 % reached Home Assistant at 13:41:17. Here the
+# cloud lasts: the output stays at 0 % for five minutes.
+CLOUD_1341: list[Event] = [
+    *_modulating("13:20:00", 52_000.0),
+    ("13:41:07", "regulator", 36.07),
+    ("13:41:12", "regulator", 19.4),
+    ("13:41:15.67", "power", 0.0),
+    ("13:41:17.07", "regulator", 0.0),
+]
+
+
+def test_a_long_cloud_is_not_a_cutoff() -> None:
+    model, calibrations = _replay(24, CLOUD_1341, "13:30:30", "13:50:30", top=68.9)
+    assert calibrations == []
+    assert model.cutoff_samples == ()
+
+
+def test_the_diverter_lost_and_restarted_is_still_not_a_cutoff() -> None:
+    """23/11: availability and restarts after the drop still discard it."""
+    _, calibrations = _replay(23, POWER_CUT_1147, "11:00:30", "12:10:30", top=60.9)
+    assert calibrations == []
+
+
+def test_detector_rise_after_the_drop_keeps_the_demand() -> None:
+    detector = PowerDropDetector(PARAMS.power_threshold_w)
+    detector.update_regulator(_at(24, "13:49:22"), 72.67)
+    detector.update_power(_at(24, "13:49:20"), 1000.0)
+    detector.update_power(_at(24, "13:49:27"), 0.0)
+    assert detector.drop is not None and detector.drop.demand
+    assert detector.drop.regulator == pytest.approx(72.67)
+    detector.update_regulator(_at(24, "13:49:32"), 100.0)
+    assert detector.drop.insisted
+    detector.update_regulator(_at(24, "13:50:02"), 0.0)
+    assert detector.drop.demand and not detector.drop.disturbed
+    # A small rise is not asking for more.
+    other = PowerDropDetector(PARAMS.power_threshold_w)
+    other.update_regulator(_at(24, "13:49:22"), 72.67)
+    other.update_power(_at(24, "13:49:20"), 1000.0)
+    other.update_power(_at(24, "13:49:27"), 0.0)
+    other.update_regulator(_at(24, "13:49:32"), 75.0)
+    other.update_regulator(_at(24, "13:50:02"), 0.0)
+    assert other.drop is not None and not other.drop.demand
+
+
+# ---------------------------------------------------------------------------
+# The sample and the energy at a cut-off of a stratified tank
+# ---------------------------------------------------------------------------
+
+
+def test_stratified_cutoff_takes_the_probe_and_fills_the_model() -> None:
+    """The mixed model is far below the probe; the cut-off sample is the probe's."""
+    data = TankModel().as_dict()
+    data.update(
+        equivalent_temperature=55.0,
+        last_valid_time=(_at(24, "13:00:30") - timedelta(minutes=1)).isoformat(),
+        stratification=[[66.0, 0.5]] * 5,
+        stratification_offset=12.0,
+        uncertain=True,
+        calibration_count=0,
+    )
+    model = TankModel.from_dict(data)
+    model, calibrations = _replay(
+        24, CUTOFF_1349, "13:00:30", "14:00:30", top=69.4, model=model
+    )
+    assert len(calibrations) == 1
+    sample = model.cutoff_samples[-1]
+    assert sample == pytest.approx(69.4, abs=0.1)  # the probe, not the mixed model
+    after = model.as_dict()
+    assert after["stratification_offset"] == 0.0
+    # The model was set full at the probe and only lost the losses since.
+    assert after["equivalent_temperature"] == pytest.approx(sample, abs=0.5)
+
+
+@pytest.mark.parametrize(
+    ("events", "temperature", "samples"),
+    [(CUTOFF_1349, 69.4, 1), (CLOUD_1341, 68.9, 0)],
+)
+def test_history_import_applies_the_rule_after_the_drop(
+    events: list[Event], temperature: float, samples: int
+) -> None:
+    """Imported again after the upgrade, the cut-off of 24/11 counts."""
     result = replay(_series(events, temperature), PARAMS)
     assert len(result.model.cutoff_samples) == samples

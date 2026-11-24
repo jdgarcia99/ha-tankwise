@@ -66,29 +66,41 @@ REGULATOR_FULL_PERCENT = 95.0
 FULL_CONFIRM = timedelta(minutes=3)
 FULL_CHECK_WINDOW = timedelta(minutes=30)
 REGULATOR_DEMAND_PERCENT = 10.0
-# A regulator decrease (or the manual mode switched off) this shortly before
-# the power fell means the regulator stopped the heating, not the thermostat.
+# The regulator stopping (its output down to REGULATOR_DEMAND_PERCENT or by
+# REGULATOR_FALL_STEP points at once, or the manual mode switched off) this
+# shortly before the power fell means the regulator stopped the heating, not
+# the thermostat. A regulator modulating in automatic mode (77 % → 72 %)
+# cannot stop the element: not a stop.
 REGULATOR_FALLING_WINDOW = timedelta(seconds=30)
+REGULATOR_FALL_STEP = 30.0
 # The manual mode reported off (or the PWM output at rest) this shortly
 # after the power fell also means an external order stopped the heating: the
 # regulator state often reaches Home Assistant a few seconds after the power.
+# Unless the regulator asked for more power first: with no consumption it
+# raises its output (a thermostat cut-off), and whatever it does after that
+# (an automation or SolarSplit taking the surplus elsewhere) is a consequence.
 REGULATOR_STOP_AFTER = timedelta(seconds=60)
+# Asking for more: the output rose this much above its value at the drop, or
+# reached REGULATOR_FULL_PERCENT, or the manual mode was switched on.
+REGULATOR_INSIST_RISE = 10.0
 # A cut-off this far below the configured cut-off temperature is not a
 # thermostat cut-off (e.g. an automation stopping the heating at 45 °C).
 # Used while no cut-off has been learned yet.
 CUTOFF_PLAUSIBLE_BELOW = 12.0
 # Once a cut-off is known, a new one must be this close to it.
 CUTOFF_PLAUSIBLE_NEAR = 4.0
-# A power drop is not a thermostat cut-off when, from this long before it to
-# this long after it, the regulator was unavailable, restarted, was in a mode
-# that does not heat, or asked for no power: the regulator (or its own power
-# supply) stopped the heating. The regulator entities take up to about two
-# minutes to be reported unavailable after a power cut, so unavailability and
-# restarts count for longer after the drop (still within the confirmation
-# time) than a mode or setpoint change, which is reported at once and, a few
-# minutes after a real cut-off, is usually an automation reacting to it.
+# A power drop is not a thermostat cut-off when the regulator (or its own
+# power supply) stopped the heating:
+# - from this long before the drop to the drop itself, the regulator was
+#   unavailable, restarted, was in a mode that does not heat or asked for no
+#   power;
+# - after the drop, only if it became unavailable or restarted, up to
+#   REGULATOR_UNAVAILABLE_AFTER: its entities take up to about two minutes to
+#   be reported unavailable after a power cut (still within the confirmation
+#   time). A mode or setpoint change after the drop is a consequence of the
+#   cut-off (an automation, or SolarSplit taking the surplus elsewhere), not
+#   its cause.
 REGULATOR_DISTURBED_BEFORE = timedelta(minutes=1)
-REGULATOR_DISTURBED_AFTER = timedelta(minutes=2)
 REGULATOR_UNAVAILABLE_AFTER = timedelta(minutes=3)
 # Regulator modes that heat (``Auto``: surplus, ``Manual``: full power).
 DEFAULT_REGULATOR_ACTIVE_MODES = ("Auto", "Manual")
@@ -272,8 +284,13 @@ class PowerDrop:
     # regulator, stopped the heating.
     demand: bool
     # The regulator was unavailable, restarted, did not heat in its mode or
-    # asked for no power around the drop: never a thermostat cut-off.
+    # asked for no power before the drop, or became unavailable or restarted
+    # after it: never a thermostat cut-off.
     disturbed: bool = False
+    # Regulator output at the drop (%), and whether it asked for more power
+    # after it (then a later stop does not withdraw the demand).
+    regulator: float | None = None
+    insisted: bool = False
 
 
 class PowerDropDetector:
@@ -310,11 +327,9 @@ class PowerDropDetector:
     def _disturb(self, timestamp: datetime, unavailable: bool) -> None:
         """Record a moment the regulator was disturbed.
 
-        ``unavailable``: it was lost or restarted, which is reported late.
+        ``unavailable``: it was lost or restarted, which is reported late and
+        is the only disturbance that counts after the drop.
         """
-        after = (
-            REGULATOR_UNAVAILABLE_AFTER if unavailable else REGULATOR_DISTURBED_AFTER
-        )
         self._disturbances = [
             moment
             for moment in self._disturbances
@@ -323,9 +338,12 @@ class PowerDropDetector:
         self._disturbances.append(timestamp)
         drop = self.drop
         if (
-            drop is not None
+            unavailable
+            and drop is not None
             and not drop.disturbed
-            and timedelta(0) <= timestamp - drop.timestamp <= after
+            and timedelta(0)
+            <= timestamp - drop.timestamp
+            <= REGULATOR_UNAVAILABLE_AFTER
         ):
             self.drop = replace(drop, disturbed=True)
 
@@ -386,15 +404,32 @@ class PowerDropDetector:
             if timestamp - moment <= REGULATOR_FALLING_WINDOW
         ]
 
-    def _withdraw(self, timestamp: datetime) -> None:
-        """The regulator stopped right after the power fell: not a cut-off."""
+    def _after_drop(self, timestamp: datetime) -> PowerDrop | None:
+        """The current drop, if ``timestamp`` is shortly after it."""
         drop = self.drop
         if (
             drop is not None
-            and drop.demand
             and timedelta(0) <= timestamp - drop.timestamp <= REGULATOR_STOP_AFTER
         ):
+            return drop
+        return None
+
+    def _withdraw(self, timestamp: datetime) -> None:
+        """The regulator stopped right after the power fell: not a cut-off.
+
+        Its state is reported a few seconds after the power, so a stop just
+        after the drop may be its cause. Not once it asked for more power
+        with the element drawing none: the thermostat had cut off.
+        """
+        drop = self._after_drop(timestamp)
+        if drop is not None and drop.demand and not drop.insisted:
             self.drop = replace(drop, demand=False)
+
+    def _insist(self, timestamp: datetime) -> None:
+        """The regulator asked for more power right after the drop."""
+        drop = self._after_drop(timestamp)
+        if drop is not None and drop.demand and not drop.insisted:
+            self.drop = replace(drop, insisted=True)
 
     def update_regulator(self, timestamp: datetime, value: float | None) -> None:
         """Record a regulator output change (%; None: unavailable)."""
@@ -403,9 +438,24 @@ class PowerDropDetector:
             and self._regulator is not None
             and value < self._regulator
         ):
-            self._record_fall(timestamp)
             if value <= REGULATOR_DEMAND_PERCENT:
+                self._record_fall(timestamp)
                 self._withdraw(timestamp)
+            elif self._regulator - value >= REGULATOR_FALL_STEP:
+                self._record_fall(timestamp)
+        drop = self.drop
+        if (
+            value is not None
+            and drop is not None
+            and (
+                value >= REGULATOR_FULL_PERCENT
+                or (
+                    drop.regulator is not None
+                    and value >= drop.regulator + REGULATOR_INSIST_RISE
+                )
+            )
+        ):
+            self._insist(timestamp)
         self._regulator = value
         self._set_abnormal(
             timestamp, "regulator", value is None or value <= 0, value is None
@@ -416,6 +466,8 @@ class PowerDropDetector:
         if value is False and self._manual:
             self._record_fall(timestamp)
             self._withdraw(timestamp)
+        elif value is True and not self._manual:
+            self._insist(timestamp)
         self._manual = value
         self._set_abnormal(timestamp, "manual", value is None, True)
 
@@ -442,6 +494,7 @@ class PowerDropDetector:
                 timestamp=timestamp,
                 demand=self.demand and not falling,
                 disturbed=self._disturbed_at(timestamp),
+                regulator=self._regulator,
             )
         self._heating = heating
 

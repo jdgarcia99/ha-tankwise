@@ -200,7 +200,7 @@ BOOTSTRAP_DAYS: Final = 10
 # (2: demand profile, energy reconciliation and stricter cut-off detection;
 # 3: imports of 0.6 that ran before the inputs existed learned nothing;
 # 4: rest windows ended by a slow draw no longer inflate the heat losses).
-BOOTSTRAP_VERSION: Final = 5
+BOOTSTRAP_VERSION: Final = 6
 # The import waits this long for the probe and the power after a start.
 BOOTSTRAP_INPUT_WAIT: Final = timedelta(minutes=30)
 SHORTAGE_WINDOW: Final = timedelta(days=7)
