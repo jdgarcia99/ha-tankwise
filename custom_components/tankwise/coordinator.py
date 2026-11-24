@@ -55,6 +55,7 @@ from .const import (
     CONF_OCCUPANCY_ENTITY,
     CONF_POWER_SENSOR,
     CONF_PRICE_SENSOR,
+    CONF_PROBE_POSITION,
     CONF_PROFILE_DAYS,
     CONF_PROFILE_MODE,
     CONF_RATED_POWER,
@@ -81,6 +82,7 @@ from .const import (
     PART_ALL,
     PART_DEMAND,
     PART_LOSSES,
+    PROBE_SHEATH,
     REQUIRED_INPUT_KEYS,
     SETTING_COMFORT_MIN_TEMPERATURE,
     SETTING_MAINS_WATER_TEMPERATURE,
@@ -597,6 +599,7 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
             shower_temperature=self.settings[SETTING_SHOWER_TEMPERATURE],
             cutoff_temperature=float(parameters[CONF_CUTOFF_TEMPERATURE]),
             power_threshold_w=float(parameters[CONF_CUTOFF_POWER_THRESHOLD]),
+            probe_at_top=parameters[CONF_PROBE_POSITION] != PROBE_SHEATH,
         )
 
     @property

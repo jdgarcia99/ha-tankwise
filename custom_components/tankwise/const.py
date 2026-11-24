@@ -92,6 +92,12 @@ OPTIONAL_INPUT_KEYS: Final = (
 CONF_VOLUME: Final = "volume"
 CONF_RATED_POWER: Final = "rated_power"
 CONF_WATER_REGION: Final = "water_region"
+# Where the probe is: at the top (it sees the water leaving) or in the
+# thermostat's sheath, low in the tank next to the element.
+CONF_PROBE_POSITION: Final = "probe_position"
+PROBE_TOP: Final = "top"
+PROBE_SHEATH: Final = "sheath"
+PROBE_POSITIONS: Final = (PROBE_TOP, PROBE_SHEATH)
 CONF_AMBIENT_TEMPERATURE: Final = "ambient_temperature"
 CONF_CUTOFF_TEMPERATURE: Final = "cutoff_temperature"
 CONF_CUTOFF_POWER_THRESHOLD: Final = "cutoff_power_threshold"
@@ -123,6 +129,7 @@ DEFAULT_NAME: Final = "TankWise"
 DEFAULT_VOLUME: Final = 100  # L
 DEFAULT_RATED_POWER: Final = 1500  # W, initial value (then learned)
 DEFAULT_WATER_REGION: Final = DEFAULT_REGION
+DEFAULT_PROBE_POSITION: Final = PROBE_TOP
 DEFAULT_AMBIENT_TEMPERATURE: Final = 20.0  # °C, without an ambient sensor
 DEFAULT_CUTOFF_TEMPERATURE: Final = 68.0  # °C, initial value (then learned)
 DEFAULT_CUTOFF_POWER_THRESHOLD: Final = 50  # W
@@ -136,6 +143,7 @@ DEFAULT_PARAMETERS: Final = {
     CONF_VOLUME: DEFAULT_VOLUME,
     CONF_RATED_POWER: DEFAULT_RATED_POWER,
     CONF_WATER_REGION: DEFAULT_WATER_REGION,
+    CONF_PROBE_POSITION: DEFAULT_PROBE_POSITION,
     CONF_AMBIENT_TEMPERATURE: DEFAULT_AMBIENT_TEMPERATURE,
     CONF_CUTOFF_TEMPERATURE: DEFAULT_CUTOFF_TEMPERATURE,
     CONF_CUTOFF_POWER_THRESHOLD: DEFAULT_CUTOFF_POWER_THRESHOLD,

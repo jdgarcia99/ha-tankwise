@@ -81,6 +81,7 @@ from .const import (
     CONF_OCCUPANCY_ENTITY,
     CONF_POWER_SENSOR,
     CONF_PRICE_SENSOR,
+    CONF_PROBE_POSITION,
     CONF_PROFILE_DAYS,
     CONF_PROFILE_MODE,
     CONF_RATED_POWER,
@@ -104,6 +105,7 @@ from .const import (
     DOMAIN,
     INTEGER_PARAMETERS,
     OPTIONAL_INPUT_KEYS,
+    PROBE_POSITIONS,
     SECTION_ADVANCED,
 )
 from .model.appointments import (
@@ -272,6 +274,13 @@ PARAMETERS_SCHEMA = vol.Schema(
                 options=list(REGIONS),
                 translation_key=CONF_WATER_REGION,
                 mode=SelectSelectorMode.DROPDOWN,
+            )
+        ),
+        vol.Required(CONF_PROBE_POSITION): SelectSelector(
+            SelectSelectorConfig(
+                options=list(PROBE_POSITIONS),
+                translation_key=CONF_PROBE_POSITION,
+                mode=SelectSelectorMode.LIST,
             )
         ),
         vol.Required(CONF_RESCUE): BooleanSelector(),

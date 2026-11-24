@@ -109,11 +109,13 @@
         "data": {
           "volume": "Volumen del depósito",
           "water_region": "Región del agua de red",
+          "probe_position": "Posición de la sonda",
           "rescue": "Recarga de rescate dentro de los bloques de las citas",
           "boost_as_shortage": "Contar el Boost como falta de agua"
         },
         "data_description": {
           "water_region": "Se usa para estimar la temperatura del agua de red de cada día. Se puede fijar a mano con el número 'Temperatura del agua de red'.",
+          "probe_position": "Dónde está la sonda de temperatura. Arriba: ve el agua caliente que sale. Vaina del termostato: abajo, junto a la resistencia, donde entra el agua fría; sigue caliente durante los primeros litros de una extracción y cae de golpe cuando llega el frente frío, mucho antes de que se acabe el agua caliente de arriba. Con la vaina, las faltas de agua y el factor de aprovechamiento no se toman de la sonda, y con caudalímetro la sonda no corrige el balance de energía entre llenados.",
           "rescue": "Si los litros útiles que quedan no cubren la demanda habitual que queda en un bloque, calentar solo la energía que falta dentro del bloque. Desactivada: modo estricto, nunca se calienta dentro de un bloque.",
           "boost_as_shortage": "Desactivado por defecto: un Boost puede tener cualquier motivo y no cambia el perfil de uso. Activado, la previsión alrededor de la hora de cada Boost sube como tras una falta de agua."
         },
@@ -260,6 +262,12 @@
         "losses": "Pérdidas de calor",
         "demand": "Perfil de uso",
         "all": "Todo"
+      }
+    },
+    "probe_position": {
+      "options": {
+        "top": "Arriba del depósito",
+        "sheath": "Vaina del termostato (abajo)"
       }
     }
   },

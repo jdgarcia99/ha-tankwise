@@ -109,11 +109,13 @@
         "data": {
           "volume": "Tank volume",
           "water_region": "Mains water region",
+          "probe_position": "Probe position",
           "rescue": "Rescue recharge inside appointment blocks",
           "boost_as_shortage": "Count a boost as a hot water shortage"
         },
         "data_description": {
           "water_region": "Used to estimate the mains water temperature of each day. It can be fixed by hand with the 'Mains water temperature' number.",
+          "probe_position": "Where the temperature probe is. Top: it sees the hot water leaving. Thermostat sheath: low in the tank, next to the element, where the cold water arrives; it stays hot during the first litres of a draw and falls quickly when the cold front reaches it, long before the hot water at the top runs out. With the sheath, shortages and the useful litres factor are not taken from the probe, and with a hot water meter the probe does not correct the energy balance between full charges.",
           "rescue": "If the useful litres left do not cover the usual demand left in a block, heat only the missing energy inside the block. Off: strict mode, never heat inside a block.",
           "boost_as_shortage": "Off by default: a boost can have any reason and does not change the usage profile. On, the forecast around the time of each boost is raised like after a shortage."
         },
@@ -260,6 +262,12 @@
         "losses": "Heat losses",
         "demand": "Usage profile",
         "all": "Everything"
+      }
+    },
+    "probe_position": {
+      "options": {
+        "top": "Top of the tank",
+        "sheath": "Thermostat sheath (low)"
       }
     }
   },

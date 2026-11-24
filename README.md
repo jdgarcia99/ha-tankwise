@@ -47,7 +47,7 @@ and no entity ID is fixed in the code.
 
 **Required inputs**
 
-- Tank temperature: probe in the upper part of the tank (°C or °F).
+- Tank temperature probe (°C or °F). Say where it is in **Options → Parameters → Probe position**: at the top of the tank (it sees the water leaving), or in the thermostat's sheath, low in the tank next to the element (common in DIY installations: a thermocouple slid into the sheath). In the sheath the probe stays hot during the first litres of a draw and then falls quickly when the cold front reaches it, long before the hot water at the top runs out.
 - Water heater power (W or kW).
 - Water heater power switch (it must always stay on).
 - Regulator manual mode: switch that makes the regulator heat at full power
@@ -148,7 +148,7 @@ are translated.
 | Hot water available | Useful litres at the shower temperature before the water runs below the comfort temperature; in a stratified tank, `k_use` times the energy above the mains water (attributes: theoretical litres, `stratified`, `useful_floor_temperature`) |
 | Plan at risk (binary) | On when hot water cannot be guaranteed: an appointment needs more than a full tank gives, the usual demand is not covered, or the regulator or the probe is unavailable before an appointment (`reasons` attribute) |
 | Modelled temperature | Equivalent (mixed) tank temperature tracked by the model: the stored energy as a temperature |
-| Estimated outlet temperature | Temperature of the hot layer at the outlet, what the probe sees: the modelled temperature plus the expected stratification (equal to it in a mixed tank) |
+| Estimated outlet temperature | Temperature of the hot layer at the outlet. With the probe at the top, what it sees: the modelled temperature plus the expected stratification. With the probe in the thermostat's sheath, the temperature of the last full charge less the losses (draws do not lower it while hot water remains) |
 | Model status | `calibrated`, `learning` or `uncertain`; attributes `reason`, `missing` (what is needed to calibrate) and the `samples` of each learned parameter |
 | Last draw | Start of the last hot water draw, with its energy, litres (with a hot water meter), minimum temperature and whether there was a shortage |
 | Hot water shortages (7 days) | Draws that took the water at least 1.5 °C below the minimum comfort temperature |

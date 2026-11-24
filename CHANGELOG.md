@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.3] - 2026-11-24
+
+### Fixed
+
+- Cut-off samples were lost in a history import: the list with more samples
+  won, and an import of the last 10 days lacks the older ones (24/11: the
+  69.4 °C cut-off of 13:49 was missing after installing 0.12.2). Samples now
+  keep their time; the import is merged by union, without duplicates (same
+  time and value; by value for samples saved before this version), keeping
+  the 20 most recent. Samples discarded with the service are remembered and
+  not brought back by an import.
+
+### Added
+
+- **Probe position** parameter (*Options → Parameters*): top of the tank (the
+  default, as before) or the thermostat's sheath, low in the tank next to the
+  element. In the sheath the probe falls when the cold front reaches it, long
+  before the hot water at the top runs out (24/11: 32 °C with some 55 L at
+  40 °C still available). With the sheath:
+  - a hot water shortage is not taken from the probe but from the model (no
+    useful energy left): on 24/11 nine shortages in a week were false, and
+    raised the demand forecast;
+  - the useful litres factor (`k_use`) is not learned from the probe crossing
+    the comfort temperature;
+  - the estimated outlet temperature is the hot layer (the last full charge
+    less the losses), not the model plus the stratification offset;
+  - with a hot water meter, draws leave at the hot layer's temperature (the
+    probe's 59, 51, 40 °C undercounted the evening showers) and the probe
+    does not correct the metered balance between full charges.
+
+### Notes
+
+- Set *Probe position* to *Thermostat sheath* if the probe is in the
+  thermostat's sheath. The useful litres factor learned so far came from the
+  probe crossing the comfort temperature; consider resetting the learning of
+  that factor once an outlet temperature sensor can measure it.
+
 ## [0.12.2] - 2026-11-24
 
 ### Fixed
@@ -707,7 +744,8 @@ and the heating plan will follow.
 - The output contract entities (energy needed, deadline, grid allowed,
   requested power and urgency) arrive in a later release.
 
-[Unreleased]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.12.2...HEAD
+[Unreleased]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.12.3...HEAD
+[0.12.3]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.12.2...v0.12.3
 [0.12.2]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.12.1...v0.12.2
 [0.12.1]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.12.0...v0.12.1
 [0.12.0]: https://github.com/jdgarcia99/ha-tankwise/compare/v0.11.1...v0.12.0
