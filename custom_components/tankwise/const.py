@@ -111,6 +111,8 @@ CONF_BOOST_AS_SHORTAGE: Final = "boost_as_shortage"
 CONF_REGULATOR_MARGIN: Final = "regulator_margin"
 # k_use while none is learned, with the probe in the thermostat's sheath.
 CONF_USABLE_FACTOR_DEFAULT: Final = "usable_factor_default"
+# Share of the volume below a probe in the thermostat's sheath (%).
+CONF_PROBE_VOLUME_BELOW: Final = "probe_volume_below"
 
 # Options flow section with the parameters most users never change.
 SECTION_ADVANCED: Final = "advanced"
@@ -123,6 +125,7 @@ ADVANCED_PARAMETERS: Final = (
     "profile_days",
     "regulator_margin",
     "usable_factor_default",
+    "probe_volume_below",
 )
 
 # Hot water appointments (list of dicts in the options).
@@ -142,6 +145,7 @@ DEFAULT_RESCUE: Final = True
 DEFAULT_REGULATOR_MARGIN: Final = 2  # min
 DEFAULT_BOOST_AS_SHORTAGE: Final = False
 DEFAULT_USABLE_FACTOR_DEFAULT: Final = 0.85
+DEFAULT_PROBE_VOLUME_BELOW: Final = 30  # %
 
 DEFAULT_PARAMETERS: Final = {
     CONF_VOLUME: DEFAULT_VOLUME,
@@ -157,9 +161,11 @@ DEFAULT_PARAMETERS: Final = {
     CONF_REGULATOR_MARGIN: DEFAULT_REGULATOR_MARGIN,
     CONF_BOOST_AS_SHORTAGE: DEFAULT_BOOST_AS_SHORTAGE,
     CONF_USABLE_FACTOR_DEFAULT: DEFAULT_USABLE_FACTOR_DEFAULT,
+    CONF_PROBE_VOLUME_BELOW: DEFAULT_PROBE_VOLUME_BELOW,
 }
 INTEGER_PARAMETERS: Final = (
     CONF_VOLUME,
+    CONF_PROBE_VOLUME_BELOW,
     CONF_RATED_POWER,
     CONF_CUTOFF_POWER_THRESHOLD,
     CONF_PROFILE_DAYS,

@@ -65,6 +65,16 @@ balance, one sample per minute:
     element heats the cold water at the bottom, which cannot rise through
     water hotter than itself, so the hot layer only follows once the mean
     passes it, and the useful litres follow the energy meanwhile;
+  - the probe bounds the model from below, at every sample: with a stably
+    stratified tank the water above the probe is at least at its
+    temperature and the water below it at least at the mains temperature,
+    so the mean is at least `p · T_mains + (1 − p) · T_probe` (`p`: the
+    *Volume below the probe* parameter, 30 %), and the hot layer at least
+    the probe. Not the probe itself: the cold water fills the bottom below
+    the sheath first (24/11: the probe stayed at 68 °C for the first 30 L
+    while the mean fell to 60 °C). A model below the bound lost energy the
+    tank did not (draws counted at the temperature of a hot layer that was
+    running out) and is raised to it;
   - `k_use` cannot be learned from the probe: until it is (an outlet
     temperature sensor would), the *Default useful litres factor* parameter
     (0.85) is used. With the probe at the top the default stays 1.0.
