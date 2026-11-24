@@ -326,6 +326,7 @@ async def test_options_parameters_with_advanced_section(
                 CONF_PROFILE_MODE: "weekday",
                 CONF_PROFILE_DAYS: 20.0,
                 "regulator_margin": 5.0,
+                "usable_factor_default": 0.8,
             },
         },
     )
@@ -341,6 +342,7 @@ async def test_options_parameters_with_advanced_section(
         CONF_PROFILE_MODE: "weekday",
         CONF_PROFILE_DAYS: 20,
         "regulator_margin": 5,
+        "usable_factor_default": 0.8,
         "rescue": False,
         "boost_as_shortage": True,
         CONF_ENERGY_SENSOR: ENERGY,  # inputs are kept

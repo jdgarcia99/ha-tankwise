@@ -35,14 +35,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     less the losses), not the model plus the stratification offset;
   - with a hot water meter, draws leave at the hot layer's temperature (the
     probe's 59, 51, 40 °C undercounted the evening showers) and the probe
-    does not correct the metered balance between full charges.
+    does not correct the metered balance between full charges;
+  - a partial heating puts its energy into the whole tank: the hot layer
+    only rises once the mean passes it (the element heats the cold water at
+    the bottom, which cannot rise through hotter water), and the useful
+    litres follow the energy;
+  - the useful litres factor is the *Default useful litres factor* parameter
+    (0.85, advanced) while none is learned (with the probe at the top it
+    stays 1.0).
+- Service `tankwise.reset_usable_factor`: forgets the learned useful litres
+  factor and returns the samples removed and the factor in use.
 
 ### Notes
 
 - Set *Probe position* to *Thermostat sheath* if the probe is in the
   thermostat's sheath. The useful litres factor learned so far came from the
-  probe crossing the comfort temperature; consider resetting the learning of
-  that factor once an outlet temperature sensor can measure it.
+  probe crossing the comfort temperature: reset it with
+  `tankwise.reset_usable_factor`.
 
 ## [0.12.2] - 2026-11-24
 

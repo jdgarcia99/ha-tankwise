@@ -279,6 +279,9 @@ class TankParams:
     # stays hot during the first litres of a draw and then falls quickly when
     # the cold front reaches it, long before the hot water at the top runs out.
     probe_at_top: bool = True
+    # k_use while none is learned with the probe in the sheath (it cannot be
+    # learned from that probe): a prudent share of the energy above mains.
+    usable_factor_default: float = 0.85
 
     @property
     def heat_capacity(self) -> float:
@@ -935,6 +938,24 @@ class TankModel:
         return _clamp(
             median(self._usable_samples), MIN_USABLE_FACTOR, MAX_USABLE_FACTOR
         )
+
+    def usable_factor_for(self, params: TankParams) -> float:
+        """Return k_use: learned, or the default while none is learned.
+
+        The default is 1.0 with the probe at the top (as before 0.12.3) and
+        ``params.usable_factor_default`` with the probe in the sheath, which
+        cannot teach it.
+        """
+        if self._usable_samples or params.probe_at_top:
+            return self.usable_factor
+        return params.usable_factor_default
+
+    def reset_usable_factor(self) -> int:
+        """Forget the learned k_use samples; return how many there were."""
+        count = len(self._usable_samples)
+        self._usable_samples.clear()
+        self._pending_usable = []
+        return count
 
     def stratification_ratio(self, temperature: float | None = None) -> float:
         """Return the probe drop per metered energy against a mixed tank.
@@ -2403,7 +2424,7 @@ class TankModel:
             mains = params.mains_temperature
             stored = max(0.0, capacity * (equivalent - mains))
             # Stratified: k_use times the energy above the mains water.
-            share = self.usable_factor if stratified else 1.0
+            share = self.usable_factor_for(params) if stratified else 1.0
             useful = max(0.0, share * capacity * (equivalent - floor))
             full_useful = share * capacity * (cutoff - floor)
             if params.probe_at_top:
@@ -2423,7 +2444,10 @@ class TankModel:
                 theoretical = max(0.0, params.volume_l * (equivalent - mains) / span)
                 liters = max(
                     0.0,
-                    self.usable_factor * params.volume_l * (equivalent - floor) / span,
+                    self.usable_factor_for(params)
+                    * params.volume_l
+                    * (equivalent - floor)
+                    / span,
                 )
             else:
                 theoretical = liters = 0.0
@@ -2447,7 +2471,7 @@ class TankModel:
             loss_windows=self._loss_windows,
             capacity_factor=self.capacity_factor(params),
             capacity_samples=len(self._capacity_samples),
-            usable_factor=self.usable_factor,
+            usable_factor=self.usable_factor_for(params),
             usable_samples=len(self._usable_samples),
             heater_power_w=self.heater_power(params),
             calibration_count=self._calibration_count,

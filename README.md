@@ -327,6 +327,7 @@ hour by itself (e.g. on sunny days), nothing extra is heated.
 | `tankwise.reset_learning` | Forgets the heat losses (`part: losses`), the usage profile (`part: demand`) or everything (`part: all`, default). Optional `config_entry_id`. |
 | `tankwise.discard_last_cutoff_sample` | Forgets the last learned thermostat cut-off temperature and computes the cut-off again. Optional `config_entry_id`; returns the sample removed and those left. |
 | `tankwise.discard_cutoff_sample` | Same for one sample, given by `value` (°C, the closest within 0.5 °C) or `index` (0 = oldest, −1 = newest). The samples are the `samples` attribute of the cut-off temperature sensor. |
+| `tankwise.reset_usable_factor` | Forgets the learned useful litres factor (`k_use`). Until it is learned again: the *Default useful litres factor* parameter (0.85) with the probe in the thermostat's sheath, 1.0 with the probe at the top. Returns the samples removed and the factor in use. |
 
 ## How the tank model works
 

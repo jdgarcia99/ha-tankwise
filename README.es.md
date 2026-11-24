@@ -334,6 +334,7 @@ de sol), no se calienta nada de más.
 | `tankwise.reset_learning` | Olvida las pérdidas de calor (`part: losses`), el perfil de uso (`part: demand`) o todo (`part: all`, por defecto). `config_entry_id` opcional. |
 | `tankwise.discard_last_cutoff_sample` | Olvida la última temperatura de corte del termostato aprendida y vuelve a calcular el corte. `config_entry_id` opcional; devuelve la muestra quitada y las que quedan. |
 | `tankwise.discard_cutoff_sample` | Igual para una muestra, indicada por `value` (°C, la más cercana a menos de 0,5 °C) o `index` (0 = la más antigua, −1 = la más reciente). Las muestras son el atributo `samples` del sensor de temperatura de corte. |
+| `tankwise.reset_usable_factor` | Olvida el factor de aprovechamiento aprendido (`k_use`). Hasta que se aprenda de nuevo: el parámetro *Factor de aprovechamiento por defecto* (0,85) con la sonda en la vaina del termostato, 1,0 con la sonda arriba. Devuelve las muestras borradas y el factor en uso. |
 
 ## Cómo funciona el modelo del depósito
 

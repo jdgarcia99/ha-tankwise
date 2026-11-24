@@ -12,7 +12,7 @@ the probe as the outlet temperature.
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -24,7 +24,7 @@ from tankwise_model.replay import (
     changes,
     replay,
 )
-from tankwise_model.tank import TankModel, TankParams
+from tankwise_model.tank import TankModel, TankParams, TankSample
 
 TZ = ZoneInfo("Europe/Madrid")
 TOP = TankParams(mains_temperature=13.4, cutoff_temperature=68.5)
@@ -142,3 +142,99 @@ def test_energy_of_the_evening_draws_uses_the_hot_layer() -> None:
     # 66 L at about 66 °C, mains 13.4 °C: about 4 kWh.
     assert energy_sheath == pytest.approx(66 * 0.001163 * 52.5, rel=0.06)
     assert energy_top < energy_sheath  # the probe's 59, 51, 40 °C...
+
+
+# ---------------------------------------------------------------------------
+# Partial heating with the probe in the sheath
+# ---------------------------------------------------------------------------
+
+STRATIFIED = [[60.0, 0.45]] * 10
+
+
+def _layered(hot: float, mixed: float, *, samples: list | None = None) -> TankModel:
+    """A hot layer at ``hot`` over cold water: ``mixed`` is its mean."""
+    data = TankModel().as_dict()
+    data.update(
+        equivalent_temperature=mixed,
+        hot_temperature=hot,
+        uncertain=False,
+        calibration_count=2,
+        loss_windows=33,
+        stratification=STRATIFIED,
+        usable_samples=samples or [],
+        last_valid_time=_at("10:00:00").isoformat(),
+        last_energy=100.0,
+        meter_volume=1000.0,
+        meter_time=_at("10:00:00").isoformat(),
+    )
+    return TankModel.from_dict(data)
+
+
+def _heat(model: TankModel, kwh: float, params: TankParams = SHEATH):
+    """Heat at 1 kW from the bottom (a sunny partial heating), no draws."""
+    minutes = round(kwh * 60)
+    energy, state = 100.0, None
+    for minute in range(1, minutes + 1):
+        energy += 1 / 60
+        state = model.update(
+            TankSample(
+                timestamp=_at("10:00:00") + timedelta(minutes=minute),
+                temperature=40.0,  # the probe next to the element: warm water
+                power=1000.0,
+                energy=energy,
+                hot_water_volume=1000.0,
+                meter_configured=True,
+            ),
+            params,
+        )
+    return state
+
+
+def test_partial_heating_stays_below_a_hotter_layer() -> None:
+    """Hot layer at 50 °C, cold bottom, +1 kWh without reaching the cut-off.
+
+    The element heats the cold water at the bottom; it cannot rise through
+    water hotter than itself, so the energy stays below the hot layer: the
+    mean rises, the hot layer does not, and the litres follow the energy.
+    """
+    model = _layered(hot=50.0, mixed=35.0)
+    start = model.update(
+        TankSample(
+            timestamp=_at("10:00:00"),
+            temperature=40.0,
+            power=0.0,
+            energy=100.0,
+            hot_water_volume=1000.0,
+            meter_configured=True,
+        ),
+        SHEATH,
+    )
+    after = _heat(model, 1.0)
+    assert after.calibration_count == 2  # no cut-off
+    gained = after.equivalent_temperature - start.equivalent_temperature
+    assert gained == pytest.approx(0.9 * 1.0 / SHEATH.heat_capacity, abs=0.5)
+    assert after.outlet_temperature == pytest.approx(50.0, abs=0.5)  # only losses
+    # The litres follow the energy: k_use (default 0.85) x k_cap x 1 kWh.
+    added = after.liters_available - start.liters_available
+    expected = 0.85 * 0.9 * 1.0 / (0.001163 * (40 - SHEATH.mains_temperature))
+    assert added == pytest.approx(expected, rel=0.08)
+
+
+def test_heating_past_the_hot_layer_raises_it() -> None:
+    """+3 kWh: the mean passes 50 °C, the tank mixes and the layer follows."""
+    model = _layered(hot=50.0, mixed=35.0)
+    after = _heat(model, 3.0)
+    assert after.equivalent_temperature > 55
+    assert after.outlet_temperature == pytest.approx(after.equivalent_temperature)
+
+
+def test_default_useful_litres_factor_with_the_probe_in_the_sheath() -> None:
+    model = _layered(hot=60.0, mixed=40.0)
+    assert model.usable_factor_for(SHEATH) == 0.85
+    assert model.usable_factor_for(TOP) == 1.0  # as before
+    assert model.usable_factor_for(replace(SHEATH, usable_factor_default=0.8)) == 0.8
+    learned = _layered(hot=60.0, mixed=40.0, samples=[0.9] * 5)
+    assert learned.usable_factor_for(SHEATH) == pytest.approx(0.9)
+    assert learned.reset_usable_factor() == 5
+    assert learned.usable_factor_for(SHEATH) == 0.85
+    assert learned.as_dict()["usable_samples"] == []

@@ -59,7 +59,16 @@ balance, one sample per minute:
     charge, lowered by the losses, raised by heating (never below the model),
     not lowered by draws;
   - with a hot water meter, a draw leaves at the hot layer's temperature, and
-    the probe does not correct the metered balance between full charges.
+    the probe does not correct the metered balance between full charges;
+  - a partial heating (the sun, without reaching the cut-off) puts its
+    metered energy into the whole tank (the mean rises `k_cap · E / C`): the
+    element heats the cold water at the bottom, which cannot rise through
+    water hotter than itself, so the hot layer only follows once the mean
+    passes it, and the useful litres follow the energy meanwhile;
+  - `k_use` cannot be learned from the probe: until it is (an outlet
+    temperature sensor would), the *Default useful litres factor* parameter
+    (0.85) is used. With the probe at the top the default stays 1.0.
+    `tankwise.reset_usable_factor` forgets the learned one.
   The stratification ratio stays an empirical indicator (probe drop against
   the metered energy): with the probe in the sheath it is far from linear
   (small draws barely move it, larger ones more than a mixed tank), so it is

@@ -98,3 +98,10 @@ discard_cutoff_sample:
           max: 19
           step: 1
           mode: box
+
+reset_usable_factor:
+  fields:
+    config_entry_id:
+      selector:
+        config_entry:
+          integration: tankwise

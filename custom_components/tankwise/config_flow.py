@@ -95,6 +95,7 @@ from .const import (
     CONF_RESCUE,
     CONF_SOLAR_FORECAST_ENTRIES,
     CONF_TEMPERATURE_SENSOR,
+    CONF_USABLE_FACTOR_DEFAULT,
     CONF_VOLUME,
     CONF_WATER_REGION,
     CONF_WORKDAY_ENTITY,
@@ -310,6 +311,11 @@ PARAMETERS_SCHEMA = vol.Schema(
                     vol.Required(CONF_PROFILE_DAYS): _number_selector(4, 60, 1, "d"),
                     vol.Required(CONF_REGULATOR_MARGIN): _number_selector(
                         1, 30, 1, UnitOfTime.MINUTES
+                    ),
+                    vol.Required(CONF_USABLE_FACTOR_DEFAULT): NumberSelector(
+                        NumberSelectorConfig(
+                            min=0.5, max=1.0, step=0.01, mode=NumberSelectorMode.BOX
+                        )
                     ),
                 }
             ),

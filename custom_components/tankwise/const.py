@@ -109,6 +109,8 @@ CONF_RESCUE: Final = "rescue"
 CONF_BOOST_AS_SHORTAGE: Final = "boost_as_shortage"
 # Minutes the regulator may be unavailable before the heater switch is opened.
 CONF_REGULATOR_MARGIN: Final = "regulator_margin"
+# k_use while none is learned, with the probe in the thermostat's sheath.
+CONF_USABLE_FACTOR_DEFAULT: Final = "usable_factor_default"
 
 # Options flow section with the parameters most users never change.
 SECTION_ADVANCED: Final = "advanced"
@@ -120,6 +122,7 @@ ADVANCED_PARAMETERS: Final = (
     "profile_mode",
     "profile_days",
     "regulator_margin",
+    "usable_factor_default",
 )
 
 # Hot water appointments (list of dicts in the options).
@@ -138,6 +141,7 @@ DEFAULT_PROFILE_DAYS: Final = 16
 DEFAULT_RESCUE: Final = True
 DEFAULT_REGULATOR_MARGIN: Final = 2  # min
 DEFAULT_BOOST_AS_SHORTAGE: Final = False
+DEFAULT_USABLE_FACTOR_DEFAULT: Final = 0.85
 
 DEFAULT_PARAMETERS: Final = {
     CONF_VOLUME: DEFAULT_VOLUME,
@@ -152,6 +156,7 @@ DEFAULT_PARAMETERS: Final = {
     CONF_RESCUE: DEFAULT_RESCUE,
     CONF_REGULATOR_MARGIN: DEFAULT_REGULATOR_MARGIN,
     CONF_BOOST_AS_SHORTAGE: DEFAULT_BOOST_AS_SHORTAGE,
+    CONF_USABLE_FACTOR_DEFAULT: DEFAULT_USABLE_FACTOR_DEFAULT,
 }
 INTEGER_PARAMETERS: Final = (
     CONF_VOLUME,
@@ -240,6 +245,7 @@ SERVICE_BOOST: Final = "boost"
 SERVICE_CANCEL_BOOST: Final = "cancel_boost"
 SERVICE_DISCARD_LAST_CUTOFF_SAMPLE: Final = "discard_last_cutoff_sample"
 SERVICE_DISCARD_CUTOFF_SAMPLE: Final = "discard_cutoff_sample"
+SERVICE_RESET_USABLE_FACTOR: Final = "reset_usable_factor"
 ATTR_INDEX: Final = "index"
 ATTR_VALUE: Final = "value"
 ATTR_TEMPERATURE: Final = "temperature"
