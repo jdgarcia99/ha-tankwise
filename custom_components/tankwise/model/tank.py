@@ -175,6 +175,10 @@ SLOW_CORRECTION_TAU = timedelta(minutes=50)
 # Gaps (restarts, unavailable sensors)
 FILTER_RESET_GAP = timedelta(minutes=5)
 LONG_GAP = timedelta(minutes=30)
+# Maintenance windows kept to flag the draws that overlap them; samples of one
+# window further apart than this start a new span.
+MAX_MAINTENANCE_SPANS = 20
+MAINTENANCE_SPAN_JOIN = timedelta(minutes=5)
 # A drop of the probe across a gap of readings up to this long is recorded as
 # a draw spread over the gap; beyond it the time is too vague for the profile.
 MAX_GAP_DRAW = timedelta(hours=12)
@@ -573,6 +577,10 @@ class TankSample:
     hot_water_volume: float | None = None
     hot_water_flow: float | None = None
     meter_configured: bool = False
+    # A maintenance window is open (devices updated or restarting): the model
+    # keeps its energy balance but learns nothing, and the draws it detects
+    # meanwhile are neither shortages nor part of the demand profile.
+    maintenance: bool = False
 
     @property
     def valid(self) -> bool:
@@ -612,6 +620,8 @@ class ConsumptionEvent:
     estimated: bool = False
     # Litres measured by the hot water meter (None: no meter).
     liters: float | None = None
+    # Overlaps a maintenance window: not a shortage, not learned as demand.
+    maintenance: bool = False
 
     def as_dict(self) -> dict[str, Any]:
         """Return a JSON-serialisable representation."""
@@ -629,6 +639,7 @@ class ConsumptionEvent:
             ),
             "estimated": self.estimated,
             "liters": round(self.liters, 1) if self.liters is not None else None,
+            **({"maintenance": True} if self.maintenance else {}),
         }
 
     @property
@@ -653,6 +664,7 @@ class ConsumptionEvent:
             slow=bool(data.get("slow", False)),
             estimated=bool(data.get("estimated", False)),
             liters=None if data.get("liters") is None else float(data["liters"]),
+            maintenance=bool(data.get("maintenance", False)),
             reconciled=(
                 None if data.get("reconciled") is None else float(data["reconciled"])
             ),
@@ -865,6 +877,12 @@ class TankModel:
         self._last_energy: float | None = None
         self._last_power: float | None = None
         self._consumptions: deque[ConsumptionEvent] = deque(maxlen=MAX_CONSUMPTIONS)
+        # Maintenance windows seen lately (start, end), and whether this sample
+        # is in one: nothing is learned from it.
+        self._maintenance_spans: deque[tuple[datetime, datetime]] = deque(
+            maxlen=MAX_MAINTENANCE_SPANS
+        )
+        self._maintenance = False
         # Hot water meter: last reading, (temperature, ratio) samples of the
         # stratification, and how far the probe is expected above the model.
         self._meter_volume: float | None = None
@@ -1050,6 +1068,43 @@ class TankModel:
 
     def update(self, sample: TankSample, params: TankParams) -> TankState:
         """Process one sample and return the new state."""
+        self._track_maintenance(sample)
+        try:
+            return self._update(sample, params)
+        finally:
+            self._mark_maintenance_draws()
+
+    def _track_maintenance(self, sample: TankSample) -> None:
+        """Extend the current maintenance span, or open one."""
+        self._maintenance = sample.maintenance
+        if not sample.maintenance:
+            return
+        now = sample.timestamp
+        spans = self._maintenance_spans
+        if spans and now - spans[-1][1] <= MAINTENANCE_SPAN_JOIN:
+            spans[-1] = (spans[-1][0], now)
+        else:
+            # It started at the previous sample at the latest.
+            start = min(now, self._last_valid_time or now)
+            spans.append((start, now))
+
+    def _mark_maintenance_draws(self) -> None:
+        """Flag the draws that overlap a maintenance window."""
+        if not self._maintenance_spans:
+            return
+        oldest = self._maintenance_spans[0][0]
+        for index, event in enumerate(self._consumptions):
+            if event.maintenance or event.end < oldest:
+                continue
+            if any(
+                event.start <= end and start <= event.end
+                for start, end in self._maintenance_spans
+            ):
+                self._consumptions[index] = replace(
+                    event, maintenance=True, shortage=False
+                )
+
+    def _update(self, sample: TankSample, params: TankParams) -> TankState:
         if sample.meter_configured:
             # Litres are counted even while the probe or the power is missing.
             self._track_meter(sample, params)
@@ -1074,7 +1129,7 @@ class TankModel:
         else:
             self._step(sample, params, elapsed)
         self._last_probe_time = now
-        if sample.meter_configured:
+        if sample.meter_configured and not self._maintenance:
             self._learn_stratification(now, self._ambient(sample, params), params)
         return self._state(now, params, available=True)
 
@@ -1375,7 +1430,7 @@ class TankModel:
         self._apply_probe_floor(params)
         self._update_hot(elapsed, ambient, params)
 
-        if elapsed > LONG_GAP:
+        if elapsed > LONG_GAP and not self._maintenance:
             self._set_uncertain(REASON_DATA_GAP, now)
         self._reset_runtime(now)
         self._last_valid_time = now
@@ -1423,7 +1478,8 @@ class TankModel:
         heat = self._heater_energy(sample, params, elapsed)
         if heat > METER_IDLE_KWH:
             self._last_meter_activity = now
-        self._learn_heater_power(sample)
+        if not self._maintenance:
+            self._learn_heater_power(sample)
 
         previous_probe = self._probe
         self._probe = self._filter.update(now, sample.temperature)
@@ -1472,17 +1528,26 @@ class TankModel:
         self._apply_probe_floor(params)
         self._update_hot(elapsed, ambient, params)
 
-        self._track_capacity_episode(sample, heat, elapsed, ambient, params)
-        self._track_anchor(sample, heat, elapsed, ambient, params)
-
-        if full is not None and self._plausible_cutoff(params):
-            self._calibrate(now, regulator_confirmed=full, params=params)
+        if self._maintenance:
+            # Episodes that include the window would learn from it: dropped.
+            self._episode = None
+            self._anchor = None
+            self._pending_usable = []
+        else:
+            self._track_capacity_episode(sample, heat, elapsed, ambient, params)
+            self._track_anchor(sample, heat, elapsed, ambient, params)
+            # A power drop while devices restart is not a thermostat cut-off.
+            if full is not None and self._plausible_cutoff(params):
+                self._calibrate(now, regulator_confirmed=full, params=params)
 
         self._history.append(_HistoryPoint(now, self._probe))
         while self._history and now - self._history[0].timestamp > HISTORY_SPAN:
             self._history.popleft()
 
-        self._learn_losses(sample, now, heating_window, ambient, params)
+        if self._maintenance:
+            self._loss = _LossWindow()  # a loss window across it is not learned
+        else:
+            self._learn_losses(sample, now, heating_window, ambient, params)
         self._last_valid_time = now
 
     # ------------------------------------------------------------------

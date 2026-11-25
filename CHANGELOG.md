@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-11-25
+
+### Added
+
+- Maintenance window. New inputs options: *Maintenance entity* (script,
+  input boolean, binary sensor or switch; a script is on while it runs, such
+  as the one that updates every ESPHome device) and *Margin after
+  maintenance* (10 minutes). While the entity is on and for the margin
+  after, TankWise keeps its plan and safeties but learns nothing (heater
+  power, losses, capacity and usable factors, stratification, cut-offs,
+  demand profile), does not replan for deviations or draws (no rescue
+  recharge), does not count shortages, external orders, deviations or
+  safety cuts, and does not enter degraded mode or put the plan at risk
+  because the probe or the regulator are missing unless the plan is really
+  at risk. Draws that overlap a window are kept but flagged and not learned.
+- Automatic detection, even without an entity: a device of the inputs that
+  becomes unavailable and returns within 15 minutes, or that restarts (its
+  uptime sensor on the same device goes back, in seconds or as a boot
+  time), opens the same window. A longer outage is a real one.
+- Binary sensor *Maintenance in progress* (`source`, `until`, `devices`) and
+  a `maintenance` attribute on the heating plan.
+
 ## [0.12.4] - 2026-11-24
 
 ### Fixed

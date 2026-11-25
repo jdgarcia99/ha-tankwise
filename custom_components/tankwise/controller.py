@@ -80,6 +80,11 @@ RISK_REGULATOR = "regulator_unavailable"
 RISK_PROBE = "probe_unavailable"
 
 
+# In a maintenance window, an appointment this close still makes a missing
+# probe or regulator a real risk for the plan.
+MAINTENANCE_RISK_HORIZON = timedelta(hours=1)
+
+
 def issue_id(kind: str, entry_id: str) -> str:
     """Return the repair issue ID of an entry."""
     return f"{kind}_{entry_id}"
@@ -101,6 +106,8 @@ class TankWiseController:
         self.boost: Boost | None = None
         self._conflicts: tuple[list[str], datetime | None] = ([], None)
         self._started: datetime | None = None
+        # A maintenance window explains a missing probe or regulator.
+        self._excused = False
 
     # ------------------------------------------------------------------
     # Persistence
@@ -163,8 +170,17 @@ class TankWiseController:
         tank: TankState,
         requirements: dict[str, AppointmentRequirement],
         workdays: dict,
+        *,
+        maintenance: bool = False,
+        at_risk: bool = False,
     ) -> None:
-        """Decide and send the orders of this minute."""
+        """Decide and send the orders of this minute.
+
+        In a maintenance window a missing probe or regulator is expected: it
+        does not put TankWise in degraded mode nor the plan at risk by itself,
+        only when the plan is really at risk (an appointment or the demand
+        it cannot cover, or an appointment within the hour).
+        """
         coordinator = self.coordinator
         active = self.active
         temperature = self._fresh_temperature(now, readings)
@@ -174,6 +190,9 @@ class TankWiseController:
         if plan_heat is None and now - self._started < STARTUP_GRACE:
             plan_heat = False  # wait for the prices and the model
         dues, no_appointments = self._dues(now, requirements, readings, workdays)
+        self._excused = maintenance and not (
+            at_risk or any(item.due - now <= MAINTENANCE_RISK_HORIZON for item in dues)
+        )
 
         if (boost := self.boost) is not None:
             if coordinator.planner.mode is Mode.OFF:
@@ -199,7 +218,7 @@ class TankWiseController:
             )
         self._update_degraded_reason(
             None
-            if not active
+            if not active or (temperature is None and self._excused)
             else DEGRADED_PROBE
             if temperature is None
             else DEGRADED_NO_PLAN
@@ -225,6 +244,7 @@ class TankWiseController:
                 boost=self.boost is not None,
                 sell_surplus=self._sell_surplus(now, tank),
                 output=readings.regulator_output,
+                maintenance=maintenance,
             )
         )
         for order in decision.orders:
@@ -663,7 +683,7 @@ class TankWiseController:
     ) -> list[str]:
         """Reasons, besides the plan itself, why an appointment is at risk."""
         reasons: list[str] = []
-        if self.coordinator.planner.mode is Mode.OFF:
+        if self.coordinator.planner.mode is Mode.OFF or self._excused:
             return reasons
         if self.state.regulator_lost(
             now, self.regulator_margin

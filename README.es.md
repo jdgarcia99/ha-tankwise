@@ -147,6 +147,7 @@ nombres visibles están traducidos.
 | Energía útil | kWh almacenados por encima de la temperatura mínima de confort |
 | Carga | Energía útil en porcentaje de un depósito lleno |
 | Agua caliente disponible | Litros útiles a la temperatura de ducha antes de que el agua baje de la temperatura de confort; en un depósito estratificado, `k_use` por la energía sobre la red (atributos: litros teóricos, `stratified`, `useful_floor_temperature`) |
+| Mantenimiento en curso (binario) | Encendido durante una ventana de mantenimiento (ver [Ventana de mantenimiento](#ventana-de-mantenimiento)); atributos `source`, `until` y `devices` |
 | Plan en riesgo (binario) | Encendido cuando no se puede garantizar el agua caliente: una cita necesita más de lo que da el depósito lleno, la demanda habitual no se cubre, o el regulador o la sonda no están disponibles antes de una cita (atributo `reasons`) |
 | Temperatura modelada | Temperatura equivalente (mezclada) del depósito según el modelo: la energía almacenada expresada como temperatura |
 | Temperatura de salida estimada | Temperatura de la capa caliente a la salida. Con la sonda arriba, la que ve: la temperatura modelada más la estratificación esperada. Con la sonda en la vaina del termostato, la del último llenado menos las pérdidas (las extracciones no la bajan mientras queda agua caliente) |
@@ -245,6 +246,44 @@ Cuando el plan pasa a estar en riesgo por un motivo nuevo, TankWise lanza el
 evento `tankwise_plan_at_risk` (`reasons`, `new_reasons`, `appointments`),
 por ejemplo para enviar una notificación cuando el regulador no está
 disponible antes de una cita que depende de un calentamiento planificado.
+
+
+### Ventana de mantenimiento
+
+Las actualizaciones de firmware de los dispositivos ESPHome (o cualquier
+reinicio) dejan la sonda, el medidor de potencia o el regulador sin datos
+unos minutos, o con valores que no describen el depósito. Durante una
+**ventana de mantenimiento** TankWise mantiene su plan y sus seguridades,
+pero:
+
+- no aprende nada: potencia del calentador, pérdidas, factor de capacidad,
+  factor útil, estratificación, cortes del termostato ni el perfil de demanda
+  (la ventana no cuenta como tiempo cubierto y las extracciones detectadas en
+  ella no se aprenden);
+- no cuenta nada contra el plan: no replanifica por desviación ni por una
+  extracción (así que no hay recarga de rescate), un regulador que se
+  reinicia no es una orden externa ni una desviación, no hay falta de agua y
+  un corte de seguridad no cuenta para el aviso de cortes repetidos;
+- no entra en modo degradado ni pone el plan en riesgo solo porque falten la
+  sonda o el regulador; sí lo hace si el plan está realmente en riesgo (una
+  cita o la demanda que no puede cubrir, o una cita en la próxima hora).
+
+La ventana se abre mientras la **entidad de mantenimiento** (opciones de
+entradas: un script, input boolean, sensor binario o interruptor; un script
+está encendido mientras se ejecuta, p. ej. el que actualiza todos los
+dispositivos ESPHome) está encendida, y dura el **margen tras
+mantenimiento** (10 minutos por defecto) después de apagarse, porque los
+dispositivos se reinician tras actualizarse. Sin entidad también se abre
+sola cuando un dispositivo de las entradas (sonda, potencia, energía,
+interruptores, regulador, caudalímetro) deja de estar disponible, mientras
+no lo está hasta 15 minutos y durante el margen después de volver, o se
+reinicia (su sensor de tiempo encendido, buscado en el mismo dispositivo,
+retrocede: segundos desde el arranque que bajan, o una hora de arranque que
+avanza), durante el margen. Una caída de más de 15 minutos es una caída real:
+se aplican las reglas habituales de entradas no disponibles. El sensor
+binario **Mantenimiento en curso** muestra la ventana (`source`: `entity`,
+`unavailable` o `restart`; `until`; `devices`), y el sensor del plan su
+causa (atributo `maintenance`).
 
 ## Boost
 

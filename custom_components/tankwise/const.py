@@ -64,6 +64,11 @@ CONF_REGULATOR_RESTART_REASON_SENSOR: Final = "regulator_restart_reason_sensor"
 # optionally, the flow rate. With it, draws are measured in litres.
 CONF_HOT_WATER_VOLUME_SENSOR: Final = "hot_water_volume_sensor"
 CONF_HOT_WATER_FLOW_SENSOR: Final = "hot_water_flow_sensor"
+# Maintenance window: while this entity is on (a firmware update script, a
+# helper...) and for the margin after, readings are not learned from.
+CONF_MAINTENANCE_ENTITY: Final = "maintenance_entity"
+CONF_MAINTENANCE_MARGIN: Final = "maintenance_margin"
+DEFAULT_MAINTENANCE_MARGIN: Final = 10  # min
 
 OPTIONAL_INPUT_KEYS: Final = (
     CONF_ENERGY_SENSOR,
@@ -84,6 +89,8 @@ OPTIONAL_INPUT_KEYS: Final = (
     CONF_REGULATOR_RESTART_REASON_SENSOR,
     CONF_HOT_WATER_VOLUME_SENSOR,
     CONF_HOT_WATER_FLOW_SENSOR,
+    CONF_MAINTENANCE_ENTITY,
+    CONF_MAINTENANCE_MARGIN,
 )
 
 # ---------------------------------------------------------------------------

@@ -171,6 +171,12 @@
         "state": {
           "on": "mdi:fire"
         }
+      },
+      "maintenance": {
+        "default": "mdi:wrench-clock",
+        "state": {
+          "on": "mdi:wrench-cog"
+        }
       }
     },
     "select": {

@@ -76,6 +76,8 @@ from .const import (
     CONF_HOT_WATER_FLOW_SENSOR,
     CONF_HOT_WATER_VOLUME_SENSOR,
     CONF_INJECTION_PRICE_SENSOR,
+    CONF_MAINTENANCE_ENTITY,
+    CONF_MAINTENANCE_MARGIN,
     CONF_MANUAL_MODE_SWITCH,
     CONF_MASTER_ENTITY,
     CONF_OCCUPANCY_ENTITY,
@@ -102,6 +104,7 @@ from .const import (
     CONF_WORKDAY_ENTITY,
     CONFIG_ENTRY_MINOR_VERSION,
     CONFIG_ENTRY_VERSION,
+    DEFAULT_MAINTENANCE_MARGIN,
     DEFAULT_NAME,
     DEFAULT_PARAMETERS,
     DOMAIN,
@@ -139,6 +142,13 @@ VOLUME_DEVICE_CLASSES = [
 REGULATOR_UNITS: tuple[str | None, ...] = (PERCENTAGE, None)
 
 ON_OFF_DOMAINS = [SWITCH_DOMAIN, INPUT_BOOLEAN_DOMAIN]
+# A script is on while it runs (e.g. the one that updates the ESPHome devices).
+MAINTENANCE_DOMAINS = [
+    "script",
+    INPUT_BOOLEAN_DOMAIN,
+    BINARY_SENSOR_DOMAIN,
+    SWITCH_DOMAIN,
+]
 STATE_DOMAINS = [INPUT_BOOLEAN_DOMAIN, SWITCH_DOMAIN, BINARY_SENSOR_DOMAIN]
 
 ERROR_ENTITY_NOT_FOUND = "entity_not_found"
@@ -243,6 +253,10 @@ OPTIONAL_INPUTS_SCHEMA = vol.Schema(
             )
         ),
         vol.Optional(CONF_HOT_WATER_FLOW_SENSOR): _sensor_selector(),
+        vol.Optional(CONF_MAINTENANCE_ENTITY): _entity_selector(MAINTENANCE_DOMAINS),
+        vol.Optional(
+            CONF_MAINTENANCE_MARGIN, default=DEFAULT_MAINTENANCE_MARGIN
+        ): _number_selector(0, 120, 1, UnitOfTime.MINUTES),
     }
 )
 
@@ -465,8 +479,17 @@ def _validate_optional_inputs(
 
 
 def _clean_optional_inputs(user_input: dict[str, Any]) -> dict[str, Any]:
-    """Keep only the optional inputs that were actually selected."""
-    return {key: user_input[key] for key in OPTIONAL_INPUT_KEYS if user_input.get(key)}
+    """Keep only the optional inputs actually selected."""
+    cleaned = {
+        key: user_input[key] for key in OPTIONAL_INPUT_KEYS if user_input.get(key)
+    }
+    # The margin is stored only when it is not the default (0 included).
+    margin = user_input.get(CONF_MAINTENANCE_MARGIN)
+    if margin is None or int(margin) == DEFAULT_MAINTENANCE_MARGIN:
+        cleaned.pop(CONF_MAINTENANCE_MARGIN, None)
+    else:
+        cleaned[CONF_MAINTENANCE_MARGIN] = int(margin)
+    return cleaned
 
 
 def _clean_parameters(user_input: dict[str, Any]) -> dict[str, Any]:

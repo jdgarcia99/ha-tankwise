@@ -270,6 +270,28 @@ Orders are sent on changes of the desired state and retried if they do not
 take effect; an external order is respected until the next change. Every
 order is written to the logbook with its reason.
 
+## Maintenance windows
+
+`model/maintenance.py` (pure) follows the maintenance entity (on, plus a
+margin after), the availability of the devices of the inputs (an outage up to
+15 minutes, plus the margin after it ends) and their uptime sensors (found in
+the device registry; a restart opens a window for the margin). The
+coordinator passes the window to every part:
+
+- `TankSample.maintenance`: the tank model keeps its energy balance but does
+  not learn the heater power, losses, capacity or usable factor,
+  stratification or cut-offs, drops the learning episodes that include the
+  window, and flags the draws that overlap it (`ConsumptionEvent.maintenance`,
+  never a shortage; the demand profile ignores them).
+- The demand model does not count the window as covered time.
+- The planner keeps the plan in force (no replan for deviations or draws, so
+  no rescue); manual mode changes in the window are neither external orders
+  nor deviations.
+- The controller does not enter degraded mode or report the plan at risk for
+  a missing probe or regulator unless the plan is really at risk (appointment
+  or demand not covered, or an appointment within the hour); safeties still
+  act, but a safety cut is not counted for the repeated cuts issue.
+
 ## Learning across upgrades
 
 The history import (`bootstrap.py`) replays the recorder history through new

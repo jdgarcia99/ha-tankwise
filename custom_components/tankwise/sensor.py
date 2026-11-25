@@ -176,6 +176,8 @@ def _plan_attributes(coordinator: TankWiseCoordinator) -> dict[str, Any]:
         "reason": planner.plan_reason,
         "tomorrow_prices": planner.prices.tomorrow_known if planner.prices else None,
         "deviations_today": coordinator.data.totals_today.deviations,
+        # A maintenance window keeps the plan in force (source, or None).
+        "maintenance": coordinator.data.maintenance.source,
     }
     if plan is None:
         return attributes

@@ -31,6 +31,7 @@ async def async_setup_entry(
             PlannedGridHeatingSensor(coordinator, "planned_grid_heating"),
             DegradedModeSensor(coordinator, "degraded_mode"),
             BoostActiveSensor(coordinator, "boost_active"),
+            MaintenanceSensor(coordinator, "maintenance"),
         ]
     )
 
@@ -162,4 +163,32 @@ class BoostActiveSensor(TankWiseEntity, BinarySensorEntity):
             "deadline": boost.deadline.isoformat() if boost.deadline else None,
             "energy_kwh": round(boost.energy_kwh, 3),
             "cost": round(boost.cost, 3),
+        }
+
+
+class MaintenanceSensor(TankWiseEntity, BinarySensorEntity):
+    """On during a maintenance window: devices updated or restarting.
+
+    Meanwhile TankWise keeps its plan and its safeties but learns nothing
+    and counts nothing against the plan.
+    """
+
+    _platform = "binary_sensor"
+    _attr_device_class = BinarySensorDeviceClass.RUNNING
+    _attr_translation_key = "maintenance"
+
+    @property
+    def is_on(self) -> bool:
+        """Return True while a maintenance window is open."""
+        return self.coordinator.data.maintenance.active
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return why (entity, unavailable or restart), until when and the devices."""
+        status = self.coordinator.data.maintenance
+        names = self.coordinator.maintenance_devices
+        return {
+            "source": status.source,
+            "until": status.until.isoformat() if status.until else None,
+            "devices": [names.get(device, device) for device in status.devices],
         }
