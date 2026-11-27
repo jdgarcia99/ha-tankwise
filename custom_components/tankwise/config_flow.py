@@ -78,11 +78,14 @@ from .const import (
     CONF_HOT_WATER_FLOW_SENSOR,
     CONF_HOT_WATER_VOLUME_SENSOR,
     CONF_INJECTION_PRICE_SENSOR,
+    CONF_MAINS_SENSOR_PLACEMENT,
+    CONF_MAINS_TEMPERATURE_SENSOR,
     CONF_MAINTENANCE_ENTITY,
     CONF_MAINTENANCE_MARGIN,
     CONF_MANUAL_MODE_SWITCH,
     CONF_MASTER_ENTITY,
     CONF_OCCUPANCY_ENTITY,
+    CONF_OUTLET_TEMPERATURE_SENSOR,
     CONF_POWER_SENSOR,
     CONF_PRICE_SENSOR,
     CONF_PROBE_POSITION,
@@ -124,7 +127,7 @@ from .model.appointments import (
 )
 from .model.demand import WEEKDAY_NAMES, DayTypeMode
 from .model.tank import DEFAULT_REGULATOR_ACTIVE_MODES
-from .model.water import REGIONS
+from .model.water import PLACEMENTS, REGIONS
 from .solar_forecast import async_forecast_entries
 
 ENERGY_STATE_CLASSES = (SensorStateClass.TOTAL_INCREASING, SensorStateClass.TOTAL)
@@ -255,6 +258,19 @@ OPTIONAL_INPUTS_SCHEMA = vol.Schema(
             )
         ),
         vol.Optional(CONF_HOT_WATER_FLOW_SENSOR): _sensor_selector(),
+        vol.Optional(CONF_OUTLET_TEMPERATURE_SENSOR): _sensor_selector(
+            SensorDeviceClass.TEMPERATURE
+        ),
+        vol.Optional(CONF_MAINS_TEMPERATURE_SENSOR): _sensor_selector(
+            SensorDeviceClass.TEMPERATURE
+        ),
+        vol.Optional(CONF_MAINS_SENSOR_PLACEMENT): SelectSelector(
+            SelectSelectorConfig(
+                options=list(PLACEMENTS),
+                translation_key=CONF_MAINS_SENSOR_PLACEMENT,
+                mode=SelectSelectorMode.LIST,
+            )
+        ),
         vol.Optional(CONF_MAINTENANCE_ENTITY): _entity_selector(MAINTENANCE_DOMAINS),
         vol.Optional(
             CONF_MAINTENANCE_MARGIN, default=DEFAULT_MAINTENANCE_MARGIN
@@ -462,6 +478,8 @@ def _validate_optional_inputs(
             VOLUME_STATE_CLASSES,
         ),
         CONF_HOT_WATER_FLOW_SENSOR: (VolumeFlowRateConverter.VALID_UNITS, None),
+        CONF_OUTLET_TEMPERATURE_SENSOR: (TemperatureConverter.VALID_UNITS, None),
+        CONF_MAINS_TEMPERATURE_SENSOR: (TemperatureConverter.VALID_UNITS, None),
     }
     errors: dict[str, str] = {}
     for key, (units, state_classes) in measurement_checks.items():

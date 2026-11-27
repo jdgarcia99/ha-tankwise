@@ -41,7 +41,10 @@
           "regulator_uptime_sensor": "Regulator uptime",
           "regulator_restart_reason_sensor": "Regulator restart reason",
           "hot_water_volume_sensor": "Hot water meter (volume)",
-          "hot_water_flow_sensor": "Hot water flow rate"
+          "hot_water_flow_sensor": "Hot water flow rate",
+          "outlet_temperature_sensor": "Hot water outlet temperature",
+          "mains_temperature_sensor": "Cold water temperature",
+          "mains_sensor_placement": "Cold water sensor location"
         },
         "data_description": {
           "energy_sensor": "Recommended. Cumulative energy of the water heater (total or total increasing). Without it, the power is integrated.",
@@ -61,7 +64,10 @@
           "regulator_uptime_sensor": "Uptime of the regulator (s). A lower value means it restarted: a power drop around a restart is not a thermostat cut-off.",
           "regulator_restart_reason_sensor": "Reason of the regulator's last restart. A new reason means it restarted.",
           "hot_water_volume_sensor": "Cumulative volume of hot water leaving the tank (L or m³), from a meter at its outlet. With it, draws are measured in litres instead of estimated from the probe.",
-          "hot_water_flow_sensor": "Optional. Flow rate of the same meter (e.g. L/min): while it is above zero the draw is still running."
+          "hot_water_flow_sensor": "Optional. Flow rate of the same meter (e.g. L/min): while it is above zero the draw is still running.",
+          "outlet_temperature_sensor": "Optional, with the hot water meter. Probe on the hot water pipe at the tank outlet (e.g. a DS18B20 read every 5 s): the energy of each litre is litres × (outlet − mains), skipping the water standing in the pipe at the start of a draw; k_use is learned from the litres drawn until the outlet falls below the shower temperature; a shortage is the outlet below the comfort temperature while water flows.",
+          "mains_temperature_sensor": "Optional. Temperature of the cold water (cistern or inlet pipe): it replaces the regional table. The mains water number, when set by hand, still wins.",
+          "mains_sensor_placement": "In the cistern: a slow mean of its readings. On the pipe: only its readings while hot water is drawn (the pipe takes the room temperature at rest), and a very slow mean of every reading until the first draw."
         }
       },
       "reconfigure": {
@@ -170,6 +176,9 @@
           "regulator_restart_reason_sensor": "Regulator restart reason",
           "hot_water_volume_sensor": "Hot water meter (volume)",
           "hot_water_flow_sensor": "Hot water flow rate",
+          "outlet_temperature_sensor": "Hot water outlet temperature",
+          "mains_temperature_sensor": "Cold water temperature",
+          "mains_sensor_placement": "Cold water sensor location",
           "maintenance_entity": "Maintenance entity",
           "maintenance_margin": "Margin after maintenance"
         },
@@ -187,6 +196,9 @@
           "regulator_restart_reason_sensor": "Reason of the regulator's last restart. A new reason means it restarted.",
           "hot_water_volume_sensor": "Cumulative volume of hot water leaving the tank (L or m³), from a meter at its outlet. With it, draws are measured in litres instead of estimated from the probe.",
           "hot_water_flow_sensor": "Optional. Flow rate of the same meter (e.g. L/min): while it is above zero the draw is still running.",
+          "outlet_temperature_sensor": "Optional, with the hot water meter. Probe on the hot water pipe at the tank outlet (e.g. a DS18B20 read every 5 s): the energy of each litre is litres × (outlet − mains), skipping the water standing in the pipe at the start of a draw; k_use is learned from the litres drawn until the outlet falls below the shower temperature; a shortage is the outlet below the comfort temperature while water flows.",
+          "mains_temperature_sensor": "Optional. Temperature of the cold water (cistern or inlet pipe): it replaces the regional table. The mains water number, when set by hand, still wins.",
+          "mains_sensor_placement": "In the cistern: a slow mean of its readings. On the pipe: only its readings while hot water is drawn (the pipe takes the room temperature at rest), and a very slow mean of every reading until the first draw.",
           "maintenance_entity": "Script, input boolean, binary sensor or switch that is on during maintenance, for example the script that updates the ESPHome devices (a script is on while it runs). While it is on, and for the margin after, TankWise keeps its plan and its safeties but learns nothing (heater power, losses, capacity factor, stratification, cut-offs, demand) and counts nothing against the plan. Without it, a device of the inputs that restarts or is unavailable for less than 15 minutes opens the same window.",
           "maintenance_margin": "Minutes the maintenance window lasts after the entity goes off, or after a device comes back or restarts: devices reboot after their update."
         }
@@ -273,6 +285,7 @@
       "options": {
         "losses": "Heat losses",
         "demand": "Usage profile",
+        "tank": "New water heater (keeps the usage profile)",
         "all": "Everything"
       }
     },
@@ -280,6 +293,12 @@
       "options": {
         "top": "Top of the tank",
         "sheath": "Thermostat sheath (low)"
+      }
+    },
+    "mains_sensor_placement": {
+      "options": {
+        "cistern": "In the cistern",
+        "pipe": "On the inlet pipe"
       }
     }
   },
@@ -348,7 +367,8 @@
               "calibrated": "Calibrated",
               "never_calibrated": "Never heated to the thermostat cut-off",
               "data_gap": "Readings missing for a while: waiting for a heating to the cut-off",
-              "few_loss_windows": "Not enough rest periods to measure the heat losses"
+              "few_loss_windows": "Not enough rest periods to measure the heat losses",
+              "tank_reset": "New water heater: learning it until it heats to the thermostat cut-off"
             }
           },
           "missing": {
@@ -440,7 +460,8 @@
             "name": "Source",
             "state": {
               "table": "Regional table",
-              "manual": "Manual"
+              "manual": "Manual",
+              "sensor": "Sensor"
             }
           }
         }
@@ -948,7 +969,7 @@
   "services": {
     "reset_learning": {
       "name": "Reset learning",
-      "description": "Forgets what TankWise has learned: the heat losses, the usage profile or everything.",
+      "description": "Forgets what TankWise has learned: the heat losses, the usage profile, the water heater (after replacing it) or everything.",
       "fields": {
         "config_entry_id": {
           "name": "Water heater",
@@ -956,7 +977,19 @@
         },
         "part": {
           "name": "What to forget",
-          "description": "Heat losses, usage profile or everything."
+          "description": "Heat losses, usage profile, water heater or everything. Water heater: heater power, losses, capacity and usable factors, cut-offs, stratification and hot layer; the usage profile, the solar model, the compensation, the prices and the appointments are kept, and a history import learns the tank only from now on."
+        },
+        "volume": {
+          "name": "Volume of the new water heater",
+          "description": "Optional, with part water heater: replaces the volume of the options."
+        },
+        "rated_power": {
+          "name": "Rated power of the new water heater",
+          "description": "Optional, with part water heater: replaces the rated power of the options (then learned)."
+        },
+        "cutoff_temperature": {
+          "name": "Initial cut-off of the new water heater",
+          "description": "Optional, with part water heater: replaces the initial thermostat cut-off of the options (then learned)."
         }
       }
     },

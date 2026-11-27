@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-11-27
+
+### Added
+
+- **New water heater**: `tankwise.reset_learning` with `part: tank`. Forgets
+  everything that depends on the tank (heater power, heat losses, capacity
+  and usable factors, cut-offs and discarded cut-offs, stratification, hot
+  layer) and keeps the usage profile, the past draws, the solar model, the
+  compensation cap, the prices and the appointments. Optional `volume`,
+  `rated_power` and `cutoff_temperature` of the new tank replace the
+  options. The stored energy is taken again from the probe and the model is
+  `learning` (reason `tank_reset`) until a heating reaches the new cut-off.
+  A history import learns the tank only from the replacement on (the usage
+  profile from all of it).
+- **Hot water outlet temperature** (optional input, with the hot water
+  meter): a probe on the outlet pipe, every reading used. The energy of each
+  litre is litres × (outlet − mains) at the reading of that moment, skipping
+  the first 15 s of a draw (water standing in the pipe); `k_use` is learned
+  from the litres drawn until the outlet falls below the shower temperature
+  against the useful litres held when the draw started (separate samples,
+  preferred to the old ones); a shortage is the outlet below the comfort
+  temperature while the water flows; the published outlet temperature is the
+  measured one during draws and corrects the hot layer. The history import
+  replays its readings too.
+- **Cold water temperature** (optional input): a sensor in the cistern (slow
+  1 h mean) or on the inlet pipe (only the readings while hot water is drawn,
+  and a slow 24 h mean until the first draw). It replaces the regional table;
+  the mains water number, set by hand, still wins. Source `sensor`.
+
+### Notes
+
+- Without the new sensors everything works as in 0.13.0.
+- The history import uses the current cold water temperature for the past
+  days, not the readings of each day.
+
 ## [0.13.0] - 2026-11-27
 
 ### Added

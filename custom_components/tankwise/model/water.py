@@ -10,7 +10,9 @@ by hand with a number entity.
 from __future__ import annotations
 
 import calendar
-from datetime import date
+from datetime import date, datetime, timedelta
+import math
+from typing import Any
 
 REGION_BALEARIC_ISLANDS = "balearic_islands"
 REGION_MAINLAND = "mainland"
@@ -78,3 +80,100 @@ def mains_water_temperature(region: str, day: date) -> float:
     low = table[before[1] - 1]
     high = table[after[1] - 1]
     return float(low + (high - low) * fraction)
+
+
+# ---------------------------------------------------------------------------
+# Measured mains water temperature
+# ---------------------------------------------------------------------------
+
+# Where the cold water sensor is.
+PLACEMENT_CISTERN = "cistern"  # in the cistern (aljibe): the water itself
+PLACEMENT_PIPE = "pipe"  # on the inlet pipe: the water only while it flows
+PLACEMENTS = (PLACEMENT_CISTERN, PLACEMENT_PIPE)
+# Readings outside this range are not cold mains water (sensor error).
+MEASURED_MIN = 2.0
+MEASURED_MAX = 35.0
+# Cistern: a slow mean of the readings (the water changes slowly).
+CISTERN_TAU = timedelta(hours=1)
+# Pipe: at rest the pipe takes the room temperature, so only the readings
+# taken after the water has flowed this long count; until a draw is seen, a
+# very slow mean of every reading.
+PIPE_SETTLE = timedelta(seconds=60)
+PIPE_SLOW_TAU = timedelta(hours=24)
+
+
+def _ema(
+    previous: float | None, value: float, elapsed: timedelta, tau: timedelta
+) -> float:
+    if previous is None:
+        return value
+    alpha = 1.0 - math.exp(-max(elapsed.total_seconds(), 0.0) / tau.total_seconds())
+    return previous + alpha * (value - previous)
+
+
+class MainsSensor:
+    """Mains water temperature from a sensor in the cistern or on the pipe."""
+
+    def __init__(self, placement: str = PLACEMENT_CISTERN) -> None:
+        """Start without a value."""
+        self.placement = placement if placement in PLACEMENTS else PLACEMENT_CISTERN
+        self._value: float | None = None  # cistern mean, or last draw (pipe)
+        self._slow: float | None = None  # pipe: slow mean of every reading
+        self._last: datetime | None = None
+        self._draw_since: datetime | None = None
+        self._draw_readings: list[float] = []
+
+    @property
+    def temperature(self) -> float | None:
+        """Return the mains water temperature, or None if not known yet."""
+        if self.placement == PLACEMENT_PIPE and self._value is None:
+            return self._slow
+        return self._value
+
+    @property
+    def from_draw(self) -> bool:
+        """Pipe: the value comes from the water flowing in a draw."""
+        return self.placement == PLACEMENT_PIPE and self._value is not None
+
+    def update(self, now: datetime, reading: float | None, drawing: bool) -> None:
+        """Take a reading (None: unavailable) and whether water is drawn now."""
+        if self.placement == PLACEMENT_PIPE:
+            if drawing:
+                self._draw_since = self._draw_since or now
+            elif self._draw_since is not None:
+                # The draw is over: its coldest reading is the mains water.
+                if self._draw_readings:
+                    self._value = min(self._draw_readings)
+                self._draw_since = None
+                self._draw_readings = []
+        if reading is None or not MEASURED_MIN <= reading <= MEASURED_MAX:
+            return
+        elapsed = now - self._last if self._last is not None else timedelta(0)
+        self._last = now
+        if self.placement == PLACEMENT_CISTERN:
+            self._value = _ema(self._value, reading, elapsed, CISTERN_TAU)
+            return
+        self._slow = _ema(self._slow, reading, elapsed, PIPE_SLOW_TAU)
+        if self._draw_since is not None and now - self._draw_since >= PIPE_SETTLE:
+            self._draw_readings.append(reading)
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return the state that must survive a restart."""
+        return {
+            "placement": self.placement,
+            "value": self._value,
+            "slow": self._slow,
+            "last": self._last.isoformat() if self._last else None,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], placement: str) -> MainsSensor:
+        """Restore the state; a change of placement starts again."""
+        sensor = cls(placement)
+        if data.get("placement") != sensor.placement:
+            return sensor
+        value, slow, last = data.get("value"), data.get("slow"), data.get("last")
+        sensor._value = None if value is None else float(value)
+        sensor._slow = None if slow is None else float(slow)
+        sensor._last = datetime.fromisoformat(last) if last else None
+        return sensor

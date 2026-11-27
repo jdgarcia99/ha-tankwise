@@ -16,12 +16,15 @@ import voluptuous as vol
 
 from .const import (
     ATTR_CONFIG_ENTRY_ID,
+    ATTR_CUTOFF_TEMPERATURE,
     ATTR_DURATION,
     ATTR_INDEX,
     ATTR_LITERS,
     ATTR_PART,
+    ATTR_RATED_POWER,
     ATTR_TEMPERATURE,
     ATTR_VALUE,
+    ATTR_VOLUME,
     DOMAIN,
     PART_ALL,
     RESET_PARTS,
@@ -42,6 +45,15 @@ RESET_LEARNING_SCHEMA = vol.Schema(
     {
         vol.Optional(ATTR_CONFIG_ENTRY_ID): cv.string,
         vol.Optional(ATTR_PART, default=PART_ALL): vol.In(RESET_PARTS),
+        vol.Optional(ATTR_VOLUME): vol.All(
+            vol.Coerce(int), vol.Range(min=10, max=1000)
+        ),
+        vol.Optional(ATTR_RATED_POWER): vol.All(
+            vol.Coerce(int), vol.Range(min=100, max=6000)
+        ),
+        vol.Optional(ATTR_CUTOFF_TEMPERATURE): vol.All(
+            vol.Coerce(float), vol.Range(min=35, max=85)
+        ),
     }
 )
 
@@ -102,7 +114,12 @@ def async_setup_services(hass: HomeAssistant) -> None:
 
     async def _reset_learning(call: ServiceCall) -> None:
         for entry in _loaded_entries(hass, call):
-            await entry.runtime_data.async_reset_learning(call.data[ATTR_PART])
+            await entry.runtime_data.async_reset_learning(
+                call.data[ATTR_PART],
+                volume=call.data.get(ATTR_VOLUME),
+                rated_power=call.data.get(ATTR_RATED_POWER),
+                cutoff_temperature=call.data.get(ATTR_CUTOFF_TEMPERATURE),
+            )
 
     hass.services.async_register(
         DOMAIN, SERVICE_RESET_LEARNING, _reset_learning, RESET_LEARNING_SCHEMA
