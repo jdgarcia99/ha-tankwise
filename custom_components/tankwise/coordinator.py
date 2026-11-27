@@ -738,6 +738,12 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
         await self.async_save_now()
         await self.async_replan("compensation_cap")
 
+    async def async_set_spare_surplus(self, enabled: bool) -> None:
+        """Let the tank take the export left over while the plan sells."""
+        self.planner.spare_surplus = enabled
+        await self.async_save_now()
+        await self.async_request_refresh()
+
     async def async_set_setting(self, key: str, value: float) -> None:
         """Change a runtime setting (number entity) and refresh the state."""
         self.settings[key] = float(value)
@@ -821,7 +827,9 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
         await self.controller.async_update(now, readings, tank, requirements, workdays)
         self._store.async_schedule_save(self._stored_data)
         risk_reasons = self._risk_reasons(at_risk)
-        power_request = self.planner.power_request(now, tank)
+        power_request = self.planner.power_request(
+            now, tank, spare=self.controller.spare_surplus
+        )
         if self.data is None or power_request != self.data.power_request:
             self.hass.bus.async_fire(
                 EVENT_POWER_REQUEST,

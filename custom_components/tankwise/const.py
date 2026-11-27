@@ -204,6 +204,9 @@ DEFAULT_SETTINGS: Final[dict[str, float]] = {
 
 # Control state (select and switch entities, persisted in the store)
 DEFAULT_MODE: Final = "shadow"
+# Spare surplus: the tank takes the export left over only this far (°C) below
+# the thermostat cut-off (or the safety maximum, if lower).
+SPARE_SURPLUS_MARGIN: Final = 5.0
 
 MAINS_SOURCE_TABLE: Final = "table"
 MAINS_SOURCE_MANUAL: Final = "manual"

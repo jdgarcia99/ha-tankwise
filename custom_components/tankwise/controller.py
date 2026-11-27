@@ -36,6 +36,7 @@ from .const import (
     SETTING_BOOST_DURATION,
     SETTING_BOOST_TARGET,
     SETTING_MAX_TEMPERATURE,
+    SPARE_SURPLUS_MARGIN,
 )
 from .messages import log, message
 from .model.appointments import required_temperature
@@ -101,6 +102,9 @@ class TankWiseController:
         self.boost: Boost | None = None
         self._conflicts: tuple[list[str], datetime | None] = ([], None)
         self._started: datetime | None = None
+        # The plan sells the surplus, but the tank takes the export left over
+        # (output on, power requested with the spare priority).
+        self.spare_surplus = False
 
     # ------------------------------------------------------------------
     # Persistence
@@ -207,6 +211,12 @@ class TankWiseController:
             else None
         )
 
+        sell_surplus = self._sell_surplus(now, tank)
+        self.spare_surplus = (
+            sell_surplus
+            and active
+            and self._spare_surplus(temperature, tank, max_temperature)
+        )
         decision = self.state.step(
             ControlInput(
                 now=now,
@@ -223,7 +233,8 @@ class TankWiseController:
                 ),
                 regulator_margin=self.regulator_margin,
                 boost=self.boost is not None,
-                sell_surplus=self._sell_surplus(now, tank),
+                sell_surplus=sell_surplus,
+                spare_surplus=self.spare_surplus,
                 output=readings.regulator_output,
             )
         )
@@ -255,6 +266,19 @@ class TankWiseController:
             return False
         slot = planner.current_slot(now)
         return slot is not None and not slot.solar_allowed
+
+    def _spare_surplus(
+        self, temperature: float | None, tank: TankState, max_temperature: float
+    ) -> bool:
+        """Return True if the tank should take the export left over.
+
+        Only with the option on and a fresh probe below the cut-off (or the
+        safety maximum) by a margin: a full tank lets the surplus go.
+        """
+        if not self.coordinator.planner.spare_surplus or temperature is None:
+            return False
+        limit = min(tank.cutoff_temperature, max_temperature) - SPARE_SURPLUS_MARGIN
+        return temperature < limit
 
     def _plan_heat(self, now: datetime, tank: TankState) -> bool | None:
         """Return whether the plan heats from the grid now (None: no plan)."""
@@ -537,6 +561,8 @@ class TankWiseController:
             prices = self.coordinator.planner.prices
             values = {"price": f"{prices.surplus[0]:.3f}" if prices else "?"}
             del slot
+        elif reason is Reason.SPARE:
+            values = {"temperature": f"{temperature or 0:.1f}"}
         elif reason is Reason.REGULATOR_LOST:
             lost = self.state.lost_since or now
             values = {"minutes": round((now - lost).total_seconds() / 60)}

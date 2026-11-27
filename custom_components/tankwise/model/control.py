@@ -21,6 +21,9 @@ must be in manual mode (full power from the grid) or in automatic mode
 * Selling the surplus: when the plan prefers to export the surplus (the
   injection pays more than heating later costs), the regulator output is
   switched off; it is switched on again afterwards and before any heating.
+  With the spare surplus option, a tank that is not full keeps the output
+  on instead: the regulator takes only the export left over by the house
+  and by loads with more priority (``spare_surplus``).
 * Regulator lost: if the regulator becomes unavailable while TankWise had it
   in manual mode (or the element heats outside the plan) and is still
   unavailable after a margin, the heater switch is opened as a last resort.
@@ -98,6 +101,7 @@ class Reason(StrEnum):
     BOOST_DONE = "boost_done"
     SELL = "sell"
     SELL_DONE = "sell_done"
+    SPARE = "spare"
     HEAT = "heat"
 
 
@@ -247,6 +251,9 @@ class ControlInput:
     boost: bool = False
     # The plan lets the solar surplus go to the grid now (sell it).
     sell_surplus: bool = False
+    # ...but the tank is not full and takes the export left over instead:
+    # the output stays on (only meaningful with ``sell_surplus``).
+    spare_surplus: bool = False
     # Regulator output switch (None: not configured or unavailable).
     output: bool | None = None
 
@@ -421,8 +428,13 @@ class Controller:
             self.desired = False
             return decision
 
+        spare = data.sell_surplus and data.spare_surplus
         self._output(
-            decision, data, sell=data.sell_surplus, heat=desired, reason=Reason.SELL
+            decision,
+            data,
+            sell=data.sell_surplus and not spare,
+            heat=desired,
+            reason=Reason.SPARE if spare else Reason.SELL,
         )
         changed = desired != self.desired
         if changed:

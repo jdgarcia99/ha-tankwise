@@ -64,6 +64,10 @@ MESSAGES: dict[str, dict[str, str]] = {
             "later): regulator output off"
         ),
         "sell_done": "Regulator output on again: the surplus heats the water",
+        "spare": (
+            "The plan sells the surplus, but the tank is not full ({temperature} °C): "
+            "regulator output on, it takes only the export left over"
+        ),
         "boost_started": "Boost: heating to {target} °C{limit}",
         "boost_limit": " (at most until {time})",
         "boost_not_needed": (
@@ -137,6 +141,11 @@ MESSAGES: dict[str, dict[str, str]] = {
             "después): salida del regulador apagada"
         ),
         "sell_done": "Salida del regulador encendida: el excedente calienta el agua",
+        "spare": (
+            "El plan vende el excedente, pero el depósito no está lleno "
+            "({temperature} °C): salida del regulador encendida, solo toma lo que "
+            "se exportaría"
+        ),
         "boost_started": "Boost: calentando hasta {target} °C{limit}",
         "boost_limit": " (como mucho hasta las {time})",
         "boost_not_needed": (

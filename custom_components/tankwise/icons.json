@@ -140,6 +140,9 @@
       "compensation_cap": {
         "default": "mdi:cash-check"
       },
+      "spare_surplus": {
+        "default": "mdi:solar-power-variant"
+      },
       "anti_legionella": {
         "default": "mdi:bacteria-outline",
         "state": {

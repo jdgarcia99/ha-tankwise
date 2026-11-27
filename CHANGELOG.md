@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Take the spare surplus** (switch, off by default). While the plan sells
+  the surplus, a tank more than 5 °C below the thermostat cut-off (or the
+  safety maximum) keeps the regulator output on: the diverter takes only
+  what would be exported instead of being switched off. On 27/11 the
+  diverter was off from 10:00 with the tank at 31 °C while the house
+  exported at times: the plan values the surplus at the injection price
+  (0.18–0.21 €/kWh), above what the heat stored beyond the 17:00 appointment
+  is worth, so it took only the surplus that appointment needed (13:00–15:15,
+  the cheapest injection hours) and sold the rest. TankWise
+  then requests the whole element with the new `spare` priority, after
+  every other load; a surplus manager must give it only what the other
+  loads leave. The output is still switched off with the tank full, in
+  shadow or off mode and without a fresh probe. Logged in the logbook.
+
 ## [0.12.4] - 2026-11-24
 
 ### Fixed

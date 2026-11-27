@@ -43,6 +43,7 @@ from .conftest import (
     INJECTION,
     OUTPUT,
     PRICE,
+    TEMPERATURE,
     set_input_states,
 )
 
@@ -217,6 +218,56 @@ async def test_surplus_is_sold_when_injection_pays_more(
     assert (OUTPUT, "turn_on") in [
         (call.data["entity_id"], call.service) for call in calls
     ]
+
+
+async def test_spare_surplus_keeps_the_diverter_on_until_the_tank_is_full(
+    hass: HomeAssistant,
+    mock_entry: MockConfigEntry,
+    freezer: FrozenDateTimeFactory,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The plan sells, but a tank that is not full takes the export left over."""
+    freezer.move_to(f"{DAY} 12:05:00+01:00")
+    calls = await _setup(
+        hass,
+        mock_entry,
+        injection=_hourly(0.02, h11=0.30, h12=0.30, h13=0.30, h14=0.30),
+        buy=_hourly(0.20, h00=0.05, h01=0.05, h02=0.05, h03=0.05),
+        temperature="50.0",
+    )
+    coordinator = mock_entry.runtime_data
+    sensor = "sensor.tankwise_power_request"
+    assert [(call.data["entity_id"], call.service) for call in calls] == [
+        (OUTPUT, "turn_off")
+    ]
+    assert hass.states.get(sensor).attributes["priority"] == "none"
+    hass.states.async_set(OUTPUT, "off")
+
+    # Spare surplus on: the output comes back and the whole element is requested
+    # with the lowest priority.
+    assert hass.states.get("switch.tankwise_spare_surplus").state == "off"
+    await coordinator.async_set_spare_surplus(True)
+    await hass.async_block_till_done()
+    assert hass.states.get("switch.tankwise_spare_surplus").state == "on"
+    assert calls[-1].data["entity_id"] == OUTPUT and calls[-1].service == "turn_on"
+    assert "the tank is not full (50.0 °C)" in caplog.text
+    state = hass.states.get(sensor)
+    assert state.attributes["priority"] == "spare"
+    assert float(state.state) == round(coordinator.data.tank.heater_power_w)
+    hass.states.async_set(OUTPUT, "on")
+
+    # Close to the cut-off: the surplus goes to the grid again.
+    cutoff = coordinator.data.tank.cutoff_temperature
+    hass.states.async_set(
+        TEMPERATURE,
+        f"{cutoff - 1:.1f}",
+        {"unit_of_measurement": "°C", "device_class": "temperature"},
+    )
+    freezer.tick(timedelta(minutes=1))
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+    assert calls[-1].data["entity_id"] == OUTPUT and calls[-1].service == "turn_off"
+    assert hass.states.get(sensor).attributes["priority"] == "none"
 
 
 async def test_anti_legionella_is_planned_when_due(

@@ -306,11 +306,25 @@ incertidumbre de la previsión), el plan deja el excedente para la red: se
 apaga la salida, y se vuelve a encender después y antes de cualquier
 calentamiento. Queda registrado en el logbook.
 
+**Aprovechar el excedente sobrante** (interruptor **Aprovechar el excedente
+sobrante**, desactivado por defecto). Mientras el plan vende, si el depósito
+no está lleno (más de 5 °C por debajo del corte del termostato, o del máximo
+de seguridad si es menor), la salida del regulador sigue encendida: el
+derivador solo toma lo que se exportaría, y TankWise pide el elemento entero
+con la prioridad `spare`, para que un gestor de excedentes solo le dé lo que
+dejan las demás cargas. La salida se sigue apagando con el depósito lleno, en
+los modos sombra y apagado y sin una lectura reciente de la sonda. Actívalo
+solo si tu gestor de excedentes pone el termo el último mientras la prioridad
+es `spare` (ver abajo): si no, el derivador, en automático, se lleva el
+excedente antes que las cargas que van detrás de él.
+
 **Coordinación con otras cargas (SolarSplit).** El sensor **Potencia de
 excedente pedida** (W) indica cuánto excedente quiere TankWise ahora, con
 una prioridad (`priority`): `high` cuando el plan necesita ese excedente
 para el agua caliente (sin él calentaría más de red antes de la siguiente
-cita), `low` cuando solo llena el depósito. El evento
+cita), `low` cuando solo llena el depósito, `spare` cuando el plan lo
+vendería y el depósito solo toma lo que se exporta (debe ir detrás de todas
+las demás cargas). El evento
 `tankwise_power_request` se lanza cuando cambia cualquiera de los dos, para
 que un gestor de excedentes lo reparta entre cargas.
 

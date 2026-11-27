@@ -301,12 +301,25 @@ later costs (by at least 0.03 €/kWh, for the uncertainty of the forecast)
 the plan lets the surplus go to the grid: the output is switched off, and
 switched on again afterwards and before any heating. Logged in the logbook.
 
+**Taking the spare surplus** (switch **Take the spare surplus**, off by
+default). While the plan sells, a tank that is not full (more than 5 °C below
+the thermostat cut-off, or the safety maximum if lower) keeps the regulator
+output on instead: the diverter takes only what would be exported, and
+TankWise requests the whole element with the `spare` priority, so a surplus
+manager gives it only what every other load leaves. The output is still
+switched off when the tank is full, in shadow or off mode, and without a
+fresh probe. Turn it on only if your surplus manager puts the water heater
+last while the priority is `spare` (see below): otherwise the diverter, in
+automatic mode, takes the surplus before loads that come after it.
+
 **Coordination with other loads (SolarSplit).** The **Requested surplus
 power** sensor (W) says how much surplus TankWise wants now, with a
 `priority`: `high` when the plan needs that surplus for hot water (without
 it, it would heat more from the grid before the next appointment), `low`
-when it only fills the tank. The `tankwise_power_request` event fires when
-either changes, so a surplus manager can share the surplus between loads.
+when it only fills the tank, `spare` when the plan would sell it and the tank
+only takes the export left over (it must go after every other load). The
+`tankwise_power_request` event fires when either changes, so a surplus
+manager can share the surplus between loads.
 
 **Anti-legionella** (switch, on by default). A cycle is 60 °C or more for an
 hour, measured by the probe; the **Last anti-legionella cycle** sensor shows
