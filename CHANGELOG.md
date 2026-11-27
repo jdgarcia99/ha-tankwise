@@ -40,13 +40,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and **Compensation cap margin** (projected; negative: over the cap), with
   the projection, the margin so far and the surplus over the cap.
 - Advanced parameter **Billing period start day** (1: the calendar month).
+- Advanced parameter **Energy term factor for the compensation cap** (1.0):
+  multiplies the computed energy term, for bills that cap the compensation
+  at the energy term without tolls and charges. Calibrated with a bill:
+  energy term of the bill ÷ the sensor's energy term without the factor over
+  the same period.
 - The past hours of the period come from the recorder statistics (hourly
   sums of the energy sensors, means of the price sensors) at every start.
 
 ### Notes
 
 - The energy term uses the purchase price sensor as it is: the PVPC includes
-  the access tolls and charges of the energy term, which cannot be separated.
+  the access tolls and charges of the energy term, which cannot be separated
+  (hence the factor).
 
 ## [0.12.4] - 2026-11-24
 

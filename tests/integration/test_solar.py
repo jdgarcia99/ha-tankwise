@@ -264,6 +264,7 @@ async def test_automatic_compensation_cap(
     assert float(state.state) > 0
     assert state.attributes["free_surplus"] == 0
     assert state.attributes["period_start"].startswith("2026-11-01T00:00:00")
+    assert state.attributes["energy_term_factor"] == 1.0
     assert float(hass.states.get("sensor.tankwise_compensation_period").state) > 0
     assert float(hass.states.get("sensor.tankwise_energy_term_period").state) > 0
     slot = planner.current_slot(dt_util.utcnow())

@@ -354,8 +354,18 @@ forces the cap by hand (all the surplus free).
 
 The energy term is estimated with the purchase price sensor as it is. The
 PVPC (REE indicator 1001) includes the access tolls and charges of the
-energy term, which cannot be separated from it; whether the cap counts them
-depends on your bill, so check the estimate against a real bill.
+energy term, which cannot be separated from it. If your bill caps the
+compensation at the energy term without them, set the advanced parameter
+**Energy term factor for the compensation cap** (1.0 by default), which
+multiplies the computed energy term. To calibrate it with a bill:
+
+1. Take the energy term of a bill (the amount the compensation is limited
+   to), and its billing period.
+2. Over that same period, read the **Energy term without the factor**
+   attribute of the **Energy term this period** sensor (on its last day; or
+   with the factor at 1.0, the sensor itself).
+3. Factor = energy term of the bill ÷ that value. For example 38.20 € ÷
+   54.60 € = 0.70.
 
 **Selling the surplus.** With the regulator output switch (FreeDS "PWM
 enabled") among the inputs, when the injection price pays more than heating

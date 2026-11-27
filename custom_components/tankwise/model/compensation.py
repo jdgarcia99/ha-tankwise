@@ -67,6 +67,8 @@ class CompensationEstimate:
     projected_compensation: float  # € at the end of the period
     projected_energy_term: float  # € at the end of the period
     hours_learned: int  # hours behind the projection rate
+    # Factor already applied to the energy term (calibration with a bill).
+    energy_term_factor: float = 1.0
 
     @property
     def margin(self) -> float:
@@ -227,13 +229,19 @@ class CompensationTracker:
     # ------------------------------------------------------------------
 
     def estimate(
-        self, now: datetime, period: tuple[datetime, datetime]
+        self,
+        now: datetime,
+        period: tuple[datetime, datetime],
+        energy_term_factor: float = 1.0,
     ) -> CompensationEstimate:
         """Return the compensation and the energy term of the period.
 
         The rest of the period is projected with the hourly rate of the last
         :data:`PROJECTION_DAYS` days (hours with data only); with less than
-        :data:`MIN_HOURS` hours of data nothing is projected.
+        :data:`MIN_HOURS` hours of data nothing is projected. The energy term
+        (so far and projected) is multiplied by ``energy_term_factor``: the
+        bill may count the energy without the tolls and charges included in
+        the purchase price.
         """
         start, end = period
         compensation = energy = 0.0
@@ -259,10 +267,11 @@ class CompensationTracker:
             period_start=start,
             period_end=end,
             compensation=compensation,
-            energy_term=energy,
+            energy_term=energy * energy_term_factor,
             projected_compensation=projected_compensation,
-            projected_energy_term=projected_energy,
+            projected_energy_term=projected_energy * energy_term_factor,
             hours_learned=len(recent),
+            energy_term_factor=energy_term_factor,
         )
 
 

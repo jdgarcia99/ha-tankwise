@@ -70,6 +70,7 @@ from .const import (
     CONF_CUTOFF_POWER_THRESHOLD,
     CONF_CUTOFF_TEMPERATURE,
     CONF_ENERGY_SENSOR,
+    CONF_ENERGY_TERM_FACTOR,
     CONF_EXPORT_POWER_SENSOR,
     CONF_GRID_EXPORT_SENSOR,
     CONF_GRID_IMPORT_SENSOR,
@@ -334,6 +335,11 @@ PARAMETERS_SCHEMA = vol.Schema(
                     vol.Required(CONF_BILLING_DAY): NumberSelector(
                         NumberSelectorConfig(
                             min=1, max=28, step=1, mode=NumberSelectorMode.BOX
+                        )
+                    ),
+                    vol.Required(CONF_ENERGY_TERM_FACTOR): NumberSelector(
+                        NumberSelectorConfig(
+                            min=0.1, max=2.0, step=0.01, mode=NumberSelectorMode.BOX
                         )
                     ),
                     vol.Required(CONF_USABLE_FACTOR_DEFAULT): NumberSelector(

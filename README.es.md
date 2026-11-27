@@ -363,8 +363,18 @@ el tope a mano (todo el excedente gratis).
 
 El término de energía se estima con el sensor de precio de compra tal cual.
 El PVPC (indicador 1001 de REE) incluye los peajes y cargos del término de
-energía, que no se pueden separar de él; si el tope los cuenta o no depende
-de tu factura, así que compara la estimación con una factura real.
+energía, que no se pueden separar de él. Si tu factura limita la
+compensación al término de energía sin ellos, ajusta el parámetro avanzado
+**Factor del término de energía para el tope** (1,0 por defecto), que
+multiplica el término de energía calculado. Para calibrarlo con una factura:
+
+1. Toma el término de energía de una factura (el importe al que se limita la
+   compensación) y su periodo de facturación.
+2. En ese mismo periodo, lee el atributo **Término de energía sin el factor**
+   del sensor **Término de energía del periodo** (el último día del
+   periodo; o, con el factor a 1,0, el propio sensor).
+3. Factor = término de energía de la factura ÷ ese valor. Por ejemplo,
+   38,20 € ÷ 54,60 € = 0,70.
 
 **Vender el excedente.** Con el interruptor de salida del regulador ("PWM
 enabled" de FreeDS) entre las entradas, cuando la inyección se paga más de

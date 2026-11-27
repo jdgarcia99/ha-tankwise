@@ -24,6 +24,7 @@ from homeassistant.util import dt as dt_util
 
 from .const import (
     CONF_BILLING_DAY,
+    CONF_ENERGY_TERM_FACTOR,
     CONF_GRID_EXPORT_SENSOR,
     CONF_GRID_IMPORT_SENSOR,
     CONF_INJECTION_PRICE_SENSOR,
@@ -292,7 +293,9 @@ class Planner:
         period = billing_period(
             utc, self.ledger.tz, int(coordinator.parameters[CONF_BILLING_DAY])
         )
-        self.compensation_estimate = self.compensation.estimate(utc, period)
+        self.compensation_estimate = self.compensation.estimate(
+            utc, period, float(coordinator.parameters[CONF_ENERGY_TERM_FACTOR])
+        )
         free = self.free_surplus > 0
         if free != self._free_surplus:
             self._free_surplus = free

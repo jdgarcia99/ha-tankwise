@@ -329,6 +329,7 @@ async def test_options_parameters_with_advanced_section(
                 "usable_factor_default": 0.8,
                 "probe_volume_below": 25.0,
                 "billing_day": 15.0,
+                "energy_term_factor": 0.6,
             },
         },
     )
@@ -347,6 +348,7 @@ async def test_options_parameters_with_advanced_section(
         "usable_factor_default": 0.8,
         "probe_volume_below": 25,
         "billing_day": 15,
+        "energy_term_factor": 0.6,
         "rescue": False,
         "boost_as_shortage": True,
         CONF_ENERGY_SENSOR: ENERGY,  # inputs are kept

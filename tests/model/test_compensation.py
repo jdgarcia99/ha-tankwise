@@ -171,3 +171,21 @@ def test_free_surplus_stops_at_the_end_of_the_period() -> None:
     solar = [0.3, 0.3, 0.3]
     assert free_surplus_values(values, solar, 100.0, slots=2) == [0.0, 0.0, 0.10]
     assert free_surplus_values(values, solar, 100.0, slots=0) == values
+
+
+def test_energy_term_factor_scales_the_energy_term_only() -> None:
+    """Calibrated with a bill: the cap counts only part of the purchase price."""
+    tracker = CompensationTracker()
+    start = datetime(2026, 11, 1, tzinfo=TZ)
+    _run(tracker, start, 15, import_kwh=0.5, export_kwh=1.0)
+    now = (start + timedelta(days=15)).astimezone(UTC)
+    period = billing_period(now, TZ, 1)
+    full = tracker.estimate(now, period)
+    half = tracker.estimate(now, period, energy_term_factor=0.5)
+    assert half.energy_term == pytest.approx(full.energy_term * 0.5)
+    assert half.projected_energy_term == pytest.approx(full.projected_energy_term * 0.5)
+    assert half.compensation == full.compensation
+    assert half.energy_term_factor == 0.5
+    # With a factor of 0.2 the same month goes over the cap.
+    low = tracker.estimate(now, period, energy_term_factor=0.2)
+    assert low.excess > 0 and full.excess == 0

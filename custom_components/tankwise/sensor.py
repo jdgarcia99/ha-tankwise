@@ -280,6 +280,12 @@ def _compensation_attributes(coordinator: TankWiseCoordinator) -> dict[str, Any]
         "projected_compensation": round(estimate.projected_compensation, 2),
         "projected_energy_term": round(estimate.projected_energy_term, 2),
         "margin_now": round(estimate.margin_now, 2),
+        "energy_term_factor": estimate.energy_term_factor,
+        "energy_term_without_factor": round(
+            estimate.energy_term / estimate.energy_term_factor, 2
+        )
+        if estimate.energy_term_factor
+        else None,
         "free_surplus": round(coordinator.planner.free_surplus, 2),
         "hours_learned": estimate.hours_learned,
     }

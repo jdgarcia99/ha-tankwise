@@ -146,6 +146,7 @@ def _compensation(coordinator: Any) -> dict[str, Any] | None:
         "projected_compensation": round(estimate.projected_compensation, 3),
         "projected_energy_term": round(estimate.projected_energy_term, 3),
         "hours_learned": estimate.hours_learned,
+        "energy_term_factor": estimate.energy_term_factor,
         "hours_kept": len(planner.compensation.hours),
         "free_surplus": round(planner.free_surplus, 3),
         "forced": planner.compensation_cap,
