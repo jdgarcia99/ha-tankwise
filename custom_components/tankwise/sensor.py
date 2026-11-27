@@ -246,7 +246,9 @@ def _next_heating_attributes(coordinator: TankWiseCoordinator) -> dict[str, Any]
 
 
 def _money(
-    description_key: str, value_fn: Callable[[TankWiseData], Any]
+    description_key: str,
+    value_fn: Callable[[TankWiseData], Any],
+    attributes_fn: Callable[[TankWiseCoordinator], dict[str, Any]] | None = None,
 ) -> TankWiseSensorDescription:
     return TankWiseSensorDescription(
         key=description_key,
@@ -255,8 +257,32 @@ def _money(
         native_unit_of_measurement=CURRENCY,
         suggested_display_precision=2,
         value_fn=value_fn,
+        attributes_fn=attributes_fn,
         requires_tank=False,
     )
+
+
+def _compensation(data: TankWiseData, key: str) -> float | None:
+    """Compensation, energy term or projected margin of the billing period."""
+    estimate = data.compensation
+    if estimate is None:
+        return None
+    return round(getattr(estimate, key), 2)
+
+
+def _compensation_attributes(coordinator: TankWiseCoordinator) -> dict[str, Any]:
+    estimate = coordinator.data.compensation
+    if estimate is None:
+        return {}
+    return {
+        "period_start": estimate.period_start.isoformat(),
+        "period_end": estimate.period_end.isoformat(),
+        "projected_compensation": round(estimate.projected_compensation, 2),
+        "projected_energy_term": round(estimate.projected_energy_term, 2),
+        "margin_now": round(estimate.margin_now, 2),
+        "free_surplus": round(coordinator.planner.free_surplus, 2),
+        "hours_learned": estimate.hours_learned,
+    }
 
 
 SENSORS: tuple[TankWiseSensorDescription, ...] = (
@@ -429,6 +455,21 @@ SENSORS: tuple[TankWiseSensorDescription, ...] = (
         lambda data: data.totals_month.real_cost - data.totals_month.planned_cost,
     ),
     _money("rescue_cost_month", lambda data: data.totals_month.rescue_cost),
+    _money(
+        "compensation_period",
+        lambda data: _compensation(data, "compensation"),
+        _compensation_attributes,
+    ),
+    _money(
+        "energy_term_period",
+        lambda data: _compensation(data, "energy_term"),
+        _compensation_attributes,
+    ),
+    _money(
+        "compensation_margin",
+        lambda data: _compensation(data, "margin"),
+        _compensation_attributes,
+    ),
     TankWiseSensorDescription(
         key="rescue_energy_month",
         translation_key="rescue_energy_month",

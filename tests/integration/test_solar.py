@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
 
@@ -24,12 +24,14 @@ from custom_components.tankwise.const import (
     CONF_ENERGY_SENSOR,
     CONF_EXPORT_POWER_SENSOR,
     CONF_GRID_EXPORT_SENSOR,
+    CONF_GRID_IMPORT_SENSOR,
     CONF_INJECTION_PRICE_SENSOR,
     CONF_REGULATOR_OUTPUT_SWITCH,
     CONF_SOLAR_FORECAST_ENTRIES,
     DEFAULT_PARAMETERS,
     EVENT_POWER_REQUEST,
 )
+from custom_components.tankwise.model.compensation import CompensationTracker
 from custom_components.tankwise.model.planning import Mode
 from custom_components.tankwise.solar_forecast import (
     async_forecast_entries,
@@ -40,6 +42,7 @@ from .conftest import (
     ENERGY,
     EXPORT_POWER,
     GRID_EXPORT,
+    GRID_IMPORT,
     INJECTION,
     OUTPUT,
     PRICE,
@@ -87,6 +90,7 @@ def entry_options(forecast_entries: list[str]) -> dict[str, Any]:
         CONF_INJECTION_PRICE_SENSOR: INJECTION,
         CONF_EXPORT_POWER_SENSOR: EXPORT_POWER,
         CONF_GRID_EXPORT_SENSOR: GRID_EXPORT,
+        CONF_GRID_IMPORT_SENSOR: GRID_IMPORT,
         CONF_REGULATOR_OUTPUT_SWITCH: OUTPUT,
         CONF_SOLAR_FORECAST_ENTRIES: forecast_entries,
     }
@@ -217,6 +221,80 @@ async def test_surplus_is_sold_when_injection_pays_more(
     assert (OUTPUT, "turn_on") in [
         (call.data["entity_id"], call.service) for call in calls
     ]
+
+
+def _fill_month(
+    tracker: CompensationTracker, *, export_kwh: float, now: datetime
+) -> None:
+    """The month so far: 0.4 kWh/h imported at 0.20, ``export_kwh`` in the sun."""
+    tz = dt_util.get_time_zone("Europe/Madrid")
+    hour = datetime(2026, 11, 1, tzinfo=tz)
+    while hour < now - timedelta(hours=1):
+        sunny = 10 <= hour.hour < 16
+        tracker.add_hour(
+            dt_util.as_utc(hour), 0.4, export_kwh if sunny else 0.0, 0.20, 0.15
+        )
+        hour += timedelta(hours=1)
+
+
+async def test_automatic_compensation_cap(
+    hass: HomeAssistant,
+    mock_entry: MockConfigEntry,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """Below the cap the surplus is sold; over it, the plan takes it for free."""
+    freezer.move_to(f"{DAY} 12:05:00+01:00")
+    calls = await _setup(
+        hass,
+        mock_entry,
+        injection=_hourly(0.02, h11=0.30, h12=0.30, h13=0.30, h14=0.30),
+        buy=_hourly(0.20, h00=0.05, h01=0.05, h02=0.05, h03=0.05),
+        temperature="50.0",
+    )
+    coordinator = mock_entry.runtime_data
+    planner = coordinator.planner
+    margin = "sensor.tankwise_compensation_margin"
+
+    # A month below the cap: 1 kWh/h exported in the sun, 0.4 kWh/h imported.
+    _fill_month(planner.compensation, export_kwh=1.0, now=dt_util.now())
+    freezer.tick(timedelta(minutes=1))
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+    state = hass.states.get(margin)
+    assert float(state.state) > 0
+    assert state.attributes["free_surplus"] == 0
+    assert state.attributes["period_start"].startswith("2026-11-01T00:00:00")
+    assert float(hass.states.get("sensor.tankwise_compensation_period").state) > 0
+    assert float(hass.states.get("sensor.tankwise_energy_term_period").state) > 0
+    slot = planner.current_slot(dt_util.utcnow())
+    assert slot is not None and not slot.solar_allowed  # still sold
+    assert calls[-1].service == "turn_off" and calls[-1].data["entity_id"] == OUTPUT
+    hass.states.async_set(OUTPUT, "off")
+
+    # A month over the cap from the middle: 6 kWh/h exported in the sun since
+    # the 10th. The surplus over the cap is free: the plan takes it.
+    planner.compensation = CompensationTracker()
+    _fill_month(planner.compensation, export_kwh=1.0, now=dt_util.now())
+    for start, totals in planner.compensation.hours.items():
+        if start >= datetime(2026, 11, 10, tzinfo=UTC) and totals.export_kwh:
+            totals.export_kwh = 6.0
+            totals.compensation_eur = 6.0 * 0.15
+    freezer.tick(timedelta(minutes=1))
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+    state = hass.states.get(margin)
+    assert float(state.state) < 0
+    assert state.attributes["free_surplus"] == pytest.approx(-float(state.state))
+    assert state.attributes["margin_now"] < 0
+    assert planner.plan_reason == "compensation"
+    slot = planner.current_slot(dt_util.utcnow())
+    assert slot is not None and slot.solar_allowed and slot.solar_kwh > 0
+    assert calls[-1].service == "turn_on" and calls[-1].data["entity_id"] == OUTPUT
+
+    # The switch still forces the cap by hand (all the surplus free).
+    await coordinator.async_set_compensation_cap(True)
+    await hass.async_block_till_done()
+    assert hass.states.get(margin).attributes["free_surplus"] == 0
 
 
 async def test_anti_legionella_is_planned_when_due(

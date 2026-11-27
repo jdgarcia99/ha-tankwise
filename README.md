@@ -208,6 +208,7 @@ contradict the plan are logged there.
 | Planned cost today / this month | What the plan spends |
 | Estimated savings this month | Real cost minus planned cost |
 | Rescue recharges energy / cost this month | kWh and € of rescue recharges |
+| Surplus compensation / energy term this period, compensation cap margin | Automatic compensation cap (see below) |
 | Planned grid heating (binary) | The current slot of the plan heats from the grid |
 | Mode (select), hot water reserve and surplus value (numbers), compensation cap reached (switch), replan (button) | Settings |
 
@@ -330,6 +331,31 @@ minus what the house uses at each hour. That part is learned for each hour
 of the day from the grid export and from what the water heater took from
 the surplus, so it also corrects the bias of the forecast. Until an hour is
 learned, 0.25 kWh of house consumption is assumed.
+
+**Automatic compensation cap.** With simplified compensation (Spain, PVPC)
+the surplus of a billing period is paid at the injection price of each hour,
+but never more than the energy term of that period's bill. With the grid
+import and export energy sensors and the injection price among the inputs,
+TankWise adds up, hour by hour, the compensation (export × injection price)
+and the energy term (import × purchase price) of the billing period, and
+projects both to its end with the hourly rate of the last 14 days. When the
+projected compensation exceeds the projected energy term, that excess would
+be exported for nothing: the plan takes that much surplus for free (the
+first slots with expected surplus, value 0, until it covers the excess at
+their injection price) and values the rest at the injection price as usual.
+The past hours of the period come from the recorder statistics at every
+start. The **Surplus compensation this period**, **Energy term this period**
+and **Compensation cap margin** sensors (projected energy term minus
+projected compensation; negative: over the cap) show it, with the projection,
+the margin so far and the surplus over the cap as attributes. The period
+starts on the **Billing period start day** (advanced parameter, 1: the
+calendar month). The **Surplus compensation cap reached** switch still
+forces the cap by hand (all the surplus free).
+
+The energy term is estimated with the purchase price sensor as it is. The
+PVPC (REE indicator 1001) includes the access tolls and charges of the
+energy term, which cannot be separated from it; whether the cap counts them
+depends on your bill, so check the estimate against a real bill.
 
 **Selling the surplus.** With the regulator output switch (FreeDS "PWM
 enabled") among the inputs, when the injection price pays more than heating

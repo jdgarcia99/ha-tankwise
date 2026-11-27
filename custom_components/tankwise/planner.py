@@ -23,6 +23,9 @@ from homeassistant.core import HomeAssistant, State
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    CONF_BILLING_DAY,
+    CONF_GRID_EXPORT_SENSOR,
+    CONF_GRID_IMPORT_SENSOR,
     CONF_INJECTION_PRICE_SENSOR,
     CONF_PRICE_SENSOR,
     CONF_RESCUE,
@@ -35,6 +38,12 @@ from .const import (
     SURPLUS_EXPORT_W,
 )
 from .messages import log
+from .model.compensation import (
+    CompensationEstimate,
+    CompensationTracker,
+    billing_period,
+    free_surplus_values,
+)
 from .model.ledger import Ledger
 from .model.legionella import LegionellaTracker, choose_time, target_temperature
 from .model.optimizer import Plan, PlanInput, PlanSlot, optimise
@@ -75,6 +84,10 @@ class Planner:
         self.hass: HomeAssistant = coordinator.hass
         self.mode = Mode(DEFAULT_MODE)
         self.compensation_cap = False
+        # Automatic compensation cap: hourly export and import of the period.
+        self.compensation = CompensationTracker()
+        self.compensation_estimate: CompensationEstimate | None = None
+        self._free_surplus = False
         self.plan: Plan | None = None
         self.plan_computed: datetime | None = None
         self.plan_reason: str | None = None
@@ -107,6 +120,11 @@ class Planner:
         except ValueError:
             self.mode = Mode(DEFAULT_MODE)
         self.compensation_cap = bool(data.get("compensation_cap", False))
+        if compensation := data.get("compensation"):
+            try:
+                self.compensation = CompensationTracker.from_dict(compensation)
+            except (ValueError, TypeError, IndexError) as err:
+                _LOGGER.warning("Discarding stored compensation accounting: %s", err)
         if ledger := data.get("ledger"):
             try:
                 self.ledger = Ledger.from_dict(ledger, self.ledger.tz)
@@ -129,6 +147,7 @@ class Planner:
         return {
             "mode": self.mode.value,
             "compensation_cap": self.compensation_cap,
+            "compensation": self.compensation.as_dict(),
             "ledger": self.ledger.as_dict(),
             "solar": self.solar.as_dict(),
             "anti_legionella": self.anti_legionella,
@@ -215,6 +234,7 @@ class Planner:
         """
         start = slot_start(now)
         self.prices = self._slot_prices(start)
+        self._update_compensation(now, readings)
         energy, from_surplus = self._account_real(now, readings)
         await self._async_update_solar(now, readings, energy if from_surplus else 0.0)
         if self.legionella.update(now, readings.temperature):
@@ -237,6 +257,46 @@ class Planner:
             self.ledger.commit_slot(
                 slot.start, grid_kwh=slot.grid_kwh, cost=slot.cost, rescue=slot.rescue
             )
+
+    @property
+    def free_surplus(self) -> float:
+        """Compensation (€) that will not be paid this period: surplus for free.
+
+        0 with the cap switch on (all the surplus is already free) or without
+        the grid meters and the injection price.
+        """
+        estimate = self.compensation_estimate
+        if self.compensation_cap or estimate is None:
+            return 0.0
+        return estimate.excess
+
+    def _update_compensation(self, now: datetime, readings: TankReadings) -> None:
+        """Account the grid energy of the period and estimate the cap."""
+        coordinator = self.coordinator
+        options = coordinator.config_entry.options
+        if not (
+            options.get(CONF_GRID_IMPORT_SENSOR)
+            and options.get(CONF_GRID_EXPORT_SENSOR)
+            and options.get(CONF_INJECTION_PRICE_SENSOR)
+        ):
+            self.compensation_estimate = None
+            return
+        utc = dt_util.as_utc(now)
+        self.compensation.add_reading(
+            utc,
+            readings.grid_import,
+            readings.grid_export,
+            readings.price,
+            readings.injection_price,
+        )
+        period = billing_period(
+            utc, self.ledger.tz, int(coordinator.parameters[CONF_BILLING_DAY])
+        )
+        self.compensation_estimate = self.compensation.estimate(utc, period)
+        free = self.free_surplus > 0
+        if free != self._free_surplus:
+            self._free_surplus = free
+            self.request("compensation")
 
     def _replan_reason(self, start: datetime, tank: TankState) -> str | None:
         reason = self._requested
@@ -310,6 +370,21 @@ class Planner:
         if data is None:
             self.plan = None
             return
+        if (excess := self.free_surplus) > 0:
+            # Over the compensation cap: that much surplus would be exported
+            # for nothing; only the part over the cap is free, and only in the
+            # slots of the current billing period.
+            assert self.compensation_estimate is not None
+            period_end = self.compensation_estimate.period_end
+            data = replace(
+                data,
+                surplus_value=free_surplus_values(
+                    data.surplus_value,
+                    data.solar_kwh or [],
+                    excess,
+                    slots=math.ceil((period_end - start) / SLOT),
+                ),
+            )
         if (legionella := self._legionella_target(start, tank, data)) is not None:
             data = replace(data, legionella=legionella)
         manual_since = coordinator.controller.state.manual_since

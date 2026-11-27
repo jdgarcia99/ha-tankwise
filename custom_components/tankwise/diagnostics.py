@@ -133,6 +133,25 @@ def _controller(coordinator: Any) -> dict[str, Any]:
     }
 
 
+def _compensation(coordinator: Any) -> dict[str, Any] | None:
+    """Automatic compensation cap: the estimate of the billing period."""
+    planner = coordinator.planner
+    estimate = planner.compensation_estimate
+    if estimate is None:
+        return None
+    return {
+        "period": [estimate.period_start.isoformat(), estimate.period_end.isoformat()],
+        "compensation": round(estimate.compensation, 3),
+        "energy_term": round(estimate.energy_term, 3),
+        "projected_compensation": round(estimate.projected_compensation, 3),
+        "projected_energy_term": round(estimate.projected_energy_term, 3),
+        "hours_learned": estimate.hours_learned,
+        "hours_kept": len(planner.compensation.hours),
+        "free_surplus": round(planner.free_surplus, 3),
+        "forced": planner.compensation_cap,
+    }
+
+
 async def async_get_config_entry_diagnostics(
     hass: HomeAssistant, entry: TankWiseConfigEntry
 ) -> dict[str, Any]:
@@ -190,6 +209,7 @@ async def async_get_config_entry_diagnostics(
             "solar_needed": coordinator.planner.solar_needed,
             "power_request": list(coordinator.data.power_request),
         },
+        "compensation": _compensation(coordinator),
         "anti_legionella": {
             "enabled": coordinator.planner.anti_legionella,
             **coordinator.planner.legionella.as_dict(),

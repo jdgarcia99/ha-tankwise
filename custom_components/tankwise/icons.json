@@ -83,6 +83,15 @@
       "rescue_cost_month": {
         "default": "mdi:lifebuoy"
       },
+      "compensation_period": {
+        "default": "mdi:transmission-tower-export"
+      },
+      "energy_term_period": {
+        "default": "mdi:transmission-tower-import"
+      },
+      "compensation_margin": {
+        "default": "mdi:scale-balance"
+      },
       "rescue_energy_month": {
         "default": "mdi:lifebuoy"
       },

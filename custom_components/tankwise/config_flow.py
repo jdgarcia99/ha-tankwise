@@ -65,6 +65,7 @@ from .const import (
     CONF_AMBIENT_SENSOR,
     CONF_AMBIENT_TEMPERATURE,
     CONF_APPOINTMENTS,
+    CONF_BILLING_DAY,
     CONF_BOOST_AS_SHORTAGE,
     CONF_CUTOFF_POWER_THRESHOLD,
     CONF_CUTOFF_TEMPERATURE,
@@ -329,6 +330,11 @@ PARAMETERS_SCHEMA = vol.Schema(
                     ),
                     vol.Required(CONF_PROBE_VOLUME_BELOW): _number_selector(
                         0, 90, 5, PERCENTAGE
+                    ),
+                    vol.Required(CONF_BILLING_DAY): NumberSelector(
+                        NumberSelectorConfig(
+                            min=1, max=28, step=1, mode=NumberSelectorMode.BOX
+                        )
                     ),
                     vol.Required(CONF_USABLE_FACTOR_DEFAULT): NumberSelector(
                         NumberSelectorConfig(

@@ -208,8 +208,16 @@ litres used in the whole block, without reheating inside it.
 
 - Purchase price per slot from the hourly attributes of the price sensor;
   missing prices for tomorrow repeat today's until they arrive.
-- The surplus is valued at the injection price (zero once the monthly
-  compensation cap is reached, or a fixed value without a price sensor).
+- The surplus is valued at the injection price (zero with the compensation
+  cap switch on, or a fixed value without a price sensor).
+- **Automatic compensation cap** (`model/compensation.py`): hourly export ×
+  injection price and import × purchase price of the billing period, from
+  the grid meters (and the recorder statistics for the hours before a
+  start), projected to the end of the period with the hourly rate of the
+  last 14 days. A projected compensation over the projected energy term is
+  surplus exported for nothing: the first slots with expected surplus are
+  valued at 0 until they cover that excess (`free_surplus_values`); the
+  plan is computed again when the cap starts or stops applying.
 - **Expected surplus** = production forecast − house consumption of each hour.
   The latter is learned per hour of the day as
   `forecast − (exported + heater energy from the surplus)`, which also absorbs

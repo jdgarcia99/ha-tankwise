@@ -210,6 +210,7 @@ manual que contradicen el plan.
 | Coste planificado hoy / este mes | Lo que gasta el plan |
 | Ahorro estimado este mes | Coste real menos coste planificado |
 | Energía / coste de las recargas de rescate este mes | kWh y € de los rescates |
+| Compensación de excedentes / término de energía del periodo, margen hasta el tope de compensación | Tope de compensación automático (ver abajo) |
 | Calentamiento de red planificado (binario) | La franja actual del plan calienta de red |
 | Modo (select), reserva y valor del excedente (números), tope de compensación (interruptor), replanificar (botón) | Ajustes |
 
@@ -337,6 +338,33 @@ la previsión menos lo que consume la casa en cada hora. Esa parte se aprende
 para cada hora del día a partir de la exportación a red y de lo que el termo
 tomó del excedente, así que también corrige el sesgo de la previsión. Hasta
 aprender una hora se suponen 0,25 kWh de consumo de la casa.
+
+**Tope de compensación automático.** Con la compensación simplificada
+(España, PVPC) el excedente de un periodo de facturación se paga al precio de
+inyección de cada hora, pero nunca más que el término de energía de la
+factura de ese periodo. Con los sensores de energía importada y exportada de
+la red y el precio de inyección entre las entradas, TankWise suma hora a hora
+la compensación (exportación × precio de inyección) y el término de energía
+(importación × precio de compra) del periodo de facturación, y los proyecta
+hasta su final con el ritmo horario de los últimos 14 días. Cuando la
+compensación prevista supera el término de energía previsto, ese exceso se
+exportaría sin cobrarlo: el plan toma gratis ese excedente (los primeros
+tramos con excedente previsto, a valor 0, hasta cubrir el exceso a su precio
+de inyección) y el resto lo valora al precio de inyección como siempre. Las
+horas pasadas del periodo salen de las estadísticas del recorder en cada
+arranque. Los sensores **Compensación de excedentes del periodo**, **Término
+de energía del periodo** y **Margen hasta el tope de compensación** (término
+de energía previsto menos compensación prevista; negativo: por encima del
+tope) lo muestran, con la previsión, el margen hasta ahora y el excedente por
+encima del tope como atributos. El periodo empieza el **Día de inicio del
+periodo de facturación** (parámetro avanzado; 1: el mes natural). El
+interruptor **Tope de compensación de excedentes alcanzado** sigue forzando
+el tope a mano (todo el excedente gratis).
+
+El término de energía se estima con el sensor de precio de compra tal cual.
+El PVPC (indicador 1001 de REE) incluye los peajes y cargos del término de
+energía, que no se pueden separar de él; si el tope los cuenta o no depende
+de tu factura, así que compara la estimación con una factura real.
 
 **Vender el excedente.** Con el interruptor de salida del regulador ("PWM
 enabled" de FreeDS) entre las entradas, cuando la inyección se paga más de

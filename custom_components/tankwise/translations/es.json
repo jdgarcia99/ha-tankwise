@@ -132,6 +132,7 @@
               "profile_days": "Días de cada tipo en el perfil de uso",
               "regulator_margin": "Minutos antes de cortar el interruptor del termo",
               "probe_volume_below": "Volumen bajo la sonda",
+              "billing_day": "Día de inicio del periodo de facturación",
               "usable_factor_default": "Factor de aprovechamiento por defecto"
             },
             "data_description": {
@@ -140,6 +141,7 @@
               "profile_days": "Más días dan una previsión más estable cuando el uso cambia de un día a otro; menos días se adaptan antes.",
               "regulator_margin": "Si el regulador sigue sin estar disponible este tiempo mientras TankWise lo tiene en manual (o la resistencia calienta fuera del plan), se abre el interruptor del termo como último recurso. Se vuelve a cerrar cuando el regulador vuelve.",
               "probe_volume_below": "Con la sonda en la vaina del termostato: parte del depósito que queda por debajo, que el agua fría llena antes de llegar a la sonda (aproximadamente los litros extraídos tras un llenado antes de que la sonda empiece a bajar). La temperatura media nunca se considera menor que esa parte a la temperatura de red y el resto a la de la sonda.",
+              "billing_day": "Día del mes en que empieza el periodo de facturación de la luz (1: el mes natural). El tope de compensación automático suma la compensación y el término de energía desde ese día.",
               "usable_factor_default": "Parte de la energía sobre el agua de red que se puede aprovechar mientras no se ha aprendido, con la sonda en la vaina del termostato (que no permite aprenderlo). Con la sonda arriba se usa 1,0 hasta aprenderlo."
             }
           }
@@ -600,6 +602,84 @@
       },
       "rescue_cost_month": {
         "name": "Coste de las recargas de rescate este mes"
+      },
+      "compensation_period": {
+        "name": "Compensación de excedentes del periodo",
+        "state_attributes": {
+          "period_start": {
+            "name": "Inicio del periodo"
+          },
+          "period_end": {
+            "name": "Fin del periodo"
+          },
+          "projected_compensation": {
+            "name": "Compensación prevista"
+          },
+          "projected_energy_term": {
+            "name": "Término de energía previsto"
+          },
+          "margin_now": {
+            "name": "Margen hasta ahora"
+          },
+          "free_surplus": {
+            "name": "Excedente por encima del tope"
+          },
+          "hours_learned": {
+            "name": "Horas en que se basa la previsión"
+          }
+        }
+      },
+      "energy_term_period": {
+        "name": "Término de energía del periodo",
+        "state_attributes": {
+          "period_start": {
+            "name": "Inicio del periodo"
+          },
+          "period_end": {
+            "name": "Fin del periodo"
+          },
+          "projected_compensation": {
+            "name": "Compensación prevista"
+          },
+          "projected_energy_term": {
+            "name": "Término de energía previsto"
+          },
+          "margin_now": {
+            "name": "Margen hasta ahora"
+          },
+          "free_surplus": {
+            "name": "Excedente por encima del tope"
+          },
+          "hours_learned": {
+            "name": "Horas en que se basa la previsión"
+          }
+        }
+      },
+      "compensation_margin": {
+        "name": "Margen hasta el tope de compensación",
+        "state_attributes": {
+          "period_start": {
+            "name": "Inicio del periodo"
+          },
+          "period_end": {
+            "name": "Fin del periodo"
+          },
+          "projected_compensation": {
+            "name": "Compensación prevista"
+          },
+          "projected_energy_term": {
+            "name": "Término de energía previsto"
+          },
+          "margin_now": {
+            "name": "Margen hasta ahora"
+          },
+          "free_surplus": {
+            "name": "Excedente por encima del tope"
+          },
+          "hours_learned": {
+            "name": "Horas en que se basa la previsión"
+          }
+        }
       },
       "rescue_energy_month": {
         "name": "Energía de las recargas de rescate este mes"
