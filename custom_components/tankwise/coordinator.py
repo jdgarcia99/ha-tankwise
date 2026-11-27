@@ -20,6 +20,7 @@ import logging
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import (
     Event,
     EventStateChangedData,
@@ -27,6 +28,7 @@ from homeassistant.core import (
     State,
     callback,
 )
+from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.start import async_at_started
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
@@ -50,6 +52,8 @@ from .const import (
     CONF_HOT_WATER_FLOW_SENSOR,
     CONF_HOT_WATER_VOLUME_SENSOR,
     CONF_INJECTION_PRICE_SENSOR,
+    CONF_MAINTENANCE_ENTITY,
+    CONF_MAINTENANCE_MARGIN,
     CONF_MANUAL_MODE_SWITCH,
     CONF_MASTER_ENTITY,
     CONF_OCCUPANCY_ENTITY,
@@ -72,6 +76,7 @@ from .const import (
     CONF_VOLUME,
     CONF_WATER_REGION,
     CONF_WORKDAY_ENTITY,
+    DEFAULT_MAINTENANCE_MARGIN,
     DEFAULT_PARAMETERS,
     DEFAULT_SETTINGS,
     DOMAIN,
@@ -111,6 +116,7 @@ from .model.appointments import (
 )
 from .model.demand import DayTypeMode, DemandForecast, DemandModel, DemandParams
 from .model.ledger import Totals
+from .model.maintenance import MaintenanceStatus, MaintenanceTracker
 from .model.optimizer import Plan
 from .model.planning import Mode
 from .model.replay import (
@@ -220,6 +226,8 @@ class TankWiseData:
     plan: Plan | None = None
     totals_today: Totals = field(default_factory=Totals)
     totals_month: Totals = field(default_factory=Totals)
+    # Maintenance window: devices updated or restarting, readings not learned.
+    maintenance: MaintenanceStatus = field(default_factory=MaintenanceStatus)
 
 
 class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
@@ -260,6 +268,17 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
         # overwritten, so an upgrade can never erase what was learned.
         self._unreadable: dict[str, Any] = {}
         self.controller = TankWiseController(self)
+        self.maintenance = MaintenanceTracker(
+            timedelta(
+                minutes=float(
+                    entry.options.get(
+                        CONF_MAINTENANCE_MARGIN, DEFAULT_MAINTENANCE_MARGIN
+                    )
+                )
+            )
+        )
+        # Device ID -> name, of the devices whose restarts open a window.
+        self.maintenance_devices: dict[str, str] = {}
 
     # ------------------------------------------------------------------
     # Persistence
@@ -542,15 +561,17 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
                 detector.update_manual(new_state.last_changed, _boolean(new_state))
                 old_state = event.data["old_state"]
                 old, new = _boolean(old_state), _boolean(new_state)
+                moment = new_state.last_changed
                 if (
                     old is not None
                     and new is not None
                     and old != new
-                    and not self.controller.on_manual_change(
-                        new_state.last_changed, new
-                    )
+                    # A regulator restarting in a maintenance window is not
+                    # an external order nor a deviation from the plan.
+                    and not self.maintenance_status(moment).active
+                    and not self.controller.on_manual_change(moment, new)
                 ):
-                    self.planner.on_manual_mode(new_state.last_changed, new)
+                    self.planner.on_manual_mode(moment, new)
             elif entity_id == occupancy:
                 self.async_request_replan("occupancy")
             elif (update := health.get(entity_id)) is not None:
@@ -567,6 +588,82 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
         self.config_entry.async_on_unload(
             async_track_state_change_event(self.hass, tracked, _async_changed)
         )
+        self._async_start_maintenance()
+
+    # ------------------------------------------------------------------
+    # Maintenance window
+    # ------------------------------------------------------------------
+
+    def _async_start_maintenance(self) -> None:
+        """Follow the maintenance entity and the devices of the inputs.
+
+        A device that becomes unavailable, or whose uptime sensor goes back
+        (a restart), opens a maintenance window. Its uptime sensors are found
+        in the device registry: sensors of the device called uptime.
+        """
+        tracker = self.maintenance
+        entity_id = self.config_entry.options.get(CONF_MAINTENANCE_ENTITY)
+        entities = er.async_get(self.hass)
+        devices = dr.async_get(self.hass)
+        config = {**self.config_entry.data, **self.config_entry.options}
+        inputs: dict[str, str] = {}  # entity -> device
+        for key in MAINTENANCE_INPUT_KEYS:
+            if (
+                (input_id := config.get(key))
+                and (entry := entities.async_get(input_id)) is not None
+                and entry.device_id
+            ):
+                inputs[input_id] = entry.device_id
+        uptimes: dict[str, str] = {}
+        for device_id in set(inputs.values()):
+            for entry in er.async_entries_for_device(entities, device_id):
+                if _is_uptime(entry):
+                    uptimes[entry.entity_id] = device_id
+            if (device := devices.async_get(device_id)) is not None:
+                self.maintenance_devices[device_id] = (
+                    device.name_by_user or device.name or device_id
+                )
+
+        def _availability(device_id: str, moment: datetime) -> None:
+            available = not any(
+                (state := self.hass.states.get(item)) is not None
+                and state.state == STATE_UNAVAILABLE
+                for item, device in inputs.items()
+                if device == device_id
+            )
+            tracker.availability(device_id, moment, available)
+
+        now = dt_util.utcnow()
+        if entity_id:
+            tracker.entity(now, _is_on(self.hass.states.get(entity_id)))
+        for device_id in set(inputs.values()):
+            _availability(device_id, now)
+        for item, device_id in uptimes.items():
+            tracker.uptime(device_id, now, _uptime(self.hass.states.get(item)))
+
+        @callback
+        def _async_changed(event: Event[EventStateChangedData]) -> None:
+            new_state = event.data["new_state"]
+            item = event.data["entity_id"]
+            moment = new_state.last_updated if new_state else dt_util.utcnow()
+            if item == entity_id:
+                tracker.entity(moment, _is_on(new_state))
+            if item in inputs:
+                _availability(inputs[item], moment)
+            if item in uptimes:
+                tracker.uptime(uptimes[item], moment, _uptime(new_state))
+
+        tracked = {*inputs, *uptimes, *([entity_id] if entity_id else [])}
+        if tracked:
+            self.config_entry.async_on_unload(
+                async_track_state_change_event(
+                    self.hass, sorted(tracked), _async_changed
+                )
+            )
+
+    def maintenance_status(self, now: datetime) -> MaintenanceStatus:
+        """The maintenance window open now, if any."""
+        return self.maintenance.status(now)
 
     # ------------------------------------------------------------------
     # Parameters and settings
@@ -758,6 +855,7 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
     async def _async_update_data(self) -> TankWiseData:
         """Read the inputs and advance the tank model."""
         readings = self._read_inputs()
+        maintenance = self.maintenance_status(readings.timestamp)
         sample = TankSample(
             timestamp=readings.timestamp,
             temperature=readings.temperature,
@@ -774,13 +872,15 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
             hot_water_volume=readings.hot_water_volume,
             hot_water_flow=readings.hot_water_flow,
             meter_configured=self.meter_configured,
+            maintenance=maintenance.active,
         )
         tank = self.model.update(sample, self.tank_params_at(readings.timestamp))
         self._last_sample = sample
         now = readings.timestamp
         self.demand.update(
             now,
-            available=tank.available,
+            # The window is not covered time: a day is learned without it.
+            available=tank.available and not maintenance.active,
             occupied=readings.occupancy,
             draws=self.model.consumptions,
             workday=readings.workday,
@@ -812,13 +912,24 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
             forecast.window(now, midnight, 0.5),
             forecast.window(now, midnight, 0.9),
         )
-        await self.planner.async_update(now, readings, tank, forecast, workdays)
+        await self.planner.async_update(
+            now, readings, tank, forecast, workdays, maintenance=maintenance.active
+        )
         _mains, source = self.mains_water_temperature_at(now)
         usage = self._appointment_usage()
         requirements, at_risk = self._appointment_requirements(
             usage, tank, readings.occupancy
         )
-        await self.controller.async_update(now, readings, tank, requirements, workdays)
+        await self.controller.async_update(
+            now,
+            readings,
+            tank,
+            requirements,
+            workdays,
+            maintenance=maintenance.active,
+            at_risk=bool(at_risk)
+            or bool(self.planner.plan and self.planner.plan.at_risk),
+        )
         self._store.async_schedule_save(self._stored_data)
         risk_reasons = self._risk_reasons(at_risk)
         power_request = self.planner.power_request(now, tank)
@@ -857,6 +968,7 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
             risk_reasons=risk_reasons,
             power_request=power_request,
             legionella_last=self.planner.legionella.last_cycle,
+            maintenance=maintenance,
         )
 
     def _risk_reasons(self, at_risk: list[str]) -> list[str]:
@@ -1099,6 +1211,56 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
         if entity_id in self._unusable:
             self._unusable.discard(entity_id)
             _LOGGER.info("Input %s is usable again", entity_id)
+
+
+# Inputs whose devices are watched for maintenance (restarts, short outages).
+MAINTENANCE_INPUT_KEYS = (
+    CONF_TEMPERATURE_SENSOR,
+    CONF_POWER_SENSOR,
+    CONF_ENERGY_SENSOR,
+    CONF_HEATER_SWITCH,
+    CONF_MANUAL_MODE_SWITCH,
+    CONF_REGULATOR_SENSOR,
+    CONF_REGULATOR_MODE_ENTITY,
+    CONF_REGULATOR_OUTPUT_SWITCH,
+    CONF_REGULATOR_UPTIME_SENSOR,
+    CONF_HOT_WATER_VOLUME_SENSOR,
+    CONF_HOT_WATER_FLOW_SENSOR,
+)
+UPTIME_NAMES = frozenset({"uptime", "tiempo de actividad", "tiempo encendido"})
+SECONDS_PER = {"s": 1.0, "min": 60.0, "h": 3600.0, "d": 86400.0}
+
+
+def _is_uptime(entry: er.RegistryEntry) -> bool:
+    """Whether a registry entry is a device's uptime sensor."""
+    if entry.domain != "sensor":
+        return False
+    names = {
+        (entry.translation_key or "").lower(),
+        (entry.original_name or "").lower(),
+        (entry.name or "").lower(),
+    }
+    return entry.entity_id.endswith("_uptime") or bool(names & UPTIME_NAMES)
+
+
+def _uptime(state: State | None) -> float | datetime | None:
+    """Seconds since boot, or the boot time, of an uptime sensor."""
+    if state is None or state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+        return None
+    try:
+        value = float(state.state)
+    except ValueError:
+        moment = dt_util.parse_datetime(state.state)
+        return dt_util.as_utc(moment) if moment is not None else None
+    unit = state.attributes.get("unit_of_measurement", "s")
+    return value * SECONDS_PER.get(unit, 1.0)
+
+
+def _is_on(state: State | None) -> bool | None:
+    """On (a script while it runs), off, or None if unknown."""
+    if state is None or state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+        return None
+    return state.state == "on"
 
 
 def _numeric(state: State | None) -> float | None:

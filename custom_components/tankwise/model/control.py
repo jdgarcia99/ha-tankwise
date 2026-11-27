@@ -249,6 +249,9 @@ class ControlInput:
     sell_surplus: bool = False
     # Regulator output switch (None: not configured or unavailable).
     output: bool | None = None
+    # A maintenance window is open: safeties still act, but a cut is not
+    # counted as a sign of a lost regulator.
+    maintenance: bool = False
 
 
 @dataclass(slots=True)
@@ -404,7 +407,8 @@ class Controller:
             ):
                 decision.add(Action.HEATER_OFF, Reason.REGULATOR_LOST)
                 self.heater_cut = True
-                self.cuts.append(now)
+                if not data.maintenance:
+                    self.cuts.append(now)
             return decision
 
         if data.heater_switch is False and not self.heater_cut:

@@ -146,6 +146,7 @@ are translated.
 | Useful energy | kWh stored above the minimum comfort temperature |
 | Charge | Useful energy as a percentage of a full tank |
 | Hot water available | Useful litres at the shower temperature before the water runs below the comfort temperature; in a stratified tank, `k_use` times the energy above the mains water (attributes: theoretical litres, `stratified`, `useful_floor_temperature`) |
+| Maintenance in progress (binary) | On during a maintenance window (see [Maintenance window](#maintenance-window)); attributes `source`, `until` and `devices` |
 | Plan at risk (binary) | On when hot water cannot be guaranteed: an appointment needs more than a full tank gives, the usual demand is not covered, or the regulator or the probe is unavailable before an appointment (`reasons` attribute) |
 | Modelled temperature | Equivalent (mixed) tank temperature tracked by the model: the stored energy as a temperature |
 | Estimated outlet temperature | Temperature of the hot layer at the outlet. With the probe at the top, what it sees: the modelled temperature plus the expected stratification. With the probe in the thermostat's sheath, the temperature of the last full charge less the losses (draws do not lower it while hot water remains) |
@@ -242,6 +243,41 @@ When the plan turns at risk for a new reason TankWise fires the
 `tankwise_plan_at_risk` event (`reasons`, `new_reasons`, `appointments`), for
 example to send a notification when the regulator is unavailable before an
 appointment that depends on a planned heating.
+
+
+### Maintenance window
+
+Firmware updates of ESPHome devices (or any restart) leave the probe, the
+power meter or the regulator without data for a few minutes, or with values
+that do not describe the tank. During a **maintenance window** TankWise keeps
+its plan and its safeties, but:
+
+- learns nothing: heater power, heat losses, capacity factor, usable factor,
+  stratification, thermostat cut-offs and the demand profile (the window is
+  not covered time, and the draws detected in it are not learned);
+- counts nothing against the plan: no replan for a deviation or a draw (so no
+  rescue recharge), no external order or deviation from a regulator that
+  restarts, no hot water shortage, and a safety cut does not count towards
+  the repeated cuts repair issue;
+- does not enter degraded mode, nor puts the plan at risk, just because the
+  probe or the regulator are missing; it still does when the plan is really
+  at risk (an appointment or the demand it cannot cover, or an appointment
+  within the hour).
+
+A window opens while the **maintenance entity** (inputs options: a script,
+input boolean, binary sensor or switch; a script is on while it runs, e.g.
+the one that updates every ESPHome device) is on, and lasts the **margin
+after maintenance** (10 minutes by default) once it goes off, because devices
+reboot after their update. Without an entity it also opens automatically
+when a device of the inputs (probe, power, energy, switches, regulator, hot
+water meter) becomes unavailable, while it is unavailable up to 15 minutes
+and for the margin after it returns, or restarts (its uptime sensor, found on
+the same device, goes back: seconds since boot that fall, or a boot time
+that moves later), for the margin after. An outage longer than 15 minutes is
+a real outage: the usual rules for unavailable inputs apply. The binary
+sensor **Maintenance in progress** shows the window (`source`: `entity`,
+`unavailable` or `restart`; `until`; `devices`), and the heating plan sensor
+its cause (`maintenance` attribute).
 
 ## Boost
 

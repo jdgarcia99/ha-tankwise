@@ -411,8 +411,12 @@ class DemandModel:
         coverage = self._coverage.pop(day)
         if coverage.covered < MIN_DAY_COVERAGE or coverage.occupied < MIN_DAY_COVERAGE:
             return
+        # Draws during a maintenance window may be artefacts of the devices
+        # restarting: not learned.
         day_draws = [
-            draw for draw in draws if draw.start.astimezone(self._tz).date() == day
+            draw
+            for draw in draws
+            if not draw.maintenance and draw.start.astimezone(self._tz).date() == day
         ]
         liters = None
         if coverage.metered >= MIN_DAY_COVERAGE:

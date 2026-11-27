@@ -204,8 +204,15 @@ class Planner:
         tank: TankState,
         forecast: DemandForecast,
         workdays: dict,
+        *,
+        maintenance: bool = False,
     ) -> None:
-        """Account the real cost and replan when needed."""
+        """Account the real cost and replan when needed.
+
+        In a maintenance window the plan in force is kept (no replan for a
+        deviation or a draw the restarting devices may have caused, so no
+        rescue recharge either); it is made again once the window ends.
+        """
         start = slot_start(now)
         self.prices = self._slot_prices(start)
         energy, from_surplus = self._account_real(now, readings)
@@ -214,7 +221,11 @@ class Planner:
             self.log("anti_legionella_done")
             self.request("legionella")
 
-        reason = self._replan_reason(start, tank)
+        reason = (
+            None
+            if maintenance and self.plan is not None
+            else self._replan_reason(start, tank)
+        )
         if self.mode is Mode.OFF:
             self.plan = None
         elif reason is not None and tank.available and self.prices is not None:
