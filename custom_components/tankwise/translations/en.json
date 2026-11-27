@@ -132,6 +132,8 @@
               "profile_days": "Days of each type in the usage profile",
               "regulator_margin": "Minutes before cutting the heater switch",
               "probe_volume_below": "Volume below the probe",
+              "billing_day": "Billing period start day",
+              "energy_term_factor": "Energy term factor for the compensation cap",
               "usable_factor_default": "Default useful litres factor"
             },
             "data_description": {
@@ -140,6 +142,8 @@
               "profile_days": "More days give a steadier forecast when usage changes from one day to the next; fewer days adapt faster.",
               "regulator_margin": "If the regulator stays unavailable this long while TankWise has it in manual mode (or the element heats outside the plan), the heater switch is opened as a last resort. It is closed again when the regulator comes back.",
               "probe_volume_below": "With the probe in the thermostat's sheath: share of the tank below it, which the cold water fills before reaching the probe (about the litres drawn after a full charge before the probe starts to fall). The mean temperature is never taken below this share at the mains temperature and the rest at the probe's.",
+              "billing_day": "Day of the month the electricity billing period starts (1: the calendar month). The automatic compensation cap adds up the compensation and the energy term from this day.",
+              "energy_term_factor": "Multiplies the energy term computed with the purchase price, for the compensation cap. 1.0: the whole purchase price. If your bill caps the compensation at the energy term without tolls and charges, calibrate it with a bill: energy term of the bill ÷ the 'Energy term without the factor' attribute of the Energy term this period sensor, over the same billing period.",
               "usable_factor_default": "Share of the energy above the mains water that is usable while none is learned, with the probe in the thermostat's sheath (it cannot teach it). With the probe at the top, 1.0 is used until it is learned."
             }
           }
@@ -600,6 +604,102 @@
       },
       "rescue_cost_month": {
         "name": "Rescue recharges cost this month"
+      },
+      "compensation_period": {
+        "name": "Surplus compensation this period",
+        "state_attributes": {
+          "period_start": {
+            "name": "Period start"
+          },
+          "period_end": {
+            "name": "Period end"
+          },
+          "projected_compensation": {
+            "name": "Projected compensation"
+          },
+          "projected_energy_term": {
+            "name": "Projected energy term"
+          },
+          "margin_now": {
+            "name": "Margin so far"
+          },
+          "free_surplus": {
+            "name": "Surplus over the cap"
+          },
+          "hours_learned": {
+            "name": "Hours behind the projection"
+          },
+          "energy_term_factor": {
+            "name": "Energy term factor"
+          },
+          "energy_term_without_factor": {
+            "name": "Energy term without the factor"
+          }
+        }
+      },
+      "energy_term_period": {
+        "name": "Energy term this period",
+        "state_attributes": {
+          "period_start": {
+            "name": "Period start"
+          },
+          "period_end": {
+            "name": "Period end"
+          },
+          "projected_compensation": {
+            "name": "Projected compensation"
+          },
+          "projected_energy_term": {
+            "name": "Projected energy term"
+          },
+          "margin_now": {
+            "name": "Margin so far"
+          },
+          "free_surplus": {
+            "name": "Surplus over the cap"
+          },
+          "hours_learned": {
+            "name": "Hours behind the projection"
+          },
+          "energy_term_factor": {
+            "name": "Energy term factor"
+          },
+          "energy_term_without_factor": {
+            "name": "Energy term without the factor"
+          }
+        }
+      },
+      "compensation_margin": {
+        "name": "Compensation cap margin",
+        "state_attributes": {
+          "period_start": {
+            "name": "Period start"
+          },
+          "period_end": {
+            "name": "Period end"
+          },
+          "projected_compensation": {
+            "name": "Projected compensation"
+          },
+          "projected_energy_term": {
+            "name": "Projected energy term"
+          },
+          "margin_now": {
+            "name": "Margin so far"
+          },
+          "free_surplus": {
+            "name": "Surplus over the cap"
+          },
+          "hours_learned": {
+            "name": "Hours behind the projection"
+          },
+          "energy_term_factor": {
+            "name": "Energy term factor"
+          },
+          "energy_term_without_factor": {
+            "name": "Energy term without the factor"
+          }
+        }
       },
       "rescue_energy_month": {
         "name": "Rescue recharges energy this month"

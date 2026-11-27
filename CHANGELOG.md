@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.13.0] - 2026-11-25
+## [0.13.0] - 2026-11-27
 
 ### Added
 
@@ -28,6 +28,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   time), opens the same window. A longer outage is a real one.
 - Binary sensor *Maintenance in progress* (`source`, `until`, `devices`) and
   a `maintenance` attribute on the heating plan.
+- **Automatic compensation cap.** The compensation (export × injection price)
+  and the energy term (import × purchase price) of the billing period are
+  added up hour by hour from the grid meters, and projected to the end of
+  the period with the hourly rate of the last 14 days. When the projected
+  compensation exceeds the projected energy term, that excess would be
+  exported for nothing: the plan takes that much surplus for free and values
+  the rest at the injection price. Before, only the switch did it, by hand
+  and for all the surplus. The switch still forces the cap.
+- Sensors **Surplus compensation this period**, **Energy term this period**
+  and **Compensation cap margin** (projected; negative: over the cap), with
+  the projection, the margin so far and the surplus over the cap.
+- Advanced parameter **Billing period start day** (1: the calendar month).
+- Advanced parameter **Energy term factor for the compensation cap** (1.0):
+  multiplies the computed energy term, for bills that cap the compensation
+  at the energy term without tolls and charges. Calibrated with a bill:
+  energy term of the bill ÷ the sensor's energy term without the factor over
+  the same period.
+- The past hours of the period come from the recorder statistics (hourly
+  sums of the energy sensors, means of the price sensors) at every start.
+
+### Notes
+
+- The energy term uses the purchase price sensor as it is: the PVPC includes
+  the access tolls and charges of the energy term, which cannot be separated
+  (hence the factor).
 
 ## [0.12.4] - 2026-11-24
 

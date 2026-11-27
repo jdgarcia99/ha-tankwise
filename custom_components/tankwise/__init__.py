@@ -106,6 +106,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: TankWiseConfigEntry) -> 
 
     if coordinator.needs_bootstrap:
         coordinator.async_start_bootstrap()
+    coordinator.async_start_compensation_import()
     return True
 
 

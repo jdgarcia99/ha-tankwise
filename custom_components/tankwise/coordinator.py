@@ -35,6 +35,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 
 from .bootstrap import BootstrapInfo, BootstrapStatus, async_bootstrap
+from .compensation_history import async_import_compensation
 from .const import (
     BOOTSTRAP_DAYS,
     BOOTSTRAP_INPUT_WAIT,
@@ -114,6 +115,7 @@ from .model.appointments import (
     appointment_usage,
     load_appointments,
 )
+from .model.compensation import CompensationEstimate
 from .model.demand import DayTypeMode, DemandForecast, DemandModel, DemandParams
 from .model.ledger import Totals
 from .model.maintenance import MaintenanceStatus, MaintenanceTracker
@@ -220,6 +222,9 @@ class TankWiseData:
     power_request: tuple[float, str] = (0.0, "none")
     # Last anti-legionella cycle really done (60 °C or more for an hour).
     legionella_last: datetime | None = None
+    # Compensation and energy term of the billing period (None: no grid meters
+    # or no injection price).
+    compensation: CompensationEstimate | None = None
     # Why hot water cannot be guaranteed: "appointments", "demand",
     # "regulator_unavailable", "probe_unavailable" (empty: plan not at risk).
     risk_reasons: list[str] = field(default_factory=list)
@@ -358,6 +363,38 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
             return False
         return self.bootstrap.version < BOOTSTRAP_VERSION or (
             self.meter_configured and not self.bootstrap.metered
+        )
+
+    @callback
+    def async_start_compensation_import(self) -> None:
+        """Add the missing past hours of the compensation from the statistics."""
+        data = self.config_entry.data
+        options = self.config_entry.options
+        sensors = (
+            options.get(CONF_GRID_IMPORT_SENSOR),
+            options.get(CONF_GRID_EXPORT_SENSOR),
+            data.get(CONF_PRICE_SENSOR),
+            options.get(CONF_INJECTION_PRICE_SENSOR),
+        )
+        if not all(sensors):
+            return
+
+        async def _import() -> None:
+            added = await async_import_compensation(
+                self.hass,
+                self.planner.compensation,
+                import_sensor=sensors[0],
+                export_sensor=sensors[1],
+                buy_sensor=sensors[2],
+                injection_sensor=sensors[3],
+            )
+            if added:
+                _LOGGER.debug("Compensation: %d past hours imported", added)
+                self._store.async_schedule_save(self._stored_data)
+                await self.async_request_refresh()
+
+        self.config_entry.async_create_background_task(
+            self.hass, _import(), f"{DOMAIN} compensation import"
         )
 
     @callback
@@ -969,6 +1006,7 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
             power_request=power_request,
             legionella_last=self.planner.legionella.last_cycle,
             maintenance=maintenance,
+            compensation=self.planner.compensation_estimate,
         )
 
     def _risk_reasons(self, at_risk: list[str]) -> list[str]:

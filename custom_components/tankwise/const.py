@@ -120,6 +120,11 @@ CONF_REGULATOR_MARGIN: Final = "regulator_margin"
 CONF_USABLE_FACTOR_DEFAULT: Final = "usable_factor_default"
 # Share of the volume below a probe in the thermostat's sheath (%).
 CONF_PROBE_VOLUME_BELOW: Final = "probe_volume_below"
+# Day of the month the billing period starts (1: the calendar month).
+CONF_BILLING_DAY: Final = "billing_day"
+# Factor applied to the computed energy term for the compensation cap (the
+# purchase price may include tolls and charges the cap does not count).
+CONF_ENERGY_TERM_FACTOR: Final = "energy_term_factor"
 
 # Options flow section with the parameters most users never change.
 SECTION_ADVANCED: Final = "advanced"
@@ -133,6 +138,8 @@ ADVANCED_PARAMETERS: Final = (
     "regulator_margin",
     "usable_factor_default",
     "probe_volume_below",
+    "billing_day",
+    "energy_term_factor",
 )
 
 # Hot water appointments (list of dicts in the options).
@@ -153,6 +160,8 @@ DEFAULT_REGULATOR_MARGIN: Final = 2  # min
 DEFAULT_BOOST_AS_SHORTAGE: Final = False
 DEFAULT_USABLE_FACTOR_DEFAULT: Final = 0.85
 DEFAULT_PROBE_VOLUME_BELOW: Final = 30  # %
+DEFAULT_BILLING_DAY: Final = 1
+DEFAULT_ENERGY_TERM_FACTOR: Final = 1.0
 
 DEFAULT_PARAMETERS: Final = {
     CONF_VOLUME: DEFAULT_VOLUME,
@@ -169,6 +178,8 @@ DEFAULT_PARAMETERS: Final = {
     CONF_BOOST_AS_SHORTAGE: DEFAULT_BOOST_AS_SHORTAGE,
     CONF_USABLE_FACTOR_DEFAULT: DEFAULT_USABLE_FACTOR_DEFAULT,
     CONF_PROBE_VOLUME_BELOW: DEFAULT_PROBE_VOLUME_BELOW,
+    CONF_BILLING_DAY: DEFAULT_BILLING_DAY,
+    CONF_ENERGY_TERM_FACTOR: DEFAULT_ENERGY_TERM_FACTOR,
 }
 INTEGER_PARAMETERS: Final = (
     CONF_VOLUME,
@@ -177,6 +188,7 @@ INTEGER_PARAMETERS: Final = (
     CONF_CUTOFF_POWER_THRESHOLD,
     CONF_PROFILE_DAYS,
     CONF_REGULATOR_MARGIN,
+    CONF_BILLING_DAY,
 )
 
 # ---------------------------------------------------------------------------
