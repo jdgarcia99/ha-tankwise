@@ -200,11 +200,14 @@ async def async_bootstrap(
     days: int,
     tz: tzinfo,
     active_modes: Iterable[str] = DEFAULT_REGULATOR_ACTIVE_MODES,
+    tank_since: datetime | None = None,
 ) -> tuple[BootstrapInfo, ReplayResult | None, DemandModel | None]:
     """Replay the recorder history of the given roles through new models.
 
     ``roles`` maps replay roles (see ``model.replay.ROLES``) to entity IDs.
     Returns the summary, the tank model replay and the demand profile.
+    ``tank_since``: the water heater was replaced then; the tank is learned
+    only from the history after it (the demand profile from all of it).
     """
     if RECORDER_DOMAIN not in hass.config.components:
         info = BootstrapInfo(BootstrapStatus.NO_RECORDER, finished=dt_util.utcnow())
@@ -254,6 +257,7 @@ async def async_bootstrap(
                 end=end,
                 on_sample=_feed_demand,
                 active_modes=active_modes,
+                tank_since=tank_since,
             )
         )
     except Exception as err:

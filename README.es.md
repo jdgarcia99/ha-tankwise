@@ -77,6 +77,28 @@ ningún `entity_id` está fijado en el código.
   m³; `total_increasing`, `total` o sin clase de estado, como lo publican los
   contadores de pulsos) y, opcionalmente, su caudal. Con él las extracciones
   se miden en litros en vez de estimarse con la sonda (ver más abajo).
+- Temperatura de salida del agua caliente (con el caudalímetro): una sonda en
+  el tubo de agua caliente a la salida del termo, p. ej. una DS18B20 leída
+  cada 5 s. Se usan todas sus lecturas, no solo las de cada minuto:
+  - la energía de cada litro es `litros · 0,001163 · (T_salida − T_red)`,
+    con la lectura de ese momento; se descartan los primeros 15 s de cada
+    extracción (el agua parada en el tubo);
+  - `k_use` se aprende con los litros extraídos hasta que la salida baja de
+    la temperatura de ducha, frente a los litros útiles que tenía el modelo
+    al empezar la extracción (muestras aparte de las antiguas, y preferidas);
+  - una falta de agua es real: la salida por debajo de la temperatura de
+    confort (0,5 °C, tres lecturas) mientras corre el agua; el tubo que se
+    enfría después de una extracción no cuenta;
+  - la temperatura de salida publicada es la medida durante las extracciones,
+    y la capa caliente del modelo toma el valor medido en vez de suponer la
+    del último llenado.
+- Temperatura del agua fría: una sonda en el aljibe o en la tubería de
+  entrada. Sustituye a la tabla por zonas (el número de temperatura de red,
+  si se fija a mano, sigue mandando). En el aljibe se promedian sus lecturas
+  despacio (1 h); en la tubería solo cuentan las lecturas tomadas mientras se
+  extrae agua caliente (la más fría tras el primer minuto de cada
+  extracción), y una media muy lenta (24 h) de todas hasta la primera
+  extracción.
 
 **Opciones**
 
@@ -102,7 +124,7 @@ y la región del agua de red; lo que TankWise aprende solo queda plegado en
 |---------|-------------------|
 | Temperatura de ducha | 40 °C |
 | Temperatura mínima de confort | 38 °C |
-| Temperatura del agua de red | 0 = automática (tabla mensual de la región, interpolada día a día) |
+| Temperatura del agua de red | 0 = automática (la sonda de agua fría si la hay; si no, la tabla mensual de la región, interpolada día a día) |
 
 Las instalaciones que vienen de la 0.2 se migran solas y conservan lo
 aprendido. Un aviso de reparación pide completar las nuevas entradas
@@ -408,10 +430,27 @@ de sol), no se calienta nada de más.
 | `tankwise.get_plan` | Devuelve el plan de calentamiento completo, franja a franja (solo respuesta). `config_entry_id` opcional. |
 | `tankwise.boost` / `tankwise.cancel_boost` | Inicia o cancela un Boost (ver Boost). |
 | `tankwise.reimport_history` | Vuelve a importar el histórico del recorder de los últimos días y lo combina con lo aprendido (también el botón "Importar de nuevo el histórico"). `config_entry_id` opcional. |
-| `tankwise.reset_learning` | Olvida las pérdidas de calor (`part: losses`), el perfil de uso (`part: demand`) o todo (`part: all`, por defecto). `config_entry_id` opcional. |
+| `tankwise.reset_learning` | Olvida las pérdidas de calor (`part: losses`), el perfil de uso (`part: demand`), el termo (`part: tank`) o todo (`part: all`, por defecto). `config_entry_id` opcional. Ver *Cambiar el termo*. |
 | `tankwise.discard_last_cutoff_sample` | Olvida la última temperatura de corte del termostato aprendida y vuelve a calcular el corte. `config_entry_id` opcional; devuelve la muestra quitada y las que quedan. |
 | `tankwise.discard_cutoff_sample` | Igual para una muestra, indicada por `value` (°C, la más cercana a menos de 0,5 °C) o `index` (0 = la más antigua, −1 = la más reciente). Las muestras son el atributo `samples` del sensor de temperatura de corte. |
 | `tankwise.reset_usable_factor` | Olvida el factor de aprovechamiento aprendido (`k_use`). Hasta que se aprenda de nuevo: el parámetro *Factor de aprovechamiento por defecto* (0,85) con la sonda en la vaina del termostato, 1,0 con la sonda arriba. Devuelve las muestras borradas y el factor en uso. |
+
+### Cambiar el termo
+
+Llama a `tankwise.reset_learning` con `part: tank` justo después de instalar
+el nuevo, con su volumen (`volume`, L), potencia nominal (`rated_power`, W) y
+corte inicial (`cutoff_temperature`, °C) si cambian (sustituyen a los de las
+opciones; la potencia y el corte se aprenden después). Olvida todo lo que
+depende del termo: potencia de la resistencia, pérdidas, factores de
+capacidad y útil, cortes (también los descartados), estratificación y capa
+caliente. Conserva el perfil de uso (litros y kWh), las extracciones
+pasadas, el modelo solar, el tope de compensación, los precios y las citas.
+La energía almacenada se toma de nuevo de la sonda, y el estado del modelo es
+`learning` (motivo `tank_reset`) hasta que un calentamiento llegue al corte
+del termostato nuevo. Una reimportación posterior del histórico solo aprende
+el depósito desde el cambio, y el perfil de uso de todo el histórico. Abre
+una ventana de mantenimiento mientras lo cambias, para que no se aprendan las
+horas sin termo.
 
 ## Cómo funciona el modelo del depósito
 

@@ -53,11 +53,14 @@ from .const import (
     CONF_HOT_WATER_FLOW_SENSOR,
     CONF_HOT_WATER_VOLUME_SENSOR,
     CONF_INJECTION_PRICE_SENSOR,
+    CONF_MAINS_SENSOR_PLACEMENT,
+    CONF_MAINS_TEMPERATURE_SENSOR,
     CONF_MAINTENANCE_ENTITY,
     CONF_MAINTENANCE_MARGIN,
     CONF_MANUAL_MODE_SWITCH,
     CONF_MASTER_ENTITY,
     CONF_OCCUPANCY_ENTITY,
+    CONF_OUTLET_TEMPERATURE_SENSOR,
     CONF_POWER_SENSOR,
     CONF_PRICE_SENSOR,
     CONF_PROBE_POSITION,
@@ -86,10 +89,12 @@ from .const import (
     FORECAST_HOURS,
     MAINS_AUTOMATIC,
     MAINS_SOURCE_MANUAL,
+    MAINS_SOURCE_SENSOR,
     MAINS_SOURCE_TABLE,
     PART_ALL,
     PART_DEMAND,
     PART_LOSSES,
+    PART_TANK,
     PROBE_SHEATH,
     REQUIRED_INPUT_KEYS,
     SETTING_COMFORT_MIN_TEMPERATURE,
@@ -128,6 +133,7 @@ from .model.replay import (
     ROLE_HOT_WATER_VOLUME,
     ROLE_MANUAL_MODE,
     ROLE_OCCUPANCY,
+    ROLE_OUTLET_TEMPERATURE,
     ROLE_POWER,
     ROLE_REGULATOR,
     ROLE_REGULATOR_MODE,
@@ -145,7 +151,7 @@ from .model.tank import (
     TankSample,
     TankState,
 )
-from .model.water import mains_water_temperature
+from .model.water import PLACEMENT_CISTERN, MainsSensor, mains_water_temperature
 from .planner import Planner
 from .storage import TankWiseStore
 
@@ -268,6 +274,13 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
         # Workday status of the coming days, from the workday integration.
         self._workdays: dict[date, bool] = {}
         self.planner = Planner(self)
+        # Cold water sensor (cistern or inlet pipe), and the readings of the
+        # outlet probe and of the hot water meter since the last sample.
+        self.mains_sensor = MainsSensor(
+            entry.options.get(CONF_MAINS_SENSOR_PLACEMENT, PLACEMENT_CISTERN)
+        )
+        self._outlet_buffer: list[tuple[datetime, float]] = []
+        self._meter_buffer: list[tuple[datetime, float]] = []
         self._bootstrap_task: asyncio.Task | None = None
         # Stored sections that could not be read: kept as they were, never
         # overwritten, so an upgrade can never erase what was learned.
@@ -324,9 +337,17 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
         self._unreadable |= stored.get("unreadable") or {}
         self.planner.restore(stored.get("control") or {})
         self.controller.restore(stored.get("controller") or {})
+        if mains := stored.get("mains_sensor"):
+            try:
+                self.mains_sensor = MainsSensor.from_dict(
+                    mains, self.mains_sensor.placement
+                )
+            except (TypeError, ValueError) as err:
+                _LOGGER.warning("Discarding the stored mains water sensor: %s", err)
 
     def _stored_data(self) -> dict[str, Any]:
         return {
+            "mains_sensor": self.mains_sensor.as_dict(),
             "tank": self.model.as_dict(),
             "demand": self.demand.as_dict(),
             "settings": dict(self.settings),
@@ -502,6 +523,7 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
             ROLE_REGULATOR_OUTPUT: options.get(CONF_REGULATOR_OUTPUT_SWITCH),
             ROLE_HOT_WATER_VOLUME: options.get(CONF_HOT_WATER_VOLUME_SENSOR),
             ROLE_HOT_WATER_FLOW: options.get(CONF_HOT_WATER_FLOW_SENSOR),
+            ROLE_OUTLET_TEMPERATURE: options.get(CONF_OUTLET_TEMPERATURE_SENSOR),
         }
         info, result, demand = await async_bootstrap(
             self.hass,
@@ -510,6 +532,7 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
             days=BOOTSTRAP_DAYS,
             tz=self.demand.tz,
             active_modes=self.regulator_active_modes,
+            tank_since=self.model.tank_since,
         )
         if info.status is BootstrapStatus.DONE and result is not None:
             # Never lose learning: keep the better learned of each parameter.
@@ -626,6 +649,7 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
             async_track_state_change_event(self.hass, tracked, _async_changed)
         )
         self._async_start_maintenance()
+        self._async_start_outlet()
 
     # ------------------------------------------------------------------
     # Maintenance window
@@ -712,10 +736,19 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
         return {**DEFAULT_PARAMETERS, **self.config_entry.options}
 
     def mains_water_temperature_at(self, moment: datetime) -> tuple[float, str]:
-        """Return the mains water temperature (°C) and its source."""
+        """Return the mains water temperature (°C) and its source.
+
+        The number entity, when set by hand; else the cold water sensor, when
+        configured and with a value; else the regional table.
+        """
         manual = self.settings[SETTING_MAINS_WATER_TEMPERATURE]
         if manual != MAINS_AUTOMATIC:
             return manual, MAINS_SOURCE_MANUAL
+        if (
+            self.config_entry.options.get(CONF_MAINS_TEMPERATURE_SENSOR)
+            and (measured := self.mains_sensor.temperature) is not None
+        ):
+            return measured, MAINS_SOURCE_SENSOR
         local = dt_util.as_local(moment).date()
         return (
             mains_water_temperature(self.parameters[CONF_WATER_REGION], local),
@@ -792,6 +825,41 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
         return bool(self.config_entry.options.get(CONF_HOT_WATER_VOLUME_SENSOR))
 
     @property
+    def outlet_configured(self) -> bool:
+        """Return True if an outlet probe measures the water leaving, with the meter."""
+        return self.meter_configured and bool(
+            self.config_entry.options.get(CONF_OUTLET_TEMPERATURE_SENSOR)
+        )
+
+    def _async_start_outlet(self) -> None:
+        """Keep every reading of the outlet probe and the meter between samples."""
+        if not self.outlet_configured:
+            return
+        options = self.config_entry.options
+        outlet = options[CONF_OUTLET_TEMPERATURE_SENSOR]
+        meter = options[CONF_HOT_WATER_VOLUME_SENSOR]
+
+        @callback
+        def _async_changed(event: Event[EventStateChangedData]) -> None:
+            new_state = event.data["new_state"]
+            if new_state is None:
+                return
+            kind = "temperature" if event.data["entity_id"] == outlet else "volume"
+            try:
+                value = parse_measurement(new_state.state, state_unit(new_state), kind)
+            except InputError:
+                return
+            buffer = (
+                self._outlet_buffer if kind == "temperature" else self._meter_buffer
+            )
+            buffer.append((new_state.last_updated, value))
+            del buffer[:-MAX_BUFFERED_READINGS]
+
+        self.config_entry.async_on_unload(
+            async_track_state_change_event(self.hass, [outlet, meter], _async_changed)
+        )
+
+    @property
     def regulator_active_modes(self) -> tuple[str, ...]:
         """Regulator modes that heat (a drop in another mode is not a cut-off)."""
         modes = self.config_entry.options.get(CONF_REGULATOR_ACTIVE_MODES)
@@ -830,17 +898,48 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
         await self.async_replan("cutoff")
         return removed
 
-    async def async_reset_learning(self, part: str) -> None:
-        """Forget learned data: losses, the demand profile or everything."""
+    async def async_reset_learning(
+        self,
+        part: str,
+        *,
+        volume: float | None = None,
+        rated_power: float | None = None,
+        cutoff_temperature: float | None = None,
+    ) -> None:
+        """Forget learned data: losses, the demand profile, the tank or everything.
+
+        ``tank`` is a new water heater: everything that depends on it is
+        forgotten (the usage profile, the solar model, the compensation, the
+        prices and the appointments are kept), and its volume, rated power and
+        initial cut-off, when given, replace the ones in the options.
+        """
         if part == PART_LOSSES:
             self.model.reset_losses()
         elif part == PART_DEMAND:
             self.demand.reset()
+        elif part == PART_TANK:
+            self.model.reset_tank(dt_util.utcnow())
         elif part == PART_ALL:
             self.model.reset_learning()
             self.demand.reset()
         _LOGGER.info("Learned data reset: %s", part)
         await self.async_save_now()
+        if part == PART_TANK:
+            changes = {
+                key: value
+                for key, value in (
+                    (CONF_VOLUME, volume),
+                    (CONF_RATED_POWER, rated_power),
+                    (CONF_CUTOFF_TEMPERATURE, cutoff_temperature),
+                )
+                if value is not None
+            }
+            if changes:
+                self.hass.config_entries.async_update_entry(
+                    self.config_entry,
+                    options={**self.config_entry.options, **changes},
+                )
+            self.planner.request("tank_reset")
         await self.async_request_refresh()
 
     @callback
@@ -893,6 +992,17 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
         """Read the inputs and advance the tank model."""
         readings = self._read_inputs()
         maintenance = self.maintenance_status(readings.timestamp)
+        options = self.config_entry.options
+        if options.get(CONF_MAINS_TEMPERATURE_SENSOR):
+            self.mains_sensor.update(
+                readings.timestamp,
+                self._read_measurement(
+                    options.get(CONF_MAINS_TEMPERATURE_SENSOR), "temperature"
+                ),
+                bool(self.data and self.data.tank.drawing),
+            )
+        outlet_readings, self._outlet_buffer = tuple(self._outlet_buffer), []
+        meter_readings, self._meter_buffer = tuple(self._meter_buffer), []
         sample = TankSample(
             timestamp=readings.timestamp,
             temperature=readings.temperature,
@@ -909,6 +1019,9 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
             hot_water_volume=readings.hot_water_volume,
             hot_water_flow=readings.hot_water_flow,
             meter_configured=self.meter_configured,
+            outlet_configured=self.outlet_configured,
+            outlet_readings=outlet_readings,
+            meter_readings=meter_readings,
             maintenance=maintenance.active,
         )
         tank = self.model.update(sample, self.tank_params_at(readings.timestamp))
@@ -1251,6 +1364,10 @@ class TankWiseCoordinator(DataUpdateCoordinator[TankWiseData]):
             _LOGGER.info("Input %s is usable again", entity_id)
 
 
+# Readings of the outlet probe or the meter kept between two samples (a
+# DS18B20 every 5 s gives 12 a minute; a long outage must not grow it).
+MAX_BUFFERED_READINGS = 400
+
 # Inputs whose devices are watched for maintenance (restarts, short outages).
 MAINTENANCE_INPUT_KEYS = (
     CONF_TEMPERATURE_SENSOR,
@@ -1264,6 +1381,8 @@ MAINTENANCE_INPUT_KEYS = (
     CONF_REGULATOR_UPTIME_SENSOR,
     CONF_HOT_WATER_VOLUME_SENSOR,
     CONF_HOT_WATER_FLOW_SENSOR,
+    CONF_OUTLET_TEMPERATURE_SENSOR,
+    CONF_MAINS_TEMPERATURE_SENSOR,
 )
 UPTIME_NAMES = frozenset({"uptime", "tiempo de actividad", "tiempo encendido"})
 SECONDS_PER = {"s": 1.0, "min": 60.0, "h": 3600.0, "d": 86400.0}

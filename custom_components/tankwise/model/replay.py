@@ -45,6 +45,8 @@ ROLE_REGULATOR_OUTPUT: Final = "regulator_output"
 # Hot water meter: cumulative litres and flow rate (L/min).
 ROLE_HOT_WATER_VOLUME: Final = "hot_water_volume"
 ROLE_HOT_WATER_FLOW: Final = "hot_water_flow"
+# Outlet probe on the hot water pipe: its readings between two samples.
+ROLE_OUTLET_TEMPERATURE: Final = "outlet_temperature"
 ROLES: Final = (
     ROLE_TEMPERATURE,
     ROLE_POWER,
@@ -60,6 +62,7 @@ ROLES: Final = (
     ROLE_REGULATOR_OUTPUT,
     ROLE_HOT_WATER_VOLUME,
     ROLE_HOT_WATER_FLOW,
+    ROLE_OUTLET_TEMPERATURE,
 )
 DEFAULT_STEP: Final = timedelta(minutes=1)
 
@@ -96,6 +99,7 @@ def replay(
     on_sample: Callable[[TankSample, TankState, Mapping[str, Value]], None]
     | None = None,
     active_modes: Iterable[str] = DEFAULT_REGULATOR_ACTIVE_MODES,
+    tank_since: datetime | None = None,
 ) -> ReplayResult:
     """Replay the state changes of each role (see ``ROLES``) through a model.
 
@@ -103,7 +107,10 @@ def replay(
     temperature changes with the date). ``on_sample`` receives each sample,
     the resulting state and the current value of every role. Sampling
     starts at the first temperature change (or ``start``) and ends at the
-    last change of any input (or ``end``).
+    last change of any input (or ``end``). ``tank_since``: the water heater
+    was replaced then; the model forgets the tank there (``reset_tank``) and
+    learns it only from the samples after, while the draws before it still
+    reach ``on_sample`` (the demand profile).
     """
     unknown = set(series) - set(ROLES)
     if unknown:
@@ -130,16 +137,32 @@ def replay(
         series.get(ROLE_MANUAL_MODE) or series.get(ROLE_REGULATOR)
     )
     meter_configured = bool(series.get(ROLE_HOT_WATER_VOLUME))
+    outlet_configured = bool(series.get(ROLE_OUTLET_TEMPERATURE))
     current: dict[str, Value] = dict.fromkeys(ROLES)
+    reset_pending = tank_since is not None and tank_since > first
 
     index = 0
     samples = 0
     moment = first
     state: TankState | None = None
     while moment <= last:
+        if reset_pending and tank_since is not None and moment >= tank_since:
+            model.reset_tank(tank_since)
+            reset_pending = False
+        outlet: list[tuple[datetime, float]] = []
+        meter: list[tuple[datetime, float]] = []
         while index < len(timeline) and timeline[index][0] <= moment:
             timestamp, role, value = timeline[index]
             current[role] = value
+            if (
+                role == ROLE_OUTLET_TEMPERATURE
+                and (number := _float(value)) is not None
+            ):
+                outlet.append((timestamp, number))
+            elif (
+                role == ROLE_HOT_WATER_VOLUME and (number := _float(value)) is not None
+            ):
+                meter.append((timestamp, number))
             if role == ROLE_POWER:
                 detector.update_power(timestamp, _float(value))
             elif role == ROLE_REGULATOR:
@@ -168,6 +191,9 @@ def replay(
             hot_water_volume=_float(current[ROLE_HOT_WATER_VOLUME]),
             hot_water_flow=_float(current[ROLE_HOT_WATER_FLOW]),
             meter_configured=meter_configured,
+            outlet_configured=outlet_configured,
+            outlet_readings=tuple(outlet),
+            meter_readings=tuple(meter),
         )
         state = model.update(sample, params_at(moment))
         if on_sample is not None:

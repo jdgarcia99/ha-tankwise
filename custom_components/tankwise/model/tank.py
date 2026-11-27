@@ -196,6 +196,19 @@ METER_DRAW_END = timedelta(minutes=3)
 METER_MAX_FLOW_L_PER_MIN = 30.0
 # The last probe reading may be this old to give the outlet temperature.
 METER_PROBE_MAX_AGE = timedelta(minutes=60)
+# Outlet probe (on the hot water pipe, e.g. a DS18B20 read every few seconds).
+# The water standing in the pipe leaves first: readings this soon after the
+# first litre of a draw do not tell the tank's outlet temperature.
+OUTLET_SETTLE = timedelta(seconds=15)
+# A reading this close to a counted litre is taken while the water flows
+# (after the flow stops the pipe cools: not the tank's water).
+OUTLET_FLOW_WINDOW = timedelta(seconds=15)
+# The published outlet temperature is the measured one while it is this fresh.
+OUTLET_FRESH = timedelta(minutes=2)
+# A real shortage: this many readings while flowing below the comfort
+# temperature by this margin (DS18B20: ±0.5 °C).
+OUTLET_SHORTAGE_MARGIN = 0.5
+OUTLET_SHORTAGE_READINGS = 3
 # Stratification: probe drop per litre against the drop of a mixed tank.
 STRATIFICATION_SETTLE = timedelta(minutes=10)  # after the last litre
 MIN_STRATIFICATION_DROP = 4.0  # °C expected in a mixed tank (MAX6675: ±1 °C)
@@ -254,6 +267,8 @@ REASON_NEVER_CALIBRATED = "never_calibrated"
 REASON_DATA_GAP = "data_gap"  # readings missing for more than LONG_GAP
 # Learning: not enough rest windows to trust the heat losses.
 REASON_FEW_LOSS_WINDOWS = "few_loss_windows"
+# Learning: a new water heater (``reset_tank``), not heated to its cut-off yet.
+REASON_TANK_RESET = "tank_reset"
 
 
 class HeaterState(StrEnum):
@@ -577,6 +592,12 @@ class TankSample:
     hot_water_volume: float | None = None
     hot_water_flow: float | None = None
     meter_configured: bool = False
+    # Outlet probe: its readings (time, °C) and the meter's (time, litres)
+    # since the previous sample, for the energy of each litre. Used only
+    # with the meter and ``outlet_configured``.
+    outlet_configured: bool = False
+    outlet_readings: tuple[tuple[datetime, float], ...] = ()
+    meter_readings: tuple[tuple[datetime, float], ...] = ()
     # A maintenance window is open (devices updated or restarting): the model
     # keeps its energy balance but learns nothing, and the draws it detects
     # meanwhile are neither shortages nor part of the demand profile.
@@ -757,6 +778,16 @@ class _MeterDraw:
     heating: bool = False
     estimated: bool = False  # litres counted across a gap of the meter
     energy_at_comfort: float | None = None
+    # Outlet probe: first litre, last settled reading while flowing, litres
+    # before it fell below the shower temperature, readings below comfort,
+    # and the model when the draw started (for k_use).
+    flow_start: datetime | None = None
+    settled_outlet: float | None = None
+    outlet_min: float | None = None
+    liters_at_shower: float | None = None
+    below_comfort: int = 0
+    start_equivalent: float | None = None
+    start_floor: float | None = None
 
 
 @dataclass(slots=True)
@@ -893,6 +924,12 @@ class TankModel:
         # the top (the last full charge, less the losses; draws do not lower
         # it while hot water remains).
         self._hot: float | None = None
+        # When the water heater was replaced (``reset_tank``): a history
+        # import learns the tank only from then on.
+        self._tank_since: datetime | None = None
+        # k_use measured by an outlet probe (useful litres until the outlet
+        # falls below the shower temperature): preferred to the old samples.
+        self._outlet_usable_samples: list[float] = []
 
         # Runtime only (not persisted)
         self._filter = ProbeFilter(tau_s=FILTER_TAU_S)
@@ -913,6 +950,8 @@ class TankModel:
         self._meter_draw: _MeterDraw | None = None
         self._strat_probe: _StratificationProbe | None = None
         self._last_probe_time: datetime | None = None
+        # Last outlet reading taken while the water flowed (time, °C).
+        self._outlet_measured: tuple[datetime, float] | None = None
 
     # ------------------------------------------------------------------
     # Public API
@@ -953,12 +992,25 @@ class TankModel:
 
     @property
     def usable_factor(self) -> float:
-        """Return the learned share of the useful litres really available."""
-        if not self._usable_samples:
+        """Return the learned share of the useful litres really available.
+
+        Measured at the outlet when there are such samples; otherwise the
+        ones learned from the probe's shortages.
+        """
+        samples = self._outlet_usable_samples or self._usable_samples
+        if not samples:
             return DEFAULT_USABLE_FACTOR
-        return _clamp(
-            median(self._usable_samples), MIN_USABLE_FACTOR, MAX_USABLE_FACTOR
-        )
+        return _clamp(median(samples), MIN_USABLE_FACTOR, MAX_USABLE_FACTOR)
+
+    @property
+    def usable_samples(self) -> int:
+        """Samples behind k_use (the outlet ones when there are any)."""
+        return len(self._outlet_usable_samples or self._usable_samples)
+
+    @property
+    def outlet_usable_samples(self) -> list[float]:
+        """k_use samples measured at the outlet, oldest first."""
+        return list(self._outlet_usable_samples)
 
     def usable_factor_for(self, params: TankParams) -> float:
         """Return k_use: learned, or the default while none is learned.
@@ -967,14 +1019,15 @@ class TankModel:
         ``params.usable_factor_default`` with the probe in the sheath, which
         cannot teach it.
         """
-        if self._usable_samples or params.probe_at_top:
+        if self._outlet_usable_samples or self._usable_samples or params.probe_at_top:
             return self.usable_factor
         return params.usable_factor_default
 
     def reset_usable_factor(self) -> int:
         """Forget the learned k_use samples; return how many there were."""
-        count = len(self._usable_samples)
+        count = len(self._usable_samples) + len(self._outlet_usable_samples)
         self._usable_samples.clear()
+        self._outlet_usable_samples.clear()
         self._pending_usable = []
         return count
 
@@ -1041,6 +1094,8 @@ class TankModel:
 
     def status(self) -> ModelStatus:
         """Return the confidence in the current state."""
+        if self._uncertain and self._uncertain_reason == REASON_TANK_RESET:
+            return ModelStatus.LEARNING  # a new water heater: learning it
         if self._uncertain:
             return ModelStatus.UNCERTAIN
         if self._loss_windows < MIN_LOSS_WINDOWS:
@@ -1153,12 +1208,50 @@ class TankModel:
         self._stratification_offset = 0.0
         self._episode = None
 
+    @property
+    def tank_since(self) -> datetime | None:
+        """When the water heater was replaced (None: never)."""
+        return self._tank_since
+
+    def reset_tank(self, now: datetime) -> None:
+        """A new water heater: forget everything that depends on the tank.
+
+        Heater power, heat losses, capacity and usable factors (old and
+        outlet ones), cut-offs (also the discarded ones), stratification and
+        the hot layer. The stored energy is taken again from the probe at the
+        next sample, and the model stays learning until a heating reaches the
+        new thermostat cut-off. The draws are kept: they are the household's
+        usage (the demand profile learns from them), not the tank's.
+        """
+        self.reset_losses()
+        self._capacity_samples.clear()
+        self._usable_samples.clear()
+        self._outlet_usable_samples.clear()
+        self._pending_usable = []
+        self._heater_power_w = None
+        self._heater_power_samples = 0
+        self._cutoffs.clear()
+        self._discarded_cutoffs.clear()
+        self._stratification.clear()
+        self._stratification_offset = 0.0
+        self._hot = None
+        self._equivalent = None
+        self._calibration_count = 0
+        self._last_calibration = None
+        self._reconciliations.clear()
+        self._meter_draw = None
+        self._strat_probe = None
+        self._outlet_measured = None
+        self._tank_since = now
+        self._reset_runtime(now)
+
     def learned_samples(self) -> int:
         """Return how much the model has learned (0: nothing at all)."""
         return (
             self._loss_windows
             + len(self._capacity_samples)
             + len(self._usable_samples)
+            + len(self._outlet_usable_samples)
             + self._heater_power_samples
             + len(self._cutoff_samples)
             + len(self._consumptions)
@@ -1215,6 +1308,10 @@ class TankModel:
             math.inf,
         ):
             self._usable_samples = list(other._usable_samples)
+        if len(other._outlet_usable_samples) > len(self._outlet_usable_samples):
+            self._outlet_usable_samples = list(other._outlet_usable_samples)
+        if self._tank_since is None:
+            self._tank_since = other._tank_since
         if keep_running(
             self._heater_power_samples,
             other._heater_power_samples,
@@ -1280,6 +1377,8 @@ class TankModel:
             "stratification": [list(item) for item in self._stratification],
             "stratification_offset": self._stratification_offset,
             "hot_temperature": self._hot,
+            "tank_since": _iso(self._tank_since),
+            "outlet_usable_samples": list(self._outlet_usable_samples),
         }
 
     @classmethod
@@ -1357,6 +1456,10 @@ class TankModel:
             model._stratification_offset = float(data.get("stratification_offset", 0.0))
             hot = data.get("hot_temperature")
             model._hot = None if hot is None else float(hot)
+            model._tank_since = _from_iso(data.get("tank_since"))
+            model._outlet_usable_samples = [
+                float(value) for value in data.get("outlet_usable_samples", [])
+            ][-MAX_USABLE_SAMPLES:]
         except (KeyError, TypeError, ValueError) as err:
             raise ValueError(f"invalid tank model data: {err}") from err
         return model
@@ -1370,12 +1473,13 @@ class TankModel:
         self._filter.reset()
         self._probe = self._filter.update(sample.timestamp, sample.temperature)
         self._equivalent = self._clamp_temperature(self._probe, params)
-        self._set_uncertain(
-            REASON_NEVER_CALIBRATED
-            if self._calibration_count == 0
-            else REASON_DATA_GAP,
-            sample.timestamp,
-        )
+        if self._calibration_count > 0:
+            reason = REASON_DATA_GAP
+        elif self._tank_since is not None:
+            reason = REASON_TANK_RESET
+        else:
+            reason = REASON_NEVER_CALIBRATED
+        self._set_uncertain(reason, sample.timestamp)
         self._last_valid_time = sample.timestamp
         self._last_probe_time = sample.timestamp
         self._last_energy = sample.energy
@@ -2125,10 +2229,13 @@ class TankModel:
             if draw is None:
                 if outlet is None:
                     return  # nothing known about the tank yet
-                draw = self._open_meter_draw(since, now, outlet, heating)
+                draw = self._open_meter_draw(since, now, outlet, heating, params)
             if elapsed > METER_DRAW_END:
                 draw.estimated = True  # litres counted across a gap
-            self._add_meter_litres(draw, delta, params)
+            if sample.outlet_configured:
+                self._add_measured_litres(draw, sample, previous, since, delta, params)
+            else:
+                self._add_meter_litres(draw, delta, params)
             draw.last_flow = now
         if draw is None:
             return
@@ -2145,9 +2252,21 @@ class TankModel:
             self._close_meter_draw(now, params)
 
     def _open_meter_draw(
-        self, since: datetime, now: datetime, outlet: float, heating: bool
+        self,
+        since: datetime,
+        now: datetime,
+        outlet: float,
+        heating: bool,
+        params: TankParams,
     ) -> _MeterDraw:
-        draw = _MeterDraw(start=since, last_flow=now, outlet=outlet, heating=heating)
+        draw = _MeterDraw(
+            start=since,
+            last_flow=now,
+            outlet=outlet,
+            heating=heating,
+            start_equivalent=self._equivalent,
+            start_floor=self.useful_floor_temperature(params),
+        )
         self._meter_draw = draw
         if self._episode is not None:
             self._episode.draw_seen = True
@@ -2164,14 +2283,94 @@ class TankModel:
             )
         return draw
 
+    def _add_measured_litres(
+        self,
+        draw: _MeterDraw,
+        sample: TankSample,
+        previous: float,
+        since: datetime,
+        delta: float,
+        params: TankParams,
+    ) -> None:
+        """Take the litres out of the model at the measured outlet temperature.
+
+        Litre by litre: each increment of the meter at the temperature read
+        at the outlet then (the last settled reading while flowing, or the
+        next one). Readings in the first ``OUTLET_SETTLE`` of the draw are the
+        water standing in the pipe; without a settled reading yet, the model's
+        outlet temperature is used. Without the meter's own readings the
+        litres of the sample go at its end, and every reading in between is
+        taken as flowing.
+        """
+        increments: list[tuple[datetime, float]] = []
+        volume = previous
+        for moment, value in sorted(sample.meter_readings):
+            if since < moment <= sample.timestamp and value > volume:
+                increments.append((moment, value - volume))
+                volume = value
+        exact = bool(increments)
+        rest = delta - sum(liters for _, liters in increments)
+        if rest > 1e-9:
+            increments.append((sample.timestamp, rest))
+        if draw.flow_start is None:
+            draw.flow_start = increments[0][0] if exact else since
+        settle = draw.flow_start + OUTLET_SETTLE
+        times = [moment for moment, _ in increments]
+
+        def flowing(moment: datetime) -> bool:
+            if not exact:
+                return since < moment <= sample.timestamp
+            return any(abs(moment - item) <= OUTLET_FLOW_WINDOW for item in times)
+
+        readings = [
+            (moment, value)
+            for moment, value in sorted(sample.outlet_readings)
+            if moment >= settle and flowing(moment)
+        ]
+        comfort = params.comfort_min_temperature - OUTLET_SHORTAGE_MARGIN
+        for _moment, value in readings:
+            draw.below_comfort += value < comfort
+            draw.outlet_min = (
+                value if draw.outlet_min is None else min(draw.outlet_min, value)
+            )
+        for moment, liters in increments:
+            before = [value for when, value in readings if when <= moment]
+            after = [value for when, value in readings if when > moment]
+            if before:
+                outlet = before[-1]
+            elif draw.settled_outlet is not None:
+                outlet = draw.settled_outlet
+            elif after:
+                outlet = after[0]
+            else:
+                outlet = None
+            if outlet is not None:
+                draw.settled_outlet = outlet
+                if draw.liters_at_shower is None and outlet < params.shower_temperature:
+                    draw.liters_at_shower = draw.liters
+            temperature = draw.outlet if outlet is None else outlet
+            self._take_litres(draw, liters, temperature, params)
+        if readings:
+            moment, value = readings[-1]
+            self._outlet_measured = (moment, value)
+            # The water leaving is the hot layer: measured, not assumed from
+            # the last full charge.
+            self._hot = self._clamp_temperature(value, params)
+
     def _add_meter_litres(
         self, draw: _MeterDraw, liters: float, params: TankParams
     ) -> None:
         """Take the energy of some litres out of the model."""
+        self._take_litres(draw, liters, draw.outlet, params)
+
+    def _take_litres(
+        self, draw: _MeterDraw, liters: float, outlet: float, params: TankParams
+    ) -> None:
+        """Take the energy of some litres leaving at ``outlet`` out of the model."""
         energy = (
             liters
             * WATER_HEAT_CAPACITY_KWH_PER_L_K
-            * max(0.0, draw.outlet - params.mains_temperature)
+            * max(0.0, outlet - params.mains_temperature)
         )
         draw.liters += liters
         draw.energy_kwh += energy
@@ -2187,11 +2386,44 @@ class TankModel:
         if self._strat_probe is not None:
             self._strat_probe.expected += drop
 
+    def _learn_outlet_usable(self, draw: _MeterDraw, params: TankParams) -> None:
+        """k_use from a draw whose outlet fell below the shower temperature.
+
+        The useful litres really drawn (until the outlet fell below the
+        shower temperature) over the useful litres the model held when the
+        draw started, with k_use = 1. Not while heating, across a gap of the
+        meter or in a maintenance window.
+        """
+        if (
+            draw.liters_at_shower is None
+            or draw.heating
+            or draw.estimated
+            or self._maintenance
+            or draw.start_equivalent is None
+            or draw.start_floor is None
+        ):
+            return
+        span = params.shower_temperature - params.mains_temperature
+        if span <= 0:
+            return
+        predicted = params.volume_l * (draw.start_equivalent - draw.start_floor) / span
+        if predicted < MIN_USABLE_PREDICTED_L:
+            return
+        self._outlet_usable_samples.append(
+            _clamp(
+                draw.liters_at_shower / predicted,
+                MIN_USABLE_FACTOR,
+                MAX_USABLE_FACTOR,
+            )
+        )
+        del self._outlet_usable_samples[:-MAX_USABLE_SAMPLES]
+
     def _close_meter_draw(self, now: datetime, params: TankParams) -> None:
         draw = self._meter_draw
         assert draw is not None
         self._meter_draw = None
-        minimum = draw.min_probe
+        measured = draw.flow_start is not None  # with the outlet probe
+        minimum = draw.outlet_min if measured else draw.min_probe
         if minimum is None:
             minimum = (
                 self._equivalent + self._stratification_offset
@@ -2205,13 +2437,21 @@ class TankModel:
             start_temperature=draw.outlet,
             min_temperature=minimum,
             while_heating=draw.heating,
-            shortage=self._is_shortage(minimum, params),
+            # With the outlet probe a shortage is real: the water left below
+            # the comfort temperature while it flowed.
+            shortage=(
+                draw.below_comfort >= OUTLET_SHORTAGE_READINGS
+                if measured
+                else self._is_shortage(minimum, params)
+            ),
             estimated=draw.estimated,
             liters=draw.liters,
         )
         self._consumptions.append(event)
         self._last_consumption_end = now
-        if event.shortage:
+        if measured:
+            self._learn_outlet_usable(draw, params)
+        elif event.shortage:
             self._observe_shortage(
                 event.start,
                 draw.energy_at_comfort
@@ -2534,7 +2774,15 @@ class TankModel:
             share = self.usable_factor_for(params) if stratified else 1.0
             useful = max(0.0, share * capacity * (equivalent - floor))
             full_useful = share * capacity * (cutoff - floor)
-            if params.probe_at_top:
+            measured = self._outlet_measured
+            if (
+                measured is not None
+                and self._meter_draw is not None
+                and now - measured[0] <= OUTLET_FRESH
+            ):
+                # Drawing, with an outlet probe: what it measures.
+                outlet = measured[1]
+            elif params.probe_at_top:
                 # The probe sees the hot layer; the model is the mean.
                 outlet = self._clamp_temperature(
                     equivalent + self._stratification_offset, params
@@ -2579,7 +2827,7 @@ class TankModel:
             capacity_factor=self.capacity_factor(params),
             capacity_samples=len(self._capacity_samples),
             usable_factor=self.usable_factor_for(params),
-            usable_samples=len(self._usable_samples),
+            usable_samples=self.usable_samples,
             heater_power_w=self.heater_power(params),
             calibration_count=self._calibration_count,
             last_calibration=self._last_calibration,

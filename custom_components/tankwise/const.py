@@ -64,6 +64,12 @@ CONF_REGULATOR_RESTART_REASON_SENSOR: Final = "regulator_restart_reason_sensor"
 # optionally, the flow rate. With it, draws are measured in litres.
 CONF_HOT_WATER_VOLUME_SENSOR: Final = "hot_water_volume_sensor"
 CONF_HOT_WATER_FLOW_SENSOR: Final = "hot_water_flow_sensor"
+# Temperature probe on the hot water pipe at the outlet of the tank (with the
+# meter: the energy of each litre, k_use and real shortages).
+CONF_OUTLET_TEMPERATURE_SENSOR: Final = "outlet_temperature_sensor"
+# Cold water temperature sensor (cistern or inlet pipe): replaces the table.
+CONF_MAINS_TEMPERATURE_SENSOR: Final = "mains_temperature_sensor"
+CONF_MAINS_SENSOR_PLACEMENT: Final = "mains_sensor_placement"
 # Maintenance window: while this entity is on (a firmware update script, a
 # helper...) and for the margin after, readings are not learned from.
 CONF_MAINTENANCE_ENTITY: Final = "maintenance_entity"
@@ -89,6 +95,9 @@ OPTIONAL_INPUT_KEYS: Final = (
     CONF_REGULATOR_RESTART_REASON_SENSOR,
     CONF_HOT_WATER_VOLUME_SENSOR,
     CONF_HOT_WATER_FLOW_SENSOR,
+    CONF_OUTLET_TEMPERATURE_SENSOR,
+    CONF_MAINS_TEMPERATURE_SENSOR,
+    CONF_MAINS_SENSOR_PLACEMENT,
     CONF_MAINTENANCE_ENTITY,
     CONF_MAINTENANCE_MARGIN,
 )
@@ -226,6 +235,7 @@ DEFAULT_MODE: Final = "shadow"
 
 MAINS_SOURCE_TABLE: Final = "table"
 MAINS_SOURCE_MANUAL: Final = "manual"
+MAINS_SOURCE_SENSOR: Final = "sensor"
 
 # ---------------------------------------------------------------------------
 # Storage, bootstrap and repairs
@@ -261,7 +271,13 @@ ATTR_PART: Final = "part"
 PART_LOSSES: Final = "losses"
 PART_DEMAND: Final = "demand"
 PART_ALL: Final = "all"
-RESET_PARTS: Final = (PART_LOSSES, PART_DEMAND, PART_ALL)
+# A new water heater: everything that depends on the tank, not the usage.
+PART_TANK: Final = "tank"
+RESET_PARTS: Final = (PART_LOSSES, PART_DEMAND, PART_TANK, PART_ALL)
+# Optional data of the new water heater (reset_learning with part tank).
+ATTR_VOLUME: Final = "volume"
+ATTR_RATED_POWER: Final = "rated_power"
+ATTR_CUTOFF_TEMPERATURE: Final = "cutoff_temperature"
 
 SERVICE_REPLAN: Final = "replan"
 SERVICE_GET_PLAN: Final = "get_plan"

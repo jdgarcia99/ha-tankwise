@@ -76,6 +76,27 @@ and no entity ID is fixed in the code.
   `total_increasing`, `total` or no state class, as pulse counters publish
   it) and, optionally, its flow rate. With it the draws are measured in
   litres instead of estimated from the probe (see below).
+- Hot water outlet temperature (with the meter): a probe on the hot water
+  pipe at the tank outlet, e.g. a DS18B20 read every 5 s. Every reading is
+  used, not only the minute samples:
+  - the energy of each litre is `litres · 0.001163 · (T_outlet − T_mains)`,
+    at the reading of that moment; the first 15 s of a draw (the water
+    standing in the pipe) are skipped;
+  - `k_use` is learned from the litres drawn until the outlet falls below the
+    shower temperature, against the useful litres the model held when the
+    draw started (samples kept apart from the older ones, and preferred);
+  - a shortage is real: the outlet below the comfort temperature (by 0.5 °C,
+    three readings) while the water flows; the cooling pipe after a draw
+    does not count;
+  - the outlet temperature published is the measured one during draws, and
+    the hot layer of the model takes the measured value instead of assuming
+    the last full charge.
+- Cold water temperature: a sensor in the cistern or on the inlet pipe. It
+  replaces the regional table (the mains water number, set by hand, still
+  wins). In the cistern its readings are averaged slowly (1 h); on the pipe
+  only the readings taken while hot water is drawn count (the coldest one
+  after the first minute of each draw), and a very slow mean (24 h) of every
+  reading until the first draw.
 
 **Options**
 
@@ -101,7 +122,7 @@ water region; everything TankWise learns by itself is folded under
 |--------|---------|
 | Shower temperature | 40 °C |
 | Minimum comfort temperature | 38 °C |
-| Mains water temperature | 0 = automatic (monthly table of the region, interpolated day by day) |
+| Mains water temperature | 0 = automatic (the cold water sensor if there is one, otherwise the monthly table of the region, interpolated day by day) |
 
 Entities that come from a 0.2 installation are migrated automatically and
 keep what was learned. A repair issue asks you to complete the new required
@@ -396,10 +417,26 @@ hour by itself (e.g. on sunny days), nothing extra is heated.
 | `tankwise.get_plan` | Returns the whole heating plan, slot by slot (response only). Optional `config_entry_id`. |
 | `tankwise.boost` / `tankwise.cancel_boost` | Starts or cancels a boost (see Boost). |
 | `tankwise.reimport_history` | Imports the recorder history of the last days again and merges it with what was learned (also the "Import history again" button). Optional `config_entry_id`. |
-| `tankwise.reset_learning` | Forgets the heat losses (`part: losses`), the usage profile (`part: demand`) or everything (`part: all`, default). Optional `config_entry_id`. |
+| `tankwise.reset_learning` | Forgets the heat losses (`part: losses`), the usage profile (`part: demand`), the water heater (`part: tank`) or everything (`part: all`, default). Optional `config_entry_id`. See *Replacing the water heater*. |
 | `tankwise.discard_last_cutoff_sample` | Forgets the last learned thermostat cut-off temperature and computes the cut-off again. Optional `config_entry_id`; returns the sample removed and those left. |
 | `tankwise.discard_cutoff_sample` | Same for one sample, given by `value` (°C, the closest within 0.5 °C) or `index` (0 = oldest, −1 = newest). The samples are the `samples` attribute of the cut-off temperature sensor. |
 | `tankwise.reset_usable_factor` | Forgets the learned useful litres factor (`k_use`). Until it is learned again: the *Default useful litres factor* parameter (0.85) with the probe in the thermostat's sheath, 1.0 with the probe at the top. Returns the samples removed and the factor in use. |
+
+### Replacing the water heater
+
+Call `tankwise.reset_learning` with `part: tank` right after installing the
+new one, with its `volume` (L), `rated_power` (W) and initial
+`cutoff_temperature` (°C) if they change (they replace the ones in the
+options; power and cut-off are then learned). It forgets everything that
+depends on the tank: heater power, heat losses, capacity and usable factors,
+cut-offs (also the discarded ones), stratification and the hot layer. It
+keeps the usage profile (litres and kWh), the past draws, the solar model,
+the compensation cap, the prices and the appointments. The stored energy is
+taken again from the probe, and the model status is `learning` (reason
+`tank_reset`) until a heating reaches the new thermostat cut-off. A later
+history import learns the tank only from the replacement on, and the usage
+profile from the whole history. Open a maintenance window while you swap it,
+so the hours without the tank are not learned.
 
 ## How the tank model works
 

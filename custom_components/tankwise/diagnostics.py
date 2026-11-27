@@ -189,6 +189,11 @@ async def async_get_config_entry_diagnostics(
                 for start, ratio in coordinator.model.stratification_samples
             ],
             "mains_source": data.mains_source,
+            "mains_sensor": coordinator.mains_sensor.as_dict(),
+            "tank_since": coordinator.model.tank_since.isoformat()
+            if coordinator.model.tank_since
+            else None,
+            "outlet_usable_samples": coordinator.model.outlet_usable_samples,
         },
         "bootstrap": coordinator.bootstrap.as_dict(),
         "model": model,

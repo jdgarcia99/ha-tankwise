@@ -24,7 +24,10 @@ from custom_components.tankwise.const import (
     CONF_APPOINTMENTS,
     CONF_ENERGY_SENSOR,
     CONF_HOT_WATER_VOLUME_SENSOR,
+    CONF_MAINS_SENSOR_PLACEMENT,
+    CONF_MAINS_TEMPERATURE_SENSOR,
     CONF_OCCUPANCY_ENTITY,
+    CONF_OUTLET_TEMPERATURE_SENSOR,
     CONF_WORKDAY_ENTITY,
     DEFAULT_PARAMETERS,
     DOMAIN,
@@ -306,7 +309,9 @@ async def test_reset_learning_service(
 
     with patch.object(coordinator, "async_reset_learning", AsyncMock()) as reset:
         await hass.services.async_call(DOMAIN, "reset_learning", {}, blocking=True)
-    reset.assert_awaited_once_with("all")
+    reset.assert_awaited_once_with(
+        "all", volume=None, rated_power=None, cutoff_temperature=None
+    )
 
 
 async def test_demand_profile_is_persisted(
@@ -503,3 +508,124 @@ async def test_hot_water_meter_measures_the_draws(
     assert suggested.attributes["hot_liters_p90"] is None
     assert suggested.attributes["shower_liters_p90"] is None
     assert suggested.attributes["source"] == "probe"
+
+
+async def test_reset_learning_of_a_new_water_heater(
+    hass: HomeAssistant, mock_entry: MockConfigEntry, freezer: FrozenDateTimeFactory
+) -> None:
+    """Part tank: the tank is forgotten, the usage kept, the new data stored."""
+    freezer.move_to(NOW)
+    await _setup(hass, mock_entry, history=5)
+    coordinator = mock_entry.runtime_data
+    model = coordinator.model
+    model._ua = 2.0
+    model._loss_windows = 5
+    model._cutoff_samples = [66.0, 67.0, 68.0]
+    model._heater_power_w = 1450.0
+
+    await hass.services.async_call(
+        DOMAIN,
+        "reset_learning",
+        {"part": "tank", "volume": 80, "rated_power": 1600, "cutoff_temperature": 70},
+        blocking=True,
+    )
+    assert model.ua == 1.0
+    assert model.as_dict()["cutoff_samples"] == []
+    assert model.as_dict()["heater_power_w"] is None
+    assert model.tank_since == dt_util.utcnow()
+    assert len(coordinator.demand.observations) == 5  # the usage is kept
+    assert mock_entry.options["volume"] == 80
+    assert mock_entry.options["rated_power"] == 1600
+    assert mock_entry.options["cutoff_temperature"] == 70
+    assert coordinator.tank_params.volume_l == 80
+    assert coordinator.planner.plan_reason == "tank_reset"
+
+    freezer.tick(UPDATE_INTERVAL)
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+    status = hass.states.get("sensor.tankwise_model_status")
+    assert status.state == "learning"
+    assert status.attributes["reason"] == "tank_reset"
+
+
+async def test_outlet_probe_measures_each_litre(
+    hass: HomeAssistant,
+    mock_entry: MockConfigEntry,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """Live: the outlet readings every 5 s give the energy of each litre."""
+    freezer.move_to(NOW)
+    outlet = "sensor.hot_water_outlet"
+    unit = {"unit_of_measurement": "°C", "device_class": "temperature"}
+    hass.states.async_set(METER, "1000", {"unit_of_measurement": "L"})
+    hass.states.async_set(outlet, "22.0", unit)
+    await _setup(
+        hass,
+        mock_entry,
+        history=14,
+        options={
+            CONF_HOT_WATER_VOLUME_SENSOR: METER,
+            CONF_OUTLET_TEMPERATURE_SENSOR: outlet,
+        },
+    )
+    coordinator = mock_entry.runtime_data
+    liters = 1000.0
+    for minute in range(10):
+        for second in range(5, 61, 5):
+            freezer.tick(timedelta(seconds=5))
+            if minute < 5:
+                if second % 10 == 0:
+                    liters += 1.0  # 6 L/min
+                    hass.states.async_set(
+                        METER, f"{liters}", {"unit_of_measurement": "L"}
+                    )
+                # 15 s of water standing in the pipe, then 61 °C.
+                value = "25.0" if minute == 0 and second < 25 else "61.0"
+            else:
+                value = "22.0"
+            hass.states.async_set(outlet, value, unit)
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+
+    [draw] = coordinator.model.consumptions
+    assert draw.liters == 30
+    mains = coordinator.tank_params.mains_temperature
+    # At the outlet's 61 °C, not at the probe's 60 °C nor the pipe's 25 °C.
+    assert draw.energy_kwh == pytest.approx(30 * 0.001163 * (61.0 - mains), rel=1e-6)
+
+
+async def test_cold_water_sensor_replaces_the_table(
+    hass: HomeAssistant,
+    mock_entry: MockConfigEntry,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    freezer.move_to(NOW)
+    cold = "sensor.cistern_temperature"
+    hass.states.async_set(
+        cold, "16.5", {"unit_of_measurement": "°C", "device_class": "temperature"}
+    )
+    await _setup(
+        hass,
+        mock_entry,
+        options={
+            CONF_MAINS_TEMPERATURE_SENSOR: cold,
+            CONF_MAINS_SENSOR_PLACEMENT: "cistern",
+        },
+    )
+    coordinator = mock_entry.runtime_data
+    freezer.tick(UPDATE_INTERVAL)
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+    assert coordinator.tank_params.mains_temperature == pytest.approx(16.5)
+    state = hass.states.get("sensor.tankwise_mains_water_temperature")
+    assert float(state.state) == pytest.approx(16.5)
+    assert state.attributes["source"] == "sensor"
+    # Unavailable: the last value stays.
+    hass.states.async_set(cold, "unavailable")
+    freezer.tick(UPDATE_INTERVAL)
+    await coordinator.async_refresh()
+    assert coordinator.tank_params.mains_temperature == pytest.approx(16.5)
+    # Kept across a restart.
+    await hass.config_entries.async_reload(mock_entry.entry_id)
+    await hass.async_block_till_done()
+    assert mock_entry.runtime_data.mains_sensor.temperature == pytest.approx(16.5)
