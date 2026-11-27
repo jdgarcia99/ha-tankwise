@@ -256,7 +256,10 @@ mode (full power from the grid) or automatic (surplus only):
 1. **Boost** (any mode except off): heat now until the target, the cut-off,
    the maximum duration, a safety or a cancellation.
 2. **Plan**: heat during the planned minutes of the current slot; switch the
-   regulator output off when the plan sells the surplus.
+   regulator output off when the plan sells the surplus, unless the spare
+   surplus option is on and the tank is more than 5 °C below the cut-off
+   (then the output stays on and the power is requested with the `spare`
+   priority).
 3. **Degraded rule** without a plan: before each appointment heat to its
    required temperature, starting as early as the learned power requires;
    fixed windows only without appointments.

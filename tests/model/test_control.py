@@ -379,3 +379,47 @@ def test_output_given_back_in_shadow_mode_and_untouched_without_switch() -> None
         _orders(controller, _input(3, active=False, sell_surplus=True, output=True))
         == []
     )
+
+
+def test_spare_surplus_keeps_the_output_on() -> None:
+    """The plan sells, but the tank is not full: the output stays on."""
+    controller = Controller()
+    assert (
+        _orders(
+            controller,
+            _input(0, sell_surplus=True, spare_surplus=True, output=True),
+        )
+        == []
+    )
+    assert not controller.owns_output_off
+    # Without the plan selling, the flag alone changes nothing.
+    assert _orders(controller, _input(1, spare_surplus=True, output=True)) == []
+
+
+def test_spare_surplus_switches_back_on_an_output_sold() -> None:
+    """The tank cooled during a sale: the output is switched on again."""
+    controller = Controller()
+    assert _orders(controller, _input(0, sell_surplus=True, output=True)) == [
+        Order(Action.OUTPUT_OFF, Reason.SELL)
+    ]
+    assert _orders(
+        controller, _input(1, sell_surplus=True, spare_surplus=True, output=False)
+    ) == [Order(Action.OUTPUT_ON, Reason.SPARE)]
+    assert not controller.owns_output_off
+    # Full again: back to selling.
+    assert _orders(controller, _input(2, sell_surplus=True, output=True)) == [
+        Order(Action.OUTPUT_OFF, Reason.SELL)
+    ]
+
+
+def test_spare_surplus_never_acts_in_shadow_mode() -> None:
+    controller = Controller()
+    assert (
+        _orders(
+            controller,
+            _input(
+                0, active=False, sell_surplus=True, spare_surplus=True, output=False
+            ),
+        )
+        == []
+    )

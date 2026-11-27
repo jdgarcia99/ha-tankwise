@@ -623,6 +623,7 @@
             "state": {
               "high": "High (comfort needs it)",
               "low": "Low (fills the tank)",
+              "spare": "Spare (only the export left over)",
               "none": "None"
             }
           }
@@ -686,6 +687,9 @@
       },
       "compensation_cap": {
         "name": "Surplus compensation cap reached"
+      },
+      "spare_surplus": {
+        "name": "Take the spare surplus"
       },
       "anti_legionella": {
         "name": "Anti-legionella cycle"

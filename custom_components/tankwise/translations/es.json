@@ -623,6 +623,7 @@
             "state": {
               "high": "Alta (la necesita el confort)",
               "low": "Baja (llena el depósito)",
+              "spare": "Sobrante (solo lo que se exporta)",
               "none": "Ninguna"
             }
           }
@@ -686,6 +687,9 @@
       },
       "compensation_cap": {
         "name": "Tope de compensación de excedentes alcanzado"
+      },
+      "spare_surplus": {
+        "name": "Aprovechar el excedente sobrante"
       },
       "anti_legionella": {
         "name": "Ciclo antilegionela"

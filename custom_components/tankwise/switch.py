@@ -25,6 +25,7 @@ async def async_setup_entry(
     async_add_entities(
         [
             CompensationCapSwitch(coordinator, "compensation_cap"),
+            SpareSurplusSwitch(coordinator, "spare_surplus"),
             AntiLegionellaSwitch(coordinator, "anti_legionella"),
             *(
                 AppointmentSwitch(coordinator, appointment, "enabled")
@@ -75,6 +76,27 @@ class CompensationCapSwitch(TankWiseEntity, SwitchEntity):
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Mark the cap as not reached."""
         await self.coordinator.async_set_compensation_cap(False)
+
+
+class SpareSurplusSwitch(TankWiseEntity, SwitchEntity):
+    """While the plan sells, a tank that is not full takes the spare export."""
+
+    _platform = "switch"
+    _attr_translation_key = "spare_surplus"
+    _attr_entity_category = EntityCategory.CONFIG
+
+    @property
+    def is_on(self) -> bool:
+        """Return True when the tank takes the spare surplus."""
+        return self.coordinator.planner.spare_surplus
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Take the spare surplus."""
+        await self.coordinator.async_set_spare_surplus(True)
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Let the surplus go to the grid while the plan sells."""
+        await self.coordinator.async_set_spare_surplus(False)
 
 
 class AntiLegionellaSwitch(TankWiseEntity, SwitchEntity):

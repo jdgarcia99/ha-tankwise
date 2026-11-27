@@ -55,6 +55,8 @@ SLOT = timedelta(minutes=15)
 SOLAR_NEEDED_KWH = 0.1
 PRIORITY_HIGH = "high"
 PRIORITY_LOW = "low"
+# The plan does not count on it (it would sell it): only the export left over.
+PRIORITY_SPARE = "spare"
 PRIORITY_NONE = "none"
 
 
@@ -75,6 +77,8 @@ class Planner:
         self.hass: HomeAssistant = coordinator.hass
         self.mode = Mode(DEFAULT_MODE)
         self.compensation_cap = False
+        # Take the export left over when the plan sells and the tank is not full.
+        self.spare_surplus = False
         self.plan: Plan | None = None
         self.plan_computed: datetime | None = None
         self.plan_reason: str | None = None
@@ -107,6 +111,7 @@ class Planner:
         except ValueError:
             self.mode = Mode(DEFAULT_MODE)
         self.compensation_cap = bool(data.get("compensation_cap", False))
+        self.spare_surplus = bool(data.get("spare_surplus", False))
         if ledger := data.get("ledger"):
             try:
                 self.ledger = Ledger.from_dict(ledger, self.ledger.tz)
@@ -129,6 +134,7 @@ class Planner:
         return {
             "mode": self.mode.value,
             "compensation_cap": self.compensation_cap,
+            "spare_surplus": self.spare_surplus,
             "ledger": self.ledger.as_dict(),
             "solar": self.solar.as_dict(),
             "anti_legionella": self.anti_legionella,
@@ -377,15 +383,21 @@ class Planner:
         )
         return grid_without > grid + SOLAR_NEEDED_KWH
 
-    def power_request(self, now: datetime, tank: TankState) -> tuple[float, str]:
-        """Return the surplus power TankWise wants now (W) and its priority."""
+    def power_request(
+        self, now: datetime, tank: TankState, spare: bool = False
+    ) -> tuple[float, str]:
+        """Return the surplus power TankWise wants now (W) and its priority.
+
+        ``spare``: the plan sells the surplus but the tank takes the export
+        left over (the controller decided it): the whole element, after every
+        other load.
+        """
         slot = self.current_slot(now)
-        if (
-            self.mode is Mode.OFF
-            or slot is None
-            or not slot.solar_allowed
-            or slot.solar_kwh <= 0
-        ):
+        if self.mode is Mode.OFF or slot is None:
+            return 0.0, PRIORITY_NONE
+        if spare and not slot.solar_allowed:
+            return round(tank.heater_power_w), PRIORITY_SPARE
+        if not slot.solar_allowed or slot.solar_kwh <= 0:
             return 0.0, PRIORITY_NONE
         power = min(tank.heater_power_w, slot.solar_kwh / 0.25 * 1000)
         return round(power), PRIORITY_HIGH if self.solar_needed else PRIORITY_LOW
